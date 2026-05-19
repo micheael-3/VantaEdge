@@ -1,6 +1,6 @@
 [build]
   base    = "."
-  command = "npm install && npm install --prefix frontend && npm run build --prefix frontend"
+  command = "npm install && cd frontend && npm install && npm run build"
   publish = "frontend/dist"
 
 [functions]
