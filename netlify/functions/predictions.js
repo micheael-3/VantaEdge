@@ -24,9 +24,11 @@ async function handleLeague(event, leagueId) {
   const consumed = await consumeRefresh(user, isInitial);
   if (!consumed.ok) return error(429, consumed.reason, { tier: user.tier });
 
-  const includeFirstHalf = user.tier === 'EDGE';
-  const includeAH = user.tier === 'EDGE';
-  const includeEV = tierRank(user.tier) >= tierRank('ANALYST');
+  // TESTING MODE: unlock all feature gates regardless of tier.
+  const includeFirstHalf = true;
+  const includeAH = true;
+  const includeEV = true;
+  void tierRank; // keep import; restore tier-aware logic when re-enabling.
 
   const fixtures = await football.getTodayFixtures(leagueId);
   if (!fixtures || fixtures.length === 0) {

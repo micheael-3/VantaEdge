@@ -76,24 +76,16 @@ export default function Dashboard() {
     setUpgradeOpen(true);
   };
 
+  // TESTING MODE: refresh always works, no tier gating, no daily cap.
   const handleRefresh = () => {
-    if (user.tier === 'FREE') {
-      setRequiredTier('SCOUT');
-      setUpgradeOpen(true);
-      return;
-    }
-    if (remaining <= 0) {
-      setError('Daily refresh limit reached.');
-      return;
-    }
     fetchData(activeLeague, false);
   };
 
   const refreshLabel = useMemo(() => {
-    if (user.tier === 'FREE') return '↺ Refresh (upgrade)';
-    if (user.tier === 'EDGE') return '↺ Refresh';
-    return `↺ Refresh · ${remaining} / ${refreshLimit} left`;
-  }, [user.tier, remaining, refreshLimit]);
+    void remaining;
+    void refreshLimit;
+    return '↺ Refresh';
+  }, [remaining, refreshLimit]);
 
   return (
     <>
@@ -106,7 +98,7 @@ export default function Dashboard() {
               {LEAGUES.find((l) => l.id === activeLeague) && LEAGUES.find((l) => l.id === activeLeague).name}
             </div>
           </div>
-          <button className="btn" onClick={handleRefresh} disabled={user.tier === 'FREE' && hasLoadedOnce}>
+          <button className="btn" onClick={handleRefresh}>
             {refreshLabel}
           </button>
         </div>

@@ -11,16 +11,18 @@ export const LEAGUES = [
 
 export const TIER_RANK = { FREE: 0, SCOUT: 1, ANALYST: 2, EDGE: 3 };
 
-export function canAccessLeague(userTier, leagueMinTier) {
-  return (TIER_RANK[userTier] ?? 0) >= (TIER_RANK[leagueMinTier] ?? 0);
+// TESTING MODE: all gating helpers return true. Restore tier-aware logic
+// when re-enabling paid tiers (see git history for originals).
+export function canAccessLeague(_userTier, _leagueMinTier) {
+  return true;
 }
 
-export function canSeeEV(userTier) {
-  return (TIER_RANK[userTier] ?? 0) >= TIER_RANK.ANALYST;
+export function canSeeEV(_userTier) {
+  return true;
 }
 
-export function canSeeExtras(userTier) {
-  return userTier === 'EDGE';
+export function canSeeExtras(_userTier) {
+  return true;
 }
 
 export const PLANS = [

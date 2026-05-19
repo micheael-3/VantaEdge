@@ -22,11 +22,10 @@ export default function Navbar() {
               <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
                 Dashboard
               </NavLink>
-              {(user.tier === 'ANALYST' || user.tier === 'EDGE') && (
-                <NavLink to="/history" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
-                  History
-                </NavLink>
-              )}
+              {/* TESTING MODE: History link visible to all tiers. */}
+              <NavLink to="/history" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
+                History
+              </NavLink>
               <NavLink to="/settings" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
                 Settings
               </NavLink>

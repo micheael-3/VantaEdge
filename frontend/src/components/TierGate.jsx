@@ -1,14 +1,7 @@
+// TESTING MODE: tier gating disabled. Renders children directly with no overlay.
+// Restore the original blur/lock UI from git history when re-enabling paid tiers.
 export default function TierGate({ requiredTier, onUpgrade, children }) {
-  return (
-    <div className="tier-gate-wrap">
-      <div className="tier-gate-content">{children}</div>
-      <div className="tier-gate-overlay">
-        <div className="lock-icon" aria-hidden>🔒</div>
-        <div className="mono small">{requiredTier} Plan Required</div>
-        <button className="btn btn-primary" onClick={onUpgrade}>
-          Upgrade
-        </button>
-      </div>
-    </div>
-  );
+  void requiredTier;
+  void onUpgrade;
+  return <>{children}</>;
 }

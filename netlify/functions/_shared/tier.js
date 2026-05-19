@@ -1,4 +1,4 @@
-const { error } = require('./response');
+// TESTING MODE: all tier gates disabled. Restore originals when re-enabling paid tiers.
 
 const RANK = { FREE: 0, SCOUT: 1, ANALYST: 2, EDGE: 3 };
 
@@ -6,10 +6,8 @@ function tierRank(t) {
   return RANK[t] ?? 0;
 }
 
-function requireTier(user, minTier) {
-  if (tierRank(user.tier) < tierRank(minTier)) {
-    return error(403, 'UPGRADE_REQUIRED', { requiredTier: minTier });
-  }
+// TESTING MODE: always allow.
+function requireTier(_user, _minTier) {
   return null;
 }
 
@@ -24,11 +22,13 @@ const LEAGUES = {
   39:  { name: 'Premier League', minTier: 'EDGE' },
 };
 
+// TESTING MODE: every tier (including FREE) can access every league.
+const ALL_LEAGUES = Object.keys(LEAGUES).map((k) => parseInt(k, 10));
 const TIER_LEAGUES = {
-  FREE:    [253, 78, 88],
-  SCOUT:   [253, 78, 88],
-  ANALYST: [253, 78, 88, 40, 61, 179, 140],
-  EDGE:    [253, 78, 88, 40, 61, 179, 140, 39],
+  FREE:    ALL_LEAGUES,
+  SCOUT:   ALL_LEAGUES,
+  ANALYST: ALL_LEAGUES,
+  EDGE:    ALL_LEAGUES,
 };
 
 module.exports = { tierRank, requireTier, LEAGUES, TIER_LEAGUES };

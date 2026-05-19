@@ -30,12 +30,10 @@ function PublicOnly({ children }) {
   return children;
 }
 
+// TESTING MODE: history page open to all tiers.
 function HistoryGuard({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (user.tier !== 'ANALYST' && user.tier !== 'EDGE') {
-    return <Navigate to="/dashboard" replace />;
-  }
   return children;
 }
 

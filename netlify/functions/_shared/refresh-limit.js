@@ -1,35 +1,27 @@
+// TESTING MODE: refresh limits disabled. consumeRefresh always succeeds and never increments.
+// Restore the original file from git history when re-enabling paid tiers.
+
 const { sql } = require('./db');
 
-const LIMITS = { FREE: 0, SCOUT: 3, ANALYST: 10, EDGE: Infinity };
+const LIMITS = { FREE: Infinity, SCOUT: Infinity, ANALYST: Infinity, EDGE: Infinity };
 
 function todayStr() {
   const d = new Date();
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
-async function consumeRefresh(user, isInitial) {
+// TESTING MODE: always allow, but still keep last_refresh_date current so the
+// counter resets cleanly when limits are re-enabled.
+async function consumeRefresh(user, _isInitial) {
   const today = todayStr();
-  let dailyRefreshes = user.daily_refreshes;
-  let lastDate = user.last_refresh_date;
-
-  if (lastDate !== today) {
-    dailyRefreshes = 0;
-    lastDate = today;
+  if (user.last_refresh_date !== today) {
+    try {
+      await sql()`UPDATE users SET daily_refreshes = 0, last_refresh_date = ${today} WHERE id = ${user.id}`;
+    } catch (e) {
+      console.error('consumeRefresh date reset failed:', e.message);
+    }
   }
-
-  if (user.tier === 'FREE') {
-    if (!isInitial) return { ok: false, reason: 'REFRESH_LIMIT_REACHED' };
-  } else {
-    const limit = LIMITS[user.tier];
-    if (dailyRefreshes >= limit) return { ok: false, reason: 'REFRESH_LIMIT_REACHED' };
-    dailyRefreshes += 1;
-  }
-
-  await sql()`UPDATE users
-              SET daily_refreshes = ${dailyRefreshes}, last_refresh_date = ${lastDate}
-              WHERE id = ${user.id}`;
-
-  return { ok: true, dailyRefreshes, lastRefreshDate: lastDate };
+  return { ok: true, dailyRefreshes: 0, lastRefreshDate: today };
 }
 
 module.exports = { consumeRefresh, LIMITS };
