@@ -24,8 +24,17 @@ export default function AdminLogin() {
       navigate(from, { replace: true });
     } catch (err) {
       const status = err.response && err.response.status;
-      setError(status === 401 ? 'Invalid password' : 'Login failed');
+      const serverMsg = err.response && err.response.data && err.response.data.error;
+      // Surface what actually went wrong so we can diagnose.
+      if (status === 401) setError('Invalid password');
+      else if (status === 404) setError('Endpoint not found (404) — has the latest deploy completed?');
+      else if (status === 503) setError(serverMsg || 'Admin disabled — ADMIN_PASSWORD env var not set on Netlify');
+      else if (status) setError(`HTTP ${status}: ${serverMsg || 'Login failed'}`);
+      else setError(`Network error: ${err.message || 'unknown'}`);
       setAdminToken('');
+      // Also log full error to console for further detail.
+      // eslint-disable-next-line no-console
+      console.error('Admin login error:', err);
     } finally {
       setLoading(false);
     }
