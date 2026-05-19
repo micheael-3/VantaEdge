@@ -1,0 +1,55 @@
+[build]
+  base    = "."
+  command = "npm install && npm install --prefix frontend && npm run build --prefix frontend"
+  publish = "frontend/dist"
+
+[functions]
+  directory             = "netlify/functions"
+  node_bundler          = "esbuild"
+  included_files        = ["netlify/functions/_shared/**"]
+  external_node_modules = ["@neondatabase/serverless"]
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Frontend calls /api/* — rewrite to the matching Netlify Function (same origin, no CORS).
+[[redirects]]
+  from   = "/api/auth/*"
+  to     = "/.netlify/functions/auth/:splat"
+  status = 200
+
+[[redirects]]
+  from   = "/api/predictions/*"
+  to     = "/.netlify/functions/predictions/:splat"
+  status = 200
+
+[[redirects]]
+  from   = "/api/history/*"
+  to     = "/.netlify/functions/history/:splat"
+  status = 200
+
+[[redirects]]
+  from   = "/api/history"
+  to     = "/.netlify/functions/history"
+  status = 200
+
+[[redirects]]
+  from   = "/api/user/*"
+  to     = "/.netlify/functions/user/:splat"
+  status = 200
+
+[[redirects]]
+  from   = "/api/user"
+  to     = "/.netlify/functions/user"
+  status = 200
+
+[[redirects]]
+  from   = "/api/webhook/*"
+  to     = "/.netlify/functions/webhook/:splat"
+  status = 200
+
+# SPA fallback — every non-API, non-asset path serves index.html.
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200

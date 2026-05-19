@@ -1,0 +1,17 @@
+{
+  "name": "vantaedge",
+  "version": "2.0.0",
+  "private": true,
+  "description": "VantaEdge — Netlify monorepo (Vite frontend + Netlify Functions on Neon Postgres)",
+  "scripts": {
+    "build": "npm install --prefix frontend && npm run build --prefix frontend",
+    "postinstall": "echo Root deps installed for Netlify Functions"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "axios": "^1.7.9",
+    "bcryptjs": "^2.4.3",
+    "cookie": "^0.7.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

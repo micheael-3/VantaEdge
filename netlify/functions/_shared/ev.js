@@ -3,9 +3,7 @@ function round1(n) {
 }
 
 function calculateEV(confidencePct, boostedOdds) {
-  if (!boostedOdds || boostedOdds <= 1) {
-    return { edge: 0, valueBadge: 'NO_VALUE' };
-  }
+  if (!boostedOdds || boostedOdds <= 1) return { edge: 0, valueBadge: 'NO_VALUE' };
   const claudeProbability = confidencePct / 100;
   const bookieProbability = 1 / boostedOdds;
   const edge = (claudeProbability - bookieProbability) * 100;
@@ -22,9 +20,9 @@ function calculateKelly(confidencePct, odds) {
   const b = odds - 1;
   const p = confidencePct / 100;
   const q = 1 - p;
-  const kelly = (b * p - q) / b;
-  if (kelly <= 0) return 0;
-  return Math.min(kelly, 0.1);
+  const k = (b * p - q) / b;
+  if (k <= 0) return 0;
+  return Math.min(k, 0.1);
 }
 
 module.exports = { calculateEV, calculateKelly };

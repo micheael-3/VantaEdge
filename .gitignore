@@ -7,5 +7,5 @@ dist/
 .vscode/
 .idea/
 
-# Railway local state
-.railway/
+# Netlify local CLI state
+.netlify/

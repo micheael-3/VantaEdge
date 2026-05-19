@@ -1,7 +1,10 @@
 import axios from 'axios';
 
+// Same-origin: frontend and Netlify Functions live on the same domain,
+// so we use a relative baseURL and rely on netlify.toml redirects mapping
+// /api/* -> /.netlify/functions/*.
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:4000',
+  baseURL: import.meta.env.VITE_API_URL || '',
   withCredentials: true,
 });
 
