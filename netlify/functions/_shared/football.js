@@ -2,7 +2,7 @@ const axios = require('axios');
 const { getOrFetch } = require('./cache');
 
 const BASE_URL = 'https://v3.football.api-sports.io';
-const SEASON = 2025;
+const SEASON = 2024;
 
 function client() {
   return axios.create({
