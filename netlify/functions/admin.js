@@ -1,0 +1,99 @@
+const { sql } = require('./_shared/db');
+const { json, error, notFound, subPath } = require('./_shared/response');
+const { requireAdmin } = require('./_shared/admin-mw');
+
+function startOfTodayUtc() {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+async function listUsers(_event) {
+  const rows = await sql()`
+    SELECT u.id, u.email, u.tier, u.created_at,
+           COALESCE(COUNT(p.id), 0)::int AS total_predictions
+    FROM users u
+    LEFT JOIN predictions p ON p.user_id = u.id
+    GROUP BY u.id, u.email, u.tier, u.created_at
+    ORDER BY u.created_at DESC`;
+  return json(200, {
+    users: rows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      tier: r.tier,
+      createdAt: r.created_at,
+      totalPredictions: Number(r.total_predictions),
+    })),
+  });
+}
+
+async function listPredictionsToday(_event) {
+  const since = startOfTodayUtc();
+  const rows = await sql()`
+    SELECT id, league, home_team, away_team, kickoff,
+           over_line, over_confidence, btts, btts_confidence, created_at
+    FROM predictions
+    WHERE created_at >= ${since}
+    ORDER BY created_at DESC
+    LIMIT 1000`;
+  return json(200, {
+    predictions: rows.map((p) => ({
+      id: p.id,
+      league: p.league,
+      homeTeam: p.home_team,
+      awayTeam: p.away_team,
+      kickoff: p.kickoff,
+      overLine: p.over_line,
+      overConfidence: p.over_confidence,
+      btts: p.btts,
+      bttsConfidence: p.btts_confidence,
+      createdAt: p.created_at,
+    })),
+  });
+}
+
+async function stats(_event) {
+  const since = startOfTodayUtc();
+  const [userCountRow] = await sql()`SELECT COUNT(*)::int AS n FROM users`;
+  const [predTodayRow] = await sql()`SELECT COUNT(*)::int AS n FROM predictions WHERE created_at >= ${since}`;
+  const [predAllRow] = await sql()`SELECT COUNT(*)::int AS n FROM predictions`;
+  const perLeague = await sql()`
+    SELECT league, COUNT(*)::int AS count
+    FROM predictions
+    GROUP BY league
+    ORDER BY count DESC`;
+  return json(200, {
+    totalUsers: Number(userCountRow.n),
+    totalPredictionsToday: Number(predTodayRow.n),
+    totalPredictionsAllTime: Number(predAllRow.n),
+    perLeague: perLeague.map((r) => ({ league: r.league, count: Number(r.count) })),
+  });
+}
+
+async function loginPing(event) {
+  // Lets the frontend verify the password without leaking any data.
+  // requireAdmin already ran in the handler before this is reached.
+  void event;
+  return json(200, { ok: true });
+}
+
+exports.handler = async (event) => {
+  try {
+    if (event.httpMethod === 'OPTIONS') return { statusCode: 204, body: '' };
+    const gate = requireAdmin(event);
+    if (gate) return gate;
+
+    const path = subPath(event, 'admin');
+    const method = event.httpMethod;
+
+    if (method === 'GET' && path === '/users') return await listUsers(event);
+    if (method === 'GET' && path === '/predictions') return await listPredictionsToday(event);
+    if (method === 'GET' && path === '/stats') return await stats(event);
+    if (method === 'POST' && path === '/login') return await loginPing(event);
+
+    return notFound();
+  } catch (err) {
+    console.error('admin handler error:', err);
+    return error(500, err.message || 'Internal server error');
+  }
+};

@@ -8,6 +8,12 @@ import History from './pages/History';
 import Settings from './pages/Settings';
 import UpgradeModal from './components/UpgradeModal';
 import { useAuth } from './context/AuthContext';
+import AdminLogin from './pages/admin/AdminLogin';
+import AdminLayout from './pages/admin/AdminLayout';
+import AdminUsers from './pages/admin/AdminUsers';
+import AdminPredictions from './pages/admin/AdminPredictions';
+import AdminStats from './pages/admin/AdminStats';
+import { getAdminToken } from './api/admin';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -34,6 +40,14 @@ function PublicOnly({ children }) {
 function HistoryGuard({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function AdminProtected({ children }) {
+  const location = useLocation();
+  if (!getAdminToken()) {
+    return <Navigate to="/admin/login" replace state={{ from: location.pathname }} />;
+  }
   return children;
 }
 
@@ -102,6 +116,20 @@ export default function App() {
             </Protected>
           }
         />
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route
+          path="/admin"
+          element={
+            <AdminProtected>
+              <AdminLayout />
+            </AdminProtected>
+          }
+        >
+          <Route index element={<Navigate to="/admin/users" replace />} />
+          <Route path="users" element={<AdminUsers />} />
+          <Route path="predictions" element={<AdminPredictions />} />
+          <Route path="stats" element={<AdminStats />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <UpgradeModal

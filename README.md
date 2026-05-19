@@ -74,6 +74,10 @@ All endpoints are `/api/*` from the browser. `netlify.toml` rewrites them to `/.
 | POST   | `/api/user/password`              | yes  | Update password (revokes refresh token)                    |
 | DELETE | `/api/user`                       | yes  | Delete account (requires password)                         |
 | POST   | `/api/webhook/revenuecat`         | sig  | RevenueCat events update `users.tier`                      |
+| POST   | `/api/admin/login`                | adm  | Verifies `ADMIN_PASSWORD` bearer header                    |
+| GET    | `/api/admin/users`                | adm  | All users + their prediction counts                        |
+| GET    | `/api/admin/predictions`          | adm  | All predictions created today                              |
+| GET    | `/api/admin/stats`                | adm  | Totals + per-league counts                                 |
 
 ---
 
@@ -89,6 +93,7 @@ All on the Netlify site (one place). See [NETLIFY-DEPLOY.md](NETLIFY-DEPLOY.md) 
 | `FOOTBALL_API_KEY`          | dashboard.api-football.com                                          |
 | `OPENROUTER_API_KEY`        | openrouter.ai/keys                                                  |
 | `REVENUECAT_WEBHOOK_SECRET` | Random string, also pasted into RevenueCat webhook header           |
+| `ADMIN_PASSWORD`            | Password for `/admin` panel. Pick a strong one — it's the only credential for the admin UI. |
 | `NODE_ENV`                  | any value other than `development` (controls `Secure` cookie flag)  |
 
 `URL` is set automatically by Netlify (used for the OpenRouter `HTTP-Referer` header).
