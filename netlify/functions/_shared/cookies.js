@@ -1,7 +1,7 @@
 const cookie = require('cookie');
 
 function isProd() {
-  return process.env.CONTEXT === 'production' || process.env.NODE_ENV === 'production';
+  return process.env.NODE_ENV !== 'development';
 }
 
 function readCookies(event) {

@@ -77,7 +77,7 @@ Run that command **twice** — save one value as `JWT_SECRET`, the other as `JWT
 | `FOOTBALL_API_KEY`          | From dashboard.api-football.com                                                                             |
 | `OPENROUTER_API_KEY`        | From openrouter.ai/keys                                                                                     |
 | `REVENUECAT_WEBHOOK_SECRET` | Your made-up strong string                                                                                  |
-| `NODE_ENV`                  | `production`                                                                                                |
+| `NODE_ENV`                  | leave at Netlify's default (any value other than `development`) — controls whether auth cookies are issued `Secure` |
 
 `URL` is set automatically by Netlify to your site's primary URL, so the OpenRouter `HTTP-Referer` is filled in for you. You don't need to set it manually.
 

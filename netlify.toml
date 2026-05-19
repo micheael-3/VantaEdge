@@ -1,7 +1,8 @@
 [build]
-  base    = "."
-  command = "npm install && cd frontend && npm install && npm run build"
-  publish = "frontend/dist"
+  base                   = "."
+  command                = "npm install && cd frontend && npm install && npm run build"
+  publish                = "frontend/dist"
+  SECRETS_SCAN_OMIT_KEYS = ["NODE_ENV"]
 
 [functions]
   directory             = "netlify/functions"

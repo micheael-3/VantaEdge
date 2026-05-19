@@ -89,7 +89,7 @@ All on the Netlify site (one place). See [NETLIFY-DEPLOY.md](NETLIFY-DEPLOY.md) 
 | `FOOTBALL_API_KEY`          | dashboard.api-football.com                                          |
 | `OPENROUTER_API_KEY`        | openrouter.ai/keys                                                  |
 | `REVENUECAT_WEBHOOK_SECRET` | Random string, also pasted into RevenueCat webhook header           |
-| `NODE_ENV`                  | `production`                                                        |
+| `NODE_ENV`                  | any value other than `development` (controls `Secure` cookie flag)  |
 
 `URL` is set automatically by Netlify (used for the OpenRouter `HTTP-Referer` header).
 
