@@ -3,6 +3,65 @@ const { sql } = require('./_shared/db');
 const { json, error, notFound, parseBody, subPath } = require('./_shared/response');
 const { requireUser } = require('./_shared/auth-mw');
 const { makeClearCookie } = require('./_shared/cookies');
+const { LEAGUES } = require('./_shared/tier');
+
+const VALID_LEAGUE_IDS = new Set(Object.keys(LEAGUES).map((k) => Number(k)));
+const VALID_MARKETS = new Set(['all', 'over', 'btts']);
+
+async function savePreferences(event, isOnboarding) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+  const body = parseBody(event);
+
+  // Sanitise + validate every input. Each field is optional in the
+  // /preferences path; /onboarding accepts the same shape so the Settings
+  // page and the welcome flow share an endpoint.
+  let preferredLeagues = null;
+  if (Array.isArray(body.preferredLeagues)) {
+    const cleaned = body.preferredLeagues
+      .map((n) => parseInt(n, 10))
+      .filter((n) => Number.isFinite(n) && VALID_LEAGUE_IDS.has(n));
+    if (cleaned.length === 0) return error(400, 'Pick at least one league');
+    preferredLeagues = Array.from(new Set(cleaned));
+  }
+
+  let minConfidence = null;
+  if (body.minConfidence !== undefined) {
+    const n = parseInt(body.minConfidence, 10);
+    if (!Number.isFinite(n) || n < 50 || n > 85) return error(400, 'minConfidence must be 50-85');
+    minConfidence = n;
+  }
+
+  let defaultMarket = null;
+  if (body.defaultMarket !== undefined) {
+    const m = String(body.defaultMarket).toLowerCase();
+    if (!VALID_MARKETS.has(m)) return error(400, 'defaultMarket must be all|over|btts');
+    defaultMarket = m;
+  }
+
+  // Build a partial update — coalesce keeps unchanged columns intact.
+  await sql()`
+    UPDATE users SET
+      preferred_leagues    = COALESCE(${preferredLeagues}::integer[], preferred_leagues),
+      min_confidence       = COALESCE(${minConfidence}::integer, min_confidence),
+      default_market       = COALESCE(${defaultMarket}::text, default_market),
+      onboarding_completed = CASE WHEN ${isOnboarding} THEN TRUE ELSE onboarding_completed END
+    WHERE id = ${user.id}`;
+
+  const [updated] = await sql()`
+    SELECT preferred_leagues, min_confidence, default_market, onboarding_completed
+    FROM users WHERE id = ${user.id}`;
+
+  return json(200, {
+    success: true,
+    user: {
+      preferredLeagues: updated.preferred_leagues,
+      minConfidence: updated.min_confidence,
+      defaultMarket: updated.default_market,
+      onboardingCompleted: !!updated.onboarding_completed,
+    },
+  });
+}
 
 function validEmail(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -65,6 +124,9 @@ exports.handler = async (event) => {
     const method = event.httpMethod;
     if (method === 'POST' && path === '/email') return await updateEmail(event);
     if (method === 'POST' && path === '/password') return await updatePassword(event);
+    if (method === 'POST' && (path === '/onboarding' || path === '/preferences')) {
+      return await savePreferences(event, path === '/onboarding');
+    }
     if (method === 'DELETE' && (path === '/' || path === '')) return await deleteAccount(event);
     return notFound();
   } catch (err) {

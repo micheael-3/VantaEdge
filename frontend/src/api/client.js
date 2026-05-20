@@ -68,6 +68,8 @@ export const user = {
   updatePassword: (currentPassword, newPassword) =>
     api.post('/api/user/password', { currentPassword, newPassword }).then((r) => r.data),
   deleteAccount: (password) => api.delete('/api/user', { data: { password } }).then((r) => r.data),
+  completeOnboarding: (payload) => api.post('/api/user/onboarding', payload).then((r) => r.data),
+  savePreferences: (payload) => api.post('/api/user/preferences', payload).then((r) => r.data),
 };
 
 export const emailPrefs = {

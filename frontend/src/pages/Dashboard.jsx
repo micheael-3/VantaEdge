@@ -7,6 +7,7 @@ import { bankroll as bankrollApi } from '../api/bankroll';
 import { LEAGUES } from '../config/leagues';
 import { calculateEV, calculateKelly } from '../lib/ev';
 import LiveActivity from '../components/LiveActivity';
+import OnboardingOverlay from '../components/OnboardingOverlay';
 import './Dashboard.css';
 
 const FILTER_KEY = 'vantaedge_dash_filters_v1';
@@ -881,10 +882,16 @@ function BestBetCard({ user }) {
 
 // ============ Dashboard ============
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, setUser } = useAuth();
   const navigate = useNavigate();
 
-  const [activeLeague, setActiveLeague] = useState(LEAGUES[0].id);
+  // Initial active league: first preferred if present, else MLS.
+  const initialLeague = (() => {
+    const prefs = (user && Array.isArray(user.preferredLeagues) && user.preferredLeagues) || [];
+    const first = prefs.find((id) => LEAGUES.some((l) => l.id === id));
+    return first || LEAGUES[0].id;
+  })();
+  const [activeLeague, setActiveLeague] = useState(initialLeague);
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -892,7 +899,31 @@ export default function Dashboard() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [filter, setFilter] = useState('all');
   const [showLegend, setShowLegend] = useState(true);
-  const [advFilters, setAdvFilters] = useState(loadFilters);
+  // Seed adv filters from server prefs the first time the user lands here
+  // (no localStorage yet), otherwise honour their saved tweaks.
+  const [advFilters, setAdvFilters] = useState(() => {
+    try {
+      const ls = window.localStorage.getItem('vantaedge_dash_filters_v1');
+      if (ls) return loadFilters();
+    } catch { /* no-op */ }
+    return {
+      minConfidence: (user && Number.isFinite(user.minConfidence)) ? user.minConfidence : 65,
+      market: (user && user.defaultMarket) || 'all',
+      valueOnly: false,
+      sort: 'edge',
+    };
+  });
+
+  // Onboarding + toast state
+  const [showOnboarding, setShowOnboarding] = useState(
+    !!user && user.onboardingCompleted === false,
+  );
+  const [toast, setToast] = useState(null);
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(id);
+  }, [toast]);
 
   // ---- Date selector state ----
   const [dateLabel, setDateLabel] = useState('Today');
@@ -1385,6 +1416,34 @@ export default function Dashboard() {
       >
         ↺
       </button>
+
+      {showOnboarding && (
+        <OnboardingOverlay
+          onComplete={(updatedUser) => {
+            // Merge server values back into AuthContext so the whole app
+            // sees the new defaults on this render.
+            setUser((u) => (u ? { ...u, ...updatedUser, onboardingCompleted: true } : u));
+            // Apply chosen prefs to the current dashboard view.
+            const firstLeague = Array.isArray(updatedUser.preferredLeagues) && updatedUser.preferredLeagues.length
+              ? updatedUser.preferredLeagues[0]
+              : LEAGUES[0].id;
+            switchLeague(firstLeague);
+            setAdvFilters((f) => ({
+              ...f,
+              minConfidence: Number.isFinite(updatedUser.minConfidence) ? updatedUser.minConfidence : f.minConfidence,
+              market: updatedUser.defaultMarket || f.market,
+            }));
+            setShowOnboarding(false);
+            setToast('Dashboard personalised. You can update preferences anytime in Settings.');
+          }}
+        />
+      )}
+
+      {toast && (
+        <div className="ob-toast" role="status" aria-live="polite">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

@@ -48,6 +48,13 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notifications BOOLEAN NOT NULL 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_time   TEXT    NOT NULL DEFAULT '08:00';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS unsubscribe_token   TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS sharp_move_alerts   BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- First-time onboarding
+ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN  NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_leagues    INTEGER[];
+ALTER TABLE users ADD COLUMN IF NOT EXISTS min_confidence       INTEGER  NOT NULL DEFAULT 65;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_market       TEXT     NOT NULL DEFAULT 'all';
+
 CREATE INDEX IF NOT EXISTS users_referred_by_idx ON users(referred_by);
 CREATE INDEX IF NOT EXISTS users_unsubscribe_token_idx ON users(unsubscribe_token);
 

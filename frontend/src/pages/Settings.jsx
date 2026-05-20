@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 import { user as userApi, emailPrefs } from '../api/client';
+import { LEAGUES } from '../config/leagues';
+import '../components/OnboardingOverlay.css';
 
 export default function Settings() {
   const { user, setUser, logout } = useAuth();
@@ -23,6 +25,49 @@ export default function Settings() {
   useEffect(() => {
     if (user && typeof user.emailNotifications === 'boolean') setEmailNotif(user.emailNotifications);
   }, [user]);
+
+  // ---- Dashboard preferences (mirrors the onboarding flow) ----
+  const ALL_IDS = LEAGUES.map((l) => l.id);
+  const [prefLeagues, setPrefLeagues] = useState(
+    Array.isArray(user && user.preferredLeagues) ? user.preferredLeagues : ALL_IDS,
+  );
+  const [prefConf, setPrefConf] = useState(
+    Number.isFinite(user && user.minConfidence) ? user.minConfidence : 65,
+  );
+  const [prefMarket, setPrefMarket] = useState((user && user.defaultMarket) || 'all');
+  const [prefBusy, setPrefBusy] = useState(false);
+  const [prefMsg, setPrefMsg] = useState({ type: '', text: '' });
+
+  const togglePrefLeague = (id) => {
+    setPrefLeagues((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const savePrefs = async () => {
+    setPrefMsg({ type: '', text: '' });
+    if (prefLeagues.length === 0) {
+      setPrefMsg({ type: 'error', text: 'Pick at least one league.' });
+      return;
+    }
+    setPrefBusy(true);
+    try {
+      const { user: updated } = await userApi.savePreferences({
+        preferredLeagues: prefLeagues,
+        minConfidence: prefConf,
+        defaultMarket: prefMarket,
+      });
+      setUser((u) => (u ? { ...u, ...updated } : u));
+      setPrefMsg({ type: 'success', text: 'Preferences saved. New defaults apply on next dashboard load.' });
+    } catch (err) {
+      setPrefMsg({
+        type: 'error',
+        text: (err.response && err.response.data && err.response.data.error) || 'Failed to save',
+      });
+    } finally {
+      setPrefBusy(false);
+    }
+  };
+
+  const sliderPct = ((prefConf - 50) / (85 - 50)) * 100;
 
   const isPaid = user && user.tier && user.tier !== 'FREE';
 
@@ -195,6 +240,76 @@ export default function Settings() {
               today's top picks every morning.
             </p>
           )}
+        </section>
+
+        <section className="card" style={{ marginBottom: 20 }}>
+          <h3>Dashboard preferences</h3>
+          <p className="muted small" style={{ marginTop: -4 }}>
+            These control your default dashboard view — same options as the welcome flow.
+          </p>
+
+          <div className="label" style={{ marginTop: 16 }}>Leagues to follow</div>
+          <div className="ob-leagues" style={{ marginTop: 8 }}>
+            {LEAGUES.map((l) => {
+              const sel = prefLeagues.includes(l.id);
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  className={`ob-league ${sel ? 'selected' : ''}`}
+                  onClick={() => togglePrefLeague(l.id)}
+                  aria-pressed={sel}
+                >
+                  <span className="flag">{l.flag}</span>
+                  <span className="name">{l.name}</span>
+                  <span className="check">✓</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="label" style={{ marginTop: 20 }}>Minimum confidence</div>
+          <div className="ob-slider-wrap" style={{ margin: 0 }}>
+            <input
+              type="range"
+              min="50"
+              max="85"
+              step="1"
+              value={prefConf}
+              onChange={(e) => setPrefConf(parseInt(e.target.value, 10))}
+              className="ob-slider"
+              aria-label="Minimum confidence"
+              style={{ '--ob-fill': `${sliderPct}%` }}
+            />
+            <div className="ob-slider-value" style={{ fontSize: 28, marginTop: 8 }}>{prefConf}%</div>
+          </div>
+
+          <div className="label" style={{ marginTop: 16 }}>Default markets</div>
+          <div className="ob-markets" style={{ marginTop: 8, marginBottom: 0 }}>
+            {[
+              ['all', 'All Markets'],
+              ['over', 'Over / Under'],
+              ['btts', 'BTTS Only'],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={`ob-market ${prefMarket === id ? 'active' : ''}`}
+                onClick={() => setPrefMarket(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="row" style={{ gap: 10, marginTop: 18, alignItems: 'center' }}>
+            <button className="btn btn-primary" onClick={savePrefs} disabled={prefBusy}>
+              {prefBusy ? 'Saving…' : 'Save preferences'}
+            </button>
+            {prefMsg.text && (
+              <span className={prefMsg.type === 'success' ? 'success-text' : 'error-text'}>{prefMsg.text}</span>
+            )}
+          </div>
         </section>
 
         <section className="card" style={{ marginBottom: 20 }}>

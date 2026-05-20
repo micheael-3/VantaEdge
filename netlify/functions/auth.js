@@ -107,8 +107,10 @@ async function logout(event) {
 async function me(event) {
   const { res, user } = await requireUser(event);
   if (res) return res;
-  // user comes from requireUser query; include email_notifications.
-  const [extra] = await sql()`SELECT email_notifications FROM users WHERE id = ${user.id}`;
+  const [extra] = await sql()`
+    SELECT email_notifications, onboarding_completed, preferred_leagues,
+           min_confidence, default_market
+    FROM users WHERE id = ${user.id}`;
   return json(200, {
     user: {
       id: user.id,
@@ -116,6 +118,10 @@ async function me(event) {
       tier: user.tier,
       dailyRefreshes: user.daily_refreshes,
       emailNotifications: extra ? !!extra.email_notifications : true,
+      onboardingCompleted: extra ? !!extra.onboarding_completed : false,
+      preferredLeagues: extra && extra.preferred_leagues ? extra.preferred_leagues : null,
+      minConfidence: extra && extra.min_confidence != null ? Number(extra.min_confidence) : 65,
+      defaultMarket: extra && extra.default_market ? extra.default_market : 'all',
     },
   });
 }
