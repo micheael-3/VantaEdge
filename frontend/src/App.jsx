@@ -63,21 +63,19 @@ function AdminProtected({ children }) {
   return children;
 }
 
+// TESTING MODE: tier gates disabled. Originally ANALYST/EDGE only —
+// while we're iterating on the dashboard / tools / bankroll flow, every
+// logged-in user can reach /odds and /bankroll regardless of tier.
+// Re-enable the tier checks before going to production.
 function OddsGuard({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (user.tier !== 'ANALYST' && user.tier !== 'EDGE') {
-    return <Navigate to="/dashboard" replace />;
-  }
   return children;
 }
 
 function BankrollGuard({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (user.tier !== 'ANALYST' && user.tier !== 'EDGE') {
-    return <Navigate to="/dashboard" replace />;
-  }
   return children;
 }
 
