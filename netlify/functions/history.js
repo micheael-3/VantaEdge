@@ -128,18 +128,24 @@ async function getHistory(event) {
     },
     leagues: leagueRows,
     rolling,
-    recent: predictions.slice(0, 50).map((p) => ({
-      id: p.id,
-      date: p.kickoff,
-      league: p.league,
-      match: `${p.home_team} vs ${p.away_team}`,
-      overLine: p.over_line,
-      overConfidence: p.over_confidence,
-      overHit: p.over_hit,
-      btts: p.btts,
-      bttsConfidence: p.btts_confidence,
-      bttsHit: p.btts_hit,
-    })),
+    // Recent table only shows SETTLED rows. Pending predictions clutter
+    // the list with rows that have no verdict yet — users find it
+    // confusing. Aggregate stats above still count everything correctly.
+    recent: predictions
+      .filter((p) => p.over_hit !== null || p.btts_hit !== null)
+      .slice(0, 50)
+      .map((p) => ({
+        id: p.id,
+        date: p.kickoff,
+        league: p.league,
+        match: `${p.home_team} vs ${p.away_team}`,
+        overLine: p.over_line,
+        overConfidence: p.over_confidence,
+        overHit: p.over_hit,
+        btts: p.btts,
+        bttsConfidence: p.btts_confidence,
+        bttsHit: p.btts_hit,
+      })),
   });
 }
 
