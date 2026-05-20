@@ -206,13 +206,16 @@ async function handleLeague(event, leagueId) {
     }
   }
 
-  // Batched fixture processing — API-Football paid plans cap requests per
-  // minute, so firing all 10 fixtures in parallel (each makes ~7 calls)
-  // bursts past the per-minute limit. Process in chunks of 2 with a short
-  // gap between chunks; total wall-time stays under the function's 26s
-  // budget while staying well below the per-minute cap.
-  const CHUNK_SIZE = 2;
-  const CHUNK_DELAY_MS = 1100;
+  // Sequential fixture processing — API-Football paid plans cap requests
+  // per minute. Each fixture makes ~11 API calls (7 stats + 4 enrichment)
+  // in parallel internally, so processing one fixture at a time still
+  // gives a healthy 11-call burst, but spaces those bursts out enough
+  // that the rolling per-minute window never saturates. Total wall time
+  // for 10 fixtures ≈ 8-12 seconds, well inside the function timeout.
+  // Also retries once with a 2s backoff if a fixture hits a rate limit
+  // mid-run, since cached subsequent calls let the retry usually succeed.
+  const CHUNK_SIZE = 1;
+  const CHUNK_DELAY_MS = 700;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const processOne = async (fx) => {
@@ -464,10 +467,29 @@ async function handleLeague(event, leagueId) {
       }
   };
 
+  const isRateLimitErr = (r) =>
+    r && r.error && /rateLimit|Too many requests|exceeded the limit/i.test(r.error);
+
   const results = [];
   for (let i = 0; i < fixtures.length; i += CHUNK_SIZE) {
     const chunk = fixtures.slice(i, i + CHUNK_SIZE);
     const chunkResults = await Promise.all(chunk.map(processOne));
+
+    // If any fixture in this chunk hit a rate-limit, wait 2 seconds and
+    // retry once. Most retries succeed because subsequent calls hit the
+    // in-memory cache populated by earlier fixtures.
+    for (let j = 0; j < chunkResults.length; j += 1) {
+      if (isRateLimitErr(chunkResults[j])) {
+        await sleep(2000);
+        try {
+          const retried = await processOne(chunk[j]);
+          chunkResults[j] = retried;
+        } catch {
+          // keep the original error if retry itself throws
+        }
+      }
+    }
+
     results.push(...chunkResults);
     if (i + CHUNK_SIZE < fixtures.length) {
       await sleep(CHUNK_DELAY_MS);
