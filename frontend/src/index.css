@@ -12,7 +12,9 @@
   --yellow: #eab308;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -20,6 +22,18 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+img,
+video,
+svg {
+  max-width: 100%;
+  height: auto;
 }
 
 body {
@@ -72,6 +86,7 @@ button {
   justify-content: center;
   gap: 8px;
   padding: 10px 16px;
+  min-height: 44px;
   background: var(--bg3);
   color: var(--text);
   border: 1px solid var(--border);
@@ -107,7 +122,8 @@ button {
 
 .input {
   width: 100%;
-  padding: 10px 12px;
+  padding: 12px 14px;
+  min-height: 48px;
   background: var(--bg3);
   color: var(--text);
   border: 1px solid var(--border);
@@ -678,4 +694,138 @@ button {
   }
   .admin-nav { flex-direction: row; flex-wrap: wrap; }
   .admin-main { padding: 20px; }
+}
+
+/* ============================================================
+   Mobile-first hardening (≤ 768px) — added in the mobile pass
+   ============================================================ */
+@media (max-width: 768px) {
+  .container { padding: 0 16px; }
+
+  /* Auth pages */
+  .auth-card { margin: 32px auto; max-width: 100%; }
+
+  /* KPI grid: spec says 2x2 on mobile, not 1col */
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .kpi { padding: 14px; }
+  .kpi .value { font-size: 22px; }
+
+  /* Tables: always allow horizontal scroll on mobile */
+  .history-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  .history-table th,
+  .history-table td { padding: 10px 8px; }
+
+  /* Navbar mobile mode — used by global Navbar.jsx on authed pages.
+     We hide the inline links and keep brand + tier badge + Logout.
+     The bottom nav handles primary navigation. */
+  .nav-mobile-hidden { display: none !important; }
+
+  /* Add bottom padding to anything that should clear the BottomNav (64px).
+     Pages opt in by adding .has-bottom-nav to the page root. */
+  .has-bottom-nav { padding-bottom: 80px; }
+
+  /* Hero (used by global landing fallback only — Landing.jsx uses its own scope now) */
+  .hero { padding: 40px 0 32px; }
+  .hero h1 { font-size: 32px; }
+  .hero p { font-size: 15px; }
+  .hero-actions { flex-direction: column; align-items: stretch; }
+  .hero-actions .btn { width: 100%; }
+
+  /* Section spacing */
+  .section { padding: 48px 0; }
+  .section h2 { font-size: 22px; }
+
+  /* Cards always full-width on mobile */
+  .card { padding: 16px; }
+
+  /* Modals — make sure they're never wider than viewport */
+  .modal { padding: 20px 16px; }
+
+  /* Pricing on mobile: single column */
+  .pricing-grid { grid-template-columns: 1fr; }
+
+  /* Form inputs — bigger touch target */
+  .input { min-height: 48px; font-size: 15px; }
+  .btn { min-height: 44px; padding: 10px 14px; }
+  .btn-lg { padding: 14px 22px; font-size: 15px; }
+}
+
+/* Small mobile: tighter spacing */
+@media (max-width: 480px) {
+  .section { padding: 40px 0; }
+  .navbar-inner { padding: 12px 16px; }
+  .brand { font-size: 18px; }
+}
+
+/* ============================================================
+   BOTTOM NAV (mobile-only primary nav for authed pages)
+   ============================================================ */
+.bn-bar {
+  display: none;
+}
+@media (max-width: 768px) {
+  .bn-bar {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(10, 10, 15, 0.92);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border-top: 1px solid var(--border);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    z-index: 90;
+  }
+  .bn-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 8px 4px;
+    color: var(--text2);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-radius: 8px;
+    min-height: 44px;
+  }
+  .bn-link.active { color: var(--accent); }
+  .bn-icon { display: inline-flex; align-items: center; justify-content: center; }
+  .bn-label { line-height: 1; }
+}
+
+/* Floating refresh FAB used by Dashboard on mobile */
+@media (max-width: 768px) {
+  .dp-refresh-fab {
+    position: fixed;
+    right: 16px;
+    bottom: calc(82px + env(safe-area-inset-bottom));
+    width: 52px;
+    height: 52px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #052e1f;
+    border: none;
+    box-shadow: 0 8px 28px -8px rgba(110, 231, 183, 0.6);
+    z-index: 80;
+    font-size: 22px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+@media (min-width: 769px) {
+  .dp-refresh-fab { display: none !important; }
 }

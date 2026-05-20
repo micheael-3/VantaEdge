@@ -1187,6 +1187,18 @@ export default function Dashboard() {
           }}
         />
       )}
+
+      {/* Mobile-only floating refresh button (replaces the header refresh below 769px) */}
+      <button
+        type="button"
+        className="dp-refresh-fab"
+        onClick={() => fetchData(activeLeague, false)}
+        disabled={loading}
+        aria-label="Refresh predictions"
+        title="Refresh"
+      >
+        ↺
+      </button>
     </div>
   );
 }

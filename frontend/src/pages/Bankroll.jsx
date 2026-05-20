@@ -307,7 +307,7 @@ export default function Bankroll() {
             <div className="br-card">
               <h3>Bankroll growth</h3>
               {chartData.length > 1 ? (
-                <div style={{ width: '100%', height: 260 }}>
+                <div style={{ width: '100%', height: typeof window !== 'undefined' && window.innerWidth < 768 ? 200 : 260 }}>
                   <ResponsiveContainer>
                     <AreaChart data={chartData}>
                       <defs>

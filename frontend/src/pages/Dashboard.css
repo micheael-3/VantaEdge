@@ -741,6 +741,86 @@
   margin-left: 4px;
 }
 
+/* ============================================================
+   Mobile (≤ 768px) — single-col, smaller cards, scrollable tabs
+   ============================================================ */
+@media (max-width: 768px) {
+  .dashboard-page .dp-layout { grid-template-columns: 1fr; }
+  .dashboard-page .dp-sidebar { display: none; }
+  .dashboard-page .dp-mobile-top { display: none; } /* BottomNav replaces this */
+
+  .dashboard-page .dp-header { padding: 18px 16px 14px; }
+  .dashboard-page .dp-header h1 { font-size: 22px; }
+  .dashboard-page .dp-sub { font-size: 13px; }
+  .dashboard-page .dp-meta { gap: 14px; margin-top: 14px; }
+  .dashboard-page .dp-meta-cell .lbl { font-size: 9px; }
+  .dashboard-page .dp-meta-cell .val { font-size: 16px; }
+  /* Hide the top-right Refresh button on mobile; FAB takes over. */
+  .dashboard-page .dp-header .dp-btn-sm { display: none; }
+
+  .dashboard-page .dp-bestbet { margin: 14px 16px 0; padding: 16px; }
+  .dashboard-page .dp-bestbet-empty { margin: 14px 16px 0; }
+  .dashboard-page .dp-bestbet-match { font-size: 18px; }
+  .dashboard-page .dp-bestbet-stat .val { font-size: 18px; }
+
+  /* League tabs — flag-only on small screens to fit more tabs */
+  .dashboard-page .dp-league-tabs-wrap { padding: 0 16px; }
+  .dashboard-page .dp-league-tab { padding: 12px 10px; font-size: 12.5px; }
+  .dashboard-page .dp-league-tab > span:not(.flag):not(.ct) {
+    /* hide the text label on the smallest screens, keep the flag + count */
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dashboard-page .dp-filter-row { padding: 12px 16px; }
+  .dashboard-page .dp-filter-bar { padding: 10px 16px 12px; gap: 10px; }
+  .dashboard-page .dp-slider { width: 110px; }
+
+  .dashboard-page .dp-matches { padding: 16px 16px 96px; gap: 12px; }
+  .dashboard-page .dp-match { padding: 14px; gap: 14px; }
+  .dashboard-page .dp-match-league { font-size: 10px; }
+  .dashboard-page .dp-match-teams { gap: 8px; font-size: 14px; margin-top: 8px; flex-wrap: wrap; }
+  .dashboard-page .dp-team {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dashboard-page .dp-crest { width: 18px; height: 18px; font-size: 9px; }
+  .dashboard-page .dp-metrics { gap: 12px; margin-top: 10px; }
+  .dashboard-page .dp-dot-form { width: 7px; height: 7px; }
+  .dashboard-page .dp-metric .lbl { font-size: 9px; }
+  .dashboard-page .dp-metric .val { font-size: 12px; }
+
+  .dashboard-page .dp-conf-val { font-size: 18px; }
+  .dashboard-page .dp-conf-bar { height: 3px; }
+
+  .dashboard-page .dp-bet-badges { margin-top: 10px; }
+  .dashboard-page .dp-bet-badge { font-size: 10.5px; padding: 4px 8px; }
+
+  .dashboard-page .dp-right { gap: 8px; padding-top: 12px; }
+  .dashboard-page .dp-ev-pill { padding: 10px 12px; }
+  .dashboard-page .dp-ev-pill .v { font-size: 17px; }
+
+  .dashboard-page .dp-legend { padding: 14px 16px; }
+  .dashboard-page .dp-legend-cols { gap: 14px; }
+  .dashboard-page .dp-empty { padding: 48px 16px; }
+
+  /* Spacer so the bottom of the list isn't hidden behind the bottom nav */
+  .dashboard-page .dp-main { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+/* Very small phones — kill last bits of overflow risk */
+@media (max-width: 380px) {
+  .dashboard-page .dp-match-teams { font-size: 13px; }
+  .dashboard-page .dp-match-teams .vs { display: none; }
+  .dashboard-page .dp-meta { gap: 10px; }
+  .dashboard-page .dp-meta-cell .val { font-size: 15px; }
+}
+
 /* ---- Empty state ---- */
 .dashboard-page .dp-empty {
   padding: 80px 24px;

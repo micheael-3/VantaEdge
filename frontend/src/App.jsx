@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import History from './pages/History';
 import Settings from './pages/Settings';
 import UpgradeModal from './components/UpgradeModal';
+import BottomNav from './components/BottomNav';
 import { useAuth } from './context/AuthContext';
 import AdminLogin from './pages/admin/AdminLogin';
 import AdminLayout from './pages/admin/AdminLayout';
@@ -75,6 +76,24 @@ function BankrollGuard({ children }) {
     return <Navigate to="/dashboard" replace />;
   }
   return children;
+}
+
+function AuthedShellBottomNav() {
+  const { user } = useAuth();
+  const location = useLocation();
+  if (!user) return null;
+  // Hide on routes that have their own layout (admin, landing, auth, blog).
+  const path = location.pathname || '';
+  const hide =
+    path === '/' ||
+    path.startsWith('/login') ||
+    path.startsWith('/register') ||
+    path.startsWith('/admin') ||
+    path.startsWith('/blog') ||
+    path.startsWith('/affiliate') && !path.startsWith('/affiliate/dashboard') ||
+    path.startsWith('/ref/');
+  if (hide) return null;
+  return <BottomNav tier={user.tier} />;
 }
 
 export default function App() {
@@ -196,6 +215,7 @@ export default function App() {
         requiredTier={requiredTier}
         onClose={() => setUpgradeOpen(false)}
       />
+      <AuthedShellBottomNav />
     </>
   );
 }

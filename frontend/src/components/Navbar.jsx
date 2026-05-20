@@ -19,34 +19,36 @@ export default function Navbar() {
         <div className="row" style={{ gap: 14 }}>
           {user ? (
             <>
-              <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
-                Dashboard
-              </NavLink>
-              {/* TESTING MODE: History link visible to all tiers. */}
-              <NavLink to="/history" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
-                History
-              </NavLink>
-              {(user.tier === 'ANALYST' || user.tier === 'EDGE') && (
-                <NavLink to="/odds" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
-                  Odds
+              <div className="row nav-mobile-hidden" style={{ gap: 14 }}>
+                <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
+                  Dashboard
                 </NavLink>
-              )}
-              {(user.tier === 'ANALYST' || user.tier === 'EDGE') && (
-                <NavLink to="/bankroll" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
-                  Bankroll
+                {/* TESTING MODE: History link visible to all tiers. */}
+                <NavLink to="/history" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
+                  History
                 </NavLink>
-              )}
-              <NavLink to="/affiliate/dashboard" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
-                Affiliates
-              </NavLink>
-              <NavLink to="/blog" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
-                Blog
-              </NavLink>
-              <NavLink to="/settings" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
-                Settings
-              </NavLink>
+                {(user.tier === 'ANALYST' || user.tier === 'EDGE') && (
+                  <NavLink to="/odds" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
+                    Odds
+                  </NavLink>
+                )}
+                {(user.tier === 'ANALYST' || user.tier === 'EDGE') && (
+                  <NavLink to="/bankroll" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
+                    Bankroll
+                  </NavLink>
+                )}
+                <NavLink to="/affiliate/dashboard" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
+                  Affiliates
+                </NavLink>
+                <NavLink to="/blog" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
+                  Blog
+                </NavLink>
+                <NavLink to="/settings" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
+                  Settings
+                </NavLink>
+              </div>
               <span className="badge accent mono">{user.tier}</span>
-              <button className="btn btn-ghost" onClick={handleLogout}>
+              <button className="btn btn-ghost nav-mobile-hidden" onClick={handleLogout}>
                 Logout
               </button>
             </>

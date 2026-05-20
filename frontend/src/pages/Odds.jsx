@@ -263,19 +263,19 @@ export default function Odds() {
             <tbody>
               {flattened.map((r) => (
                 <tr key={r.key}>
-                  <td>{r.league}</td>
-                  <td>{fmtKickoff(r.kickoff)}</td>
-                  <td className="op-team">{r.homeTeam} <span style={{ color: 'var(--op-text-faint)' }}>vs</span> {r.awayTeam}</td>
-                  <td>
+                  <td data-label="League">{r.league}</td>
+                  <td data-label="Kickoff">{fmtKickoff(r.kickoff)}</td>
+                  <td data-label="Match" className="op-team">{r.homeTeam} <span style={{ color: 'var(--op-text-faint)' }}>vs</span> {r.awayTeam}</td>
+                  <td data-label="Bet">
                     <span className={`op-badge ${r.side === 'over' ? 'mint' : 'indigo'}`}>{r.betLabel}</span>
                   </td>
-                  <td>{r.confidence}%</td>
-                  <td>{fmtOdds(r.odds)}</td>
-                  <td>{r.bookmaker || '—'}</td>
-                  <td className={`op-edge ${r.edge != null && r.edge > 0 ? 'positive' : 'negative'}`}>
+                  <td data-label="Confidence">{r.confidence}%</td>
+                  <td data-label="Best odds">{fmtOdds(r.odds)}</td>
+                  <td data-label="Bookmaker">{r.bookmaker || '—'}</td>
+                  <td data-label="EV edge" className={`op-edge ${r.edge != null && r.edge > 0 ? 'positive' : 'negative'}`}>
                     {fmtPct(r.edge)}
                   </td>
-                  <td>{r.kelly != null && r.kelly > 0 ? `${(r.kelly * 100).toFixed(1)}%` : '—'}</td>
+                  <td data-label="Kelly">{r.kelly != null && r.kelly > 0 ? `${(r.kelly * 100).toFixed(1)}%` : '—'}</td>
                 </tr>
               ))}
             </tbody>

@@ -141,3 +141,56 @@
   margin-left: auto;
 }
 .odds-page .op-quota.warn { color: var(--op-red); }
+
+/* ============================================================
+   Mobile (≤ 768px) — convert the table to card rows
+   ============================================================ */
+@media (max-width: 768px) {
+  .odds-page .op-head { padding: 18px 16px 14px; }
+  .odds-page .op-head h1 { font-size: 22px; }
+  .odds-page .op-filter-bar { padding: 12px 16px; gap: 10px; }
+  .odds-page .op-table-wrap { padding: 16px 16px 96px; }
+
+  .odds-page .op-table,
+  .odds-page .op-table thead,
+  .odds-page .op-table tbody,
+  .odds-page .op-table tr,
+  .odds-page .op-table th,
+  .odds-page .op-table td {
+    display: block;
+    width: 100%;
+  }
+  .odds-page .op-table thead {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+  }
+  .odds-page .op-table tr {
+    background: var(--op-bg-card);
+    border: 1px solid var(--op-border);
+    border-radius: var(--op-radius);
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .odds-page .op-table tr:hover { background: var(--op-bg-card); }
+  .odds-page .op-table td {
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--op-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    text-align: right;
+    font-size: 13px;
+    white-space: normal;
+  }
+  .odds-page .op-table td:last-child { border-bottom: none; }
+  .odds-page .op-table td::before {
+    content: attr(data-label);
+    color: var(--op-text-faint);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-right: 12px;
+  }
+}
