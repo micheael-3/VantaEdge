@@ -814,17 +814,9 @@ function BestBetCard({ user }) {
   }, []);
 
   if (loading) return null;
-  if (!data || !data.bestBet) {
-    return (
-      <div className="dp-bestbet-empty">
-        <strong style={{ color: 'var(--dp-text)', fontFamily: 'Syne, sans-serif', fontSize: 15 }}>
-          No qualifying Best Bet yet today.
-        </strong>{' '}
-        Picks need ≥70% confidence (and ≥8% EV when odds are present). The bar fills as
-        predictions are generated through the day.
-      </div>
-    );
-  }
+  // Calm-pass: hide entirely when no qualifying Best Bet. The empty
+  // explainer was adding noise to the top of the dashboard every day.
+  if (!data || !data.bestBet) return null;
 
   const bb = data.bestBet;
   const isFree = bb.teaser || user.tier === 'FREE';
@@ -898,7 +890,18 @@ export default function Dashboard() {
   const [message, setMessage] = useState('');
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [filter, setFilter] = useState('all');
-  const [showLegend, setShowLegend] = useState(true);
+  // Tutorial: persist dismissal across reloads. The HOW TO READ A MATCH
+  // panel only needs to be seen once; coming back to it every day was
+  // contributing to the "NASA console" feeling.
+  const LEGEND_KEY = 'vantaedge_dash_legend_dismissed_v1';
+  const [showLegend, setShowLegend] = useState(() => {
+    try { return window.localStorage.getItem(LEGEND_KEY) !== '1'; }
+    catch { return true; }
+  });
+  const dismissLegend = () => {
+    setShowLegend(false);
+    try { window.localStorage.setItem(LEGEND_KEY, '1'); } catch { /* ignore */ }
+  };
   // Seed adv filters from server prefs the first time the user lands here
   // (no localStorage yet), otherwise honour their saved tweaks.
   const [advFilters, setAdvFilters] = useState(() => {
@@ -1114,32 +1117,20 @@ export default function Dashboard() {
               </div>
               <span className="dp-tier-pill dp-mono">{user.tier}</span>
             </div>
-            <div className="dp-meta">
-              <div className="dp-meta-cell">
-                <span className="lbl">Today</span>
-                <span className="val">{matches.length}</span>
-              </div>
-              <div className="dp-meta-cell">
-                <span className="lbl">Strong value</span>
-                <span className="val mint">{strongCount}</span>
-              </div>
-              <div className="dp-meta-cell">
-                <span className="lbl">Avg conf (strong)</span>
-                <span className="val">{avgStrongConf ? `${avgStrongConf}%` : '—'}</span>
-              </div>
-              <div className="dp-meta-cell">
-                <span className="lbl">Best edge</span>
-                <span className="val mint">{bestEdge != null ? `+${bestEdge.toFixed(1)}%` : '—'}</span>
-              </div>
-              <div style={{ marginLeft: 'auto' }}>
-                <button
-                  className="dp-btn dp-btn-sm"
-                  onClick={() => fetchData(activeLeague, false)}
-                  disabled={loading}
-                >
-                  {loading ? 'Loading…' : '↺ Refresh'}
-                </button>
-              </div>
+            {/* Calm-pass: KPI strip (Today/Strong Value/Avg Conf/Best Edge)
+                removed from the header. The counts still surface on the
+                league tab badge + date pill counts, and the underlying
+                strongCount/avgStrongConf/bestEdge values stay computed in
+                state for any future re-use. Refresh moved next to the
+                date label so it stays one click away. */}
+            <div className="dp-meta" style={{ justifyContent: 'flex-end' }}>
+              <button
+                className="dp-btn dp-btn-sm"
+                onClick={() => fetchData(activeLeague, false)}
+                disabled={loading}
+              >
+                {loading ? 'Loading…' : '↺ Refresh'}
+              </button>
             </div>
           </header>
 
@@ -1148,7 +1139,7 @@ export default function Dashboard() {
           {/* Agent live activity — inline panel on desktop (hidden on mobile),
               plus a floating button + bottom sheet on mobile. Single render. */}
           <div style={{ padding: '14px 36px 0' }}>
-            <LiveActivity />
+            <LiveActivity hideWhenEmpty />
           </div>
 
           <div className="dp-league-tabs-wrap" style={{ marginTop: 24 }}>
@@ -1293,7 +1284,7 @@ export default function Dashboard() {
                   <span className="dp-mono" style={{ fontSize: 10, color: 'var(--dp-mint)', letterSpacing: '0.16em' }}>
                     HOW TO READ A MATCH
                   </span>
-                  <button className="dp-legend-close" onClick={() => setShowLegend(false)} aria-label="Dismiss">
+                  <button className="dp-legend-close" onClick={dismissLegend} aria-label="Dismiss">
                     ×
                   </button>
                 </div>

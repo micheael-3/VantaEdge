@@ -23,7 +23,7 @@ const ICONS = {
   BEST_BET_SELECTED: '⭐',
 };
 
-export default function LiveActivity() {
+export default function LiveActivity({ hideWhenEmpty = false } = {}) {
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
   const [error, setError] = useState(false);
@@ -90,9 +90,16 @@ export default function LiveActivity() {
     </>
   );
 
+  // Calm-pass: when hideWhenEmpty is set (dashboard inline render), drop
+  // the desktop panel entirely if there's no signal to show. The floating
+  // mobile button + bottom sheet stay so users can still pull up activity
+  // on demand.
+  const desktopEmpty = !error && items.length === 0;
+  const showDesktopPanel = !hideWhenEmpty || !desktopEmpty;
+
   return (
     <>
-      <div className="live-activity nav-mobile-hidden">{body}</div>
+      {showDesktopPanel && <div className="live-activity nav-mobile-hidden">{body}</div>}
 
       {/* Mobile floating toggle + bottom sheet */}
       <button
