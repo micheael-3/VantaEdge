@@ -97,7 +97,10 @@ async function callOpenRouter(userMessage) {
     max_tokens: 1000,
   };
 
-  const res = await axios.post(OPENROUTER_URL, body, { headers, timeout: 30000 });
+  // 15s timeout — anything slower would lose the Netlify 26s function
+  // timeout race anyway. Better to bail and return the analytical
+  // fallback for that one fixture than stall every other fixture too.
+  const res = await axios.post(OPENROUTER_URL, body, { headers, timeout: 15000 });
   const data = res.data;
   if (!data || !data.choices || !data.choices[0] || !data.choices[0].message) {
     throw new Error('OpenRouter returned no choices');

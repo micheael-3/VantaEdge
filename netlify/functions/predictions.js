@@ -214,17 +214,25 @@ async function handleLeague(event, leagueId) {
     }
   }
 
-  // Sequential fixture processing — API-Football paid plans cap requests
-  // per minute. Each fixture makes ~11 API calls (7 stats + 4 enrichment)
-  // in parallel internally, so processing one fixture at a time still
-  // gives a healthy 11-call burst, but spaces those bursts out enough
-  // that the rolling per-minute window never saturates. Total wall time
-  // for 10 fixtures ≈ 8-12 seconds, well inside the function timeout.
-  // Also retries once with a 2s backoff if a fixture hits a rate limit
-  // mid-run, since cached subsequent calls let the retry usually succeed.
-  const CHUNK_SIZE = 1;
-  const CHUNK_DELAY_MS = 700;
+  // Concurrent fixture processing — once AI is on, each fixture takes
+  // 5-10 seconds (Claude call dominates). Sequential would blow the 26s
+  // function timeout on 10 fixtures. Running 4 in parallel cuts wall time
+  // to ~3 chunks of 7s each ≈ 22s, just under the budget. The 4-wide burst
+  // hits API-Football with 4 fixtures × 11 calls = 44 calls in roughly a
+  // second, well below the per-minute cap (~450/min on Pro).
+  //
+  // Also wraps each fixture in a 22s timeout so a slow single Claude
+  // response can't stall the whole dashboard load — partial results
+  // beat no results.
+  const CHUNK_SIZE = 4;
+  const CHUNK_DELAY_MS = 0;
+  const PER_FIXTURE_TIMEOUT_MS = 22000;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const withTimeout = (promise, ms, fallback) =>
+    Promise.race([
+      promise,
+      new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
+    ]);
 
   const processOne = async (fx) => {
       const homeId = fx.teams.home.id;
@@ -480,10 +488,21 @@ async function handleLeague(event, leagueId) {
   const isRateLimitErr = (r) =>
     r && r.error && /rateLimit|Too many requests|exceeded the limit/i.test(r.error);
 
+  const timeoutFallbackFor = (fx) => ({
+    fixtureId: fx.fixture.id,
+    league: league.name,
+    kickoff: fx.fixture.date,
+    home: { name: fx.teams.home.name },
+    away: { name: fx.teams.away.name },
+    error: 'Analysis timed out — try refreshing in a moment',
+  });
+
   const results = [];
   for (let i = 0; i < fixtures.length; i += CHUNK_SIZE) {
     const chunk = fixtures.slice(i, i + CHUNK_SIZE);
-    const chunkResults = await Promise.all(chunk.map(processOne));
+    const chunkResults = await Promise.all(
+      chunk.map((fx) => withTimeout(processOne(fx), PER_FIXTURE_TIMEOUT_MS, timeoutFallbackFor(fx))),
+    );
 
     // If any fixture in this chunk hit a rate-limit, wait 2 seconds and
     // retry once. Most retries succeed because subsequent calls hit the
@@ -492,7 +511,7 @@ async function handleLeague(event, leagueId) {
       if (isRateLimitErr(chunkResults[j])) {
         await sleep(2000);
         try {
-          const retried = await processOne(chunk[j]);
+          const retried = await withTimeout(processOne(chunk[j]), PER_FIXTURE_TIMEOUT_MS, timeoutFallbackFor(chunk[j]));
           chunkResults[j] = retried;
         } catch {
           // keep the original error if retry itself throws
@@ -501,7 +520,7 @@ async function handleLeague(event, leagueId) {
     }
 
     results.push(...chunkResults);
-    if (i + CHUNK_SIZE < fixtures.length) {
+    if (i + CHUNK_SIZE < fixtures.length && CHUNK_DELAY_MS > 0) {
       await sleep(CHUNK_DELAY_MS);
     }
   }
