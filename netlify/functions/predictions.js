@@ -206,8 +206,16 @@ async function handleLeague(event, leagueId) {
     }
   }
 
-  const results = await Promise.all(
-    fixtures.map(async (fx) => {
+  // Batched fixture processing — API-Football paid plans cap requests per
+  // minute, so firing all 10 fixtures in parallel (each makes ~7 calls)
+  // bursts past the per-minute limit. Process in chunks of 2 with a short
+  // gap between chunks; total wall-time stays under the function's 26s
+  // budget while staying well below the per-minute cap.
+  const CHUNK_SIZE = 2;
+  const CHUNK_DELAY_MS = 1100;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const processOne = async (fx) => {
       const homeId = fx.teams.home.id;
       const awayId = fx.teams.away.id;
       try {
@@ -454,8 +462,17 @@ async function handleLeague(event, leagueId) {
           error: `Analysis failed: ${detail}${code}`,
         };
       }
-    }),
-  );
+  };
+
+  const results = [];
+  for (let i = 0; i < fixtures.length; i += CHUNK_SIZE) {
+    const chunk = fixtures.slice(i, i + CHUNK_SIZE);
+    const chunkResults = await Promise.all(chunk.map(processOne));
+    results.push(...chunkResults);
+    if (i + CHUNK_SIZE < fixtures.length) {
+      await sleep(CHUNK_DELAY_MS);
+    }
+  }
 
   return json(200, {
     league: league.name,

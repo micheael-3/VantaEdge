@@ -101,14 +101,23 @@ async function getFixtureCountByDate(leagueId, dateStr, ttlSeconds) {
   return Array.isArray(list) ? list.length : 0;
 }
 
+// API-Football's /fixtures `venue` param now expects an INTEGER venue ID
+// (it used to accept the strings 'home' / 'away'). To preserve the
+// home/away split without venue lookups, fetch the team's last N games
+// regardless of venue, then filter in JS by checking the home/away team
+// ids on each returned fixture.
 async function getTeamLastHomeGames(teamId, leagueId) {
-  const params = { team: teamId, league: leagueId, season: SEASON, last: 5, venue: 'home' };
-  return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params));
+  const params = { team: teamId, league: leagueId, season: SEASON, last: 10 };
+  const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params));
+  if (!Array.isArray(all)) return [];
+  return all.filter((f) => f.teams && f.teams.home && f.teams.home.id === teamId).slice(0, 5);
 }
 
 async function getTeamLastAwayGames(teamId, leagueId) {
-  const params = { team: teamId, league: leagueId, season: SEASON, last: 5, venue: 'away' };
-  return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params));
+  const params = { team: teamId, league: leagueId, season: SEASON, last: 10 };
+  const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params));
+  if (!Array.isArray(all)) return [];
+  return all.filter((f) => f.teams && f.teams.away && f.teams.away.id === teamId).slice(0, 5);
 }
 
 async function getH2H(homeId, awayId) {
