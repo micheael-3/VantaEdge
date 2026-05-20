@@ -439,14 +439,19 @@ async function handleLeague(event, leagueId) {
             : null,
         };
       } catch (err) {
-        console.error(`Fixture ${fx.fixture.id} failed:`, err.message);
+        // Surface the actual error to the client so we can debug without
+        // hunting through function logs. Stack-traceable name + message; the
+        // stack itself stays server-side.
+        const detail = err && err.message ? err.message : String(err);
+        const code = err && err.code ? ` [${err.code}]` : '';
+        console.error(`Fixture ${fx.fixture.id} failed:${code}`, detail, err && err.stack);
         return {
           fixtureId: fx.fixture.id,
           league: league.name,
           kickoff: fx.fixture.date,
           home: { name: fx.teams.home.name },
           away: { name: fx.teams.away.name },
-          error: 'Analysis failed for this fixture',
+          error: `Analysis failed: ${detail}${code}`,
         };
       }
     }),
