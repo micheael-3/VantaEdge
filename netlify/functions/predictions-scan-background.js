@@ -156,7 +156,7 @@ async function fetchFixturesForWeek(leagueId, weekStart, weekEnd) {
   return { fixtures: [], season: seasons[0] || null };
 }
 
-async function insertPredictionForUserId(adminUserId, fx, league, analysis, oddsData) {
+async function insertPredictionForUserId(adminUserId, fx, league, analysis, oddsData, matchData) {
   let autoEvOver = null;
   let autoEvBtts = null;
   let kellyOverAuto = 0;
@@ -170,19 +170,34 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
     kellyBttsAuto = calculateKelly(analysis.btts.confidence, oddsData.bestBttsOdds);
   }
 
+  // match_data JSON carries everything the UI needs that isn't already
+  // a top-level column: home/away form arrays, rest days, goals-per-game,
+  // and the AI reasoning strings (so /week can render them without
+  // re-running Claude).
+  const mdPayload = matchData
+    ? {
+        home: matchData.home || null,
+        away: matchData.away || null,
+        venue: matchData.venue || null,
+        reasoning: {
+          over: (analysis.over && analysis.over.reasoning) || null,
+          btts: (analysis.btts && analysis.btts.reasoning) || null,
+        },
+        aiStatus: analysis.aiStatus || 'ok',
+        aiReason: analysis.aiReason || null,
+      }
+    : null;
+
   // Stored against the system "scan" user — when a real user requests
-  // /api/predictions/week we either fan these rows out per user or read
-  // shared rows. We chose: store a single shared row (user_id = NULL not
-  // permitted by schema). Instead we re-use the FIRST admin user we find
-  // as the "scan owner". This keeps the existing predictions schema
-  // unchanged.
+  // /api/predictions/week we read these shared rows by league + kickoff
+  // window (no user_id filter).
   await sql()`
     INSERT INTO predictions
       (user_id, league, fixture_id, home_team, away_team, kickoff,
        over_line, over_confidence, btts, btts_confidence,
        ev_edge_over, ev_edge_btts, kelly_over, kelly_btts,
        best_over_odds, best_over_bookmaker, best_btts_odds, best_btts_bookmaker,
-       auto_ev_over, auto_ev_btts)
+       auto_ev_over, auto_ev_btts, match_data)
     VALUES
       (${adminUserId}, ${league.name}, ${fx.fixture.id}, ${fx.teams.home.name}, ${fx.teams.away.name},
        ${fx.fixture.date}, ${analysis.over.line}, ${Math.round(analysis.over.confidence)},
@@ -191,7 +206,8 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
        ${kellyOverAuto}, ${kellyBttsAuto},
        ${oddsData ? oddsData.bestOverOdds : null}, ${oddsData ? oddsData.bestOverBookmaker : null},
        ${oddsData ? oddsData.bestBttsOdds : null}, ${oddsData ? oddsData.bestBttsBookmaker : null},
-       ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null})`;
+       ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null},
+       ${mdPayload ? JSON.stringify(mdPayload) : null}::jsonb)`;
 }
 
 async function pickScanOwnerUserId() {
@@ -303,7 +319,7 @@ async function runScan(leagueId, weekStart) {
         console.error('[scan-bg] odds match failed:', err.message);
       }
 
-      await insertPredictionForUserId(ownerId, fx, league, analysis, oddsData);
+      await insertPredictionForUserId(ownerId, fx, league, analysis, oddsData, matchData);
     } catch (err) {
       console.error(`[scan-bg] fixture ${fx.fixture && fx.fixture.id} failed: ${err.message}`);
     } finally {

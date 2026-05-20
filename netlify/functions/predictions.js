@@ -290,23 +290,52 @@ function shapeForFrontend(row) {
   // Shape a `predictions` row into the same fixture object the dashboard
   // MatchCard reads. Predictions are stored as integers/strings; we
   // wrap them in the legacy { line, confidence, prediction } objects.
+  //
+  // The `match_data` JSONB column carries the contextual data the UI
+  // needs (form, rest, goals-per-game, AI reasoning) that isn't already
+  // a top-level column. Parse it once and spread the fields into the
+  // home/away objects so MatchCard reads them naturally.
+  let md = {};
+  if (row.match_data) {
+    try {
+      md = typeof row.match_data === 'string' ? JSON.parse(row.match_data) : row.match_data;
+    } catch {
+      md = {};
+    }
+  }
+  const mdHome = (md && md.home) || {};
+  const mdAway = (md && md.away) || {};
+  const reasoning = (md && md.reasoning) || {};
+
   return {
     id: row.id,
     fixtureId: row.fixture_id,
     league: row.league,
     kickoff: row.kickoff,
-    home: { name: row.home_team },
-    away: { name: row.away_team },
+    home: {
+      id: mdHome.id || null,
+      name: row.home_team,
+      form: mdHome.form || null,
+      restDays: mdHome.restDays != null ? mdHome.restDays : null,
+      goalsPerGame: mdHome.goalsPerGame || null,
+    },
+    away: {
+      id: mdAway.id || null,
+      name: row.away_team,
+      form: mdAway.form || null,
+      restDays: mdAway.restDays != null ? mdAway.restDays : null,
+      goalsPerGame: mdAway.goalsPerGame || null,
+    },
     predictions: {
       over: {
         line: row.over_line,
         confidence: row.over_confidence,
-        reasoning: null,
+        reasoning: reasoning.over || null,
       },
       btts: {
         prediction: row.btts,
         confidence: row.btts_confidence,
-        reasoning: null,
+        reasoning: reasoning.btts || null,
       },
       firstHalf: null,
       asianHandicap: null,
@@ -320,8 +349,8 @@ function shapeForFrontend(row) {
       over: row.ev_edge_over != null ? { edge: row.ev_edge_over } : null,
       btts: row.ev_edge_btts != null ? { edge: row.ev_edge_btts } : null,
     },
-    aiStatus: 'ok',
-    aiReason: null,
+    aiStatus: (md && md.aiStatus) || 'ok',
+    aiReason: (md && md.aiReason) || null,
   };
 }
 
@@ -372,7 +401,8 @@ async function handleWeek(event) {
   const rows = await sql()`
     SELECT id, fixture_id, league, home_team, away_team, kickoff,
            over_line, over_confidence, btts, btts_confidence,
-           ev_edge_over, ev_edge_btts, over_hit, btts_hit, created_at
+           ev_edge_over, ev_edge_btts, over_hit, btts_hit, created_at,
+           match_data
     FROM predictions
     WHERE kickoff >= ${weekStart}::date
       AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')

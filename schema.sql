@@ -97,6 +97,13 @@ ALTER TABLE predictions ADD COLUMN IF NOT EXISTS sharp_move_data              JS
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS accuracy_adjusted_confidence REAL;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS agent_score                  REAL;
 
+-- match_data: JSON blob storing contextual data the UI needs but the
+-- prediction outputs alone don't carry — home/away form, rest days,
+-- goals-per-game averages, last-5 H2H, etc. Populated by the weekly
+-- scan. /api/predictions/week reads this and merges into the response
+-- so match cards show real stats instead of em-dashes.
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS match_data                   JSONB;
+
 CREATE INDEX IF NOT EXISTS predictions_user_kickoff_idx ON predictions(user_id, kickoff DESC);
 CREATE INDEX IF NOT EXISTS predictions_user_created_idx ON predictions(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS predictions_kickoff_settled_idx
