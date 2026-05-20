@@ -14,15 +14,18 @@
 }
 .dashboard-page .cs-strip::-webkit-scrollbar { display: none; height: 0; }
 
+/* Pill: stack vertically with explicit margins instead of space-between.
+   space-between was distributing items unevenly when the dot was missing
+   (only 2 visible flex children) and the absolute-positioned count badge
+   was clipping the day-name. Explicit block margins are predictable. */
 .dashboard-page .cs-day {
   flex: 0 0 auto;
-  width: 44px;
-  height: 60px;
+  min-width: 48px;
+  padding: 8px 4px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 0;
+  justify-content: flex-start;
   border: 1px solid transparent;
   border-radius: 8px;
   cursor: pointer;
@@ -37,26 +40,32 @@
 }
 
 .dashboard-page .cs-day .day-name {
+  display: block;
   font-family: 'DM Mono', monospace;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   opacity: 0.6;
   line-height: 1;
+  margin-bottom: 4px;
 }
 .dashboard-page .cs-day .day-num {
+  display: block;
   font-family: 'Syne', 'Inter', system-ui, sans-serif;
   font-size: 18px;
   font-weight: 700;
   line-height: 1;
 }
 .dashboard-page .cs-day .day-dot {
+  display: block;
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: var(--dp-mint);
-  margin: 0 auto;
+  margin: 4px auto 0;
 }
+/* Count badge — sits in the top-right corner. Kept absolute but with
+   enough top padding on the pill above that day-name can never touch it. */
 .dashboard-page .cs-day .day-count {
   position: absolute;
   top: 2px;
@@ -100,13 +109,11 @@
   .dashboard-page .cs-strip {
     padding: 8px 16px;
     gap: 6px;
-    /* iOS momentum scroll */
     -webkit-overflow-scrolling: touch;
   }
   .dashboard-page .cs-day {
-    width: 40px;
-    height: 56px;
-    min-width: 40px;
+    min-width: 44px;
+    padding: 6px 4px;
   }
   .dashboard-page .cs-day .day-num { font-size: 16px; }
   .dashboard-page .cs-day .day-name { font-size: 9px; }

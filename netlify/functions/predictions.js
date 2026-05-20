@@ -92,51 +92,78 @@ const RECENT_FALLBACK_SEASONS = (() => {
 
 async function pickFixtures(leagueId, explicitDate) {
   const today = todayDateStr();
+  const nowUTC = new Date().toISOString();
+  console.log(`[predictions] pickFixtures start league=${leagueId} explicitDate=${explicitDate || 'none'} serverUTCnow=${nowUTC} serverUTCdate=${today}`);
 
+  // -------- Explicit date path with sliding-window fallback --------
+  // If the user clicked a specific date pill and it's empty, expand the
+  // search by ±1 day (covers UTC vs local-timezone mismatch: e.g. Cyprus
+  // is UTC+3, so an evening game "today" in Cyprus is logged on tomorrow's
+  // UTC date by API-Football). If still empty, fall through to the
+  // generic cascade so the user sees SOMETHING instead of a blank dashboard.
   if (explicitDate) {
-    let list = [];
-    let usedSeason = null;
-    for (const season of football.candidateSeasonsForDate(explicitDate)) {
-      list = await tryDate(leagueId, explicitDate, ttlForDate(explicitDate), season);
-      if (list.length) { usedSeason = season; break; }
+    const tryWindow = [explicitDate, addDaysStr(explicitDate, 1), addDaysStr(explicitDate, -1)];
+    for (const candidate of tryWindow) {
+      for (const season of football.candidateSeasonsForDate(candidate)) {
+        const list = await tryDate(leagueId, candidate, ttlForDate(candidate), season);
+        console.log(`[predictions] explicit-window league=${leagueId} candidate=${candidate} season=${season} → ${list.length}`);
+        if (list.length) {
+          return {
+            fixtures: list,
+            dateLabel: labelForDateStr(candidate),
+            matchDate: candidate,
+            isPast: candidate < today,
+            isUpcoming: candidate > today,
+            isToday: candidate === today,
+            mode: candidate === explicitDate ? 'explicit' : 'explicit-window',
+            seasonUsed: season,
+          };
+        }
+      }
     }
-    console.log(`[predictions] cascade explicit league=${leagueId} date=${explicitDate} season=${usedSeason} → ${list.length} fixtures`);
-    return {
-      fixtures: list,
-      dateLabel: labelForDateStr(explicitDate),
-      matchDate: explicitDate,
-      isPast: explicitDate < today,
-      isUpcoming: explicitDate > today,
-      isToday: explicitDate === today,
-      mode: 'explicit',
-      seasonUsed: usedSeason,
-    };
+    // Sliding window empty too — fall through to the generic cascade
+    // instead of returning [] (which would leave the dashboard blank).
+    console.log(`[predictions] explicit-window empty league=${leagueId} explicitDate=${explicitDate}; falling through to cascade`);
   }
 
-  // 1. Today, candidate seasons derived from today's calendar year
+  // -------- Generic cascade: today → tomorrow → yesterday → recent --------
+  // Yesterday was added because Cyprus / GMT+3 users at midnight-3am local
+  // are still on UTC "yesterday" — we want to find SOMETHING current.
+
+  // 1. Today UTC
   for (const season of football.candidateSeasonsForDate(today)) {
     const list = await tryDate(leagueId, today, 300, season);
+    console.log(`[predictions] cascade league=${leagueId} TODAY ${today} season=${season} → ${list.length}`);
     if (list.length) {
-      console.log(`[predictions] cascade league=${leagueId} hit TODAY season=${season} → ${list.length}`);
       return { fixtures: list, dateLabel: 'Today', matchDate: today, isPast: false, isUpcoming: false, isToday: true, mode: 'today', seasonUsed: season };
     }
   }
-  // 2. Tomorrow, candidate seasons derived from tomorrow's calendar year
+  // 2. Tomorrow UTC (covers late-evening Cyprus games on a fresh UTC day)
   const tomorrow = addDaysStr(today, 1);
   for (const season of football.candidateSeasonsForDate(tomorrow)) {
     const list = await tryDate(leagueId, tomorrow, 3600, season);
+    console.log(`[predictions] cascade league=${leagueId} TOMORROW ${tomorrow} season=${season} → ${list.length}`);
     if (list.length) {
-      console.log(`[predictions] cascade league=${leagueId} hit TOMORROW season=${season} → ${list.length}`);
       return { fixtures: list, dateLabel: 'Tomorrow', matchDate: tomorrow, isPast: false, isUpcoming: true, isToday: false, mode: 'tomorrow', seasonUsed: season };
     }
   }
-  // 3. Recent past (last=10) as the last-resort fallback. No date here,
-  //    so use the static SEASON +/- 1 list.
+  // 3. Yesterday UTC (handles "today Cyprus = yesterday UTC" edge case
+  //    around midnight Cyprus time, plus shows the most recently finished
+  //    matches when the league is between weekly rounds).
+  const yesterday = addDaysStr(today, -1);
+  for (const season of football.candidateSeasonsForDate(yesterday)) {
+    const list = await tryDate(leagueId, yesterday, 86400, season);
+    console.log(`[predictions] cascade league=${leagueId} YESTERDAY ${yesterday} season=${season} → ${list.length}`);
+    if (list.length) {
+      return { fixtures: list, dateLabel: 'Yesterday', matchDate: yesterday, isPast: true, isUpcoming: false, isToday: false, mode: 'yesterday', seasonUsed: season };
+    }
+  }
+  // 4. Recent past (last=10) — terminal fallback, no date param
   for (const season of RECENT_FALLBACK_SEASONS) {
     try {
       const recent = await football.apiGet('/fixtures', { league: leagueId, season, last: 10 }, { tag: `recent s${season}` });
+      console.log(`[predictions] cascade league=${leagueId} RECENT season=${season} → ${(recent || []).length}`);
       if (Array.isArray(recent) && recent.length) {
-        console.log(`[predictions] cascade league=${leagueId} hit RECENT season=${season} → ${recent.length}`);
         return { fixtures: recent, dateLabel: 'Recent Matches', matchDate: null, isPast: true, isUpcoming: false, isToday: false, mode: 'recent', seasonUsed: season };
       }
     } catch (err) {
@@ -144,7 +171,7 @@ async function pickFixtures(leagueId, explicitDate) {
     }
   }
 
-  console.warn(`[predictions] cascade league=${leagueId} — empty for both seasons today/tomorrow/recent`);
+  console.warn(`[predictions] cascade league=${leagueId} — empty across today/tomorrow/yesterday/recent`);
   return { fixtures: [], dateLabel: 'Recent Matches', matchDate: null, isPast: true, isUpcoming: false, isToday: false, mode: 'recent', seasonUsed: null };
 }
 
