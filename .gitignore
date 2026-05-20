@@ -9,3 +9,6 @@ dist/
 
 # Netlify local CLI state
 .netlify/
+
+# Claude Code local settings (per-machine)
+.claude/
