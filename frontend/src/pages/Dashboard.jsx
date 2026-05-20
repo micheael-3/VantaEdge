@@ -3,6 +3,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { predictions as predictionsApi } from '../api/client';
 import { bestBet as bestBetApi } from '../api/blog';
+import { bankroll as bankrollApi } from '../api/bankroll';
 import { LEAGUES } from '../config/leagues';
 import { calculateEV, calculateKelly } from '../lib/ev';
 import './Dashboard.css';
@@ -294,7 +295,7 @@ function CompareOdds({ oddsData, overLineFromAi }) {
 }
 
 // ============ Match card ============
-function MatchCard({ m, userTier }) {
+function MatchCard({ m, userTier, onLogBet }) {
   const [overOdds, setOverOdds] = useState('');
   const [bttsOdds, setBttsOdds] = useState('');
   const [compareOpen, setCompareOpen] = useState(false);
@@ -431,13 +432,39 @@ function MatchCard({ m, userTier }) {
             })()}
 
             {(() => {
-              const k = m.oddsData.autoEV && (m.oddsData.autoEV.kellyOver || m.oddsData.autoEV.kellyBtts);
-              if (!k || k <= 0) return null;
+              const auto = m.oddsData.autoEV || {};
+              const kOver = auto.kellyOver || 0;
+              const kBtts = auto.kellyBtts || 0;
+              const kBest = Math.max(kOver, kBtts);
+              if (kBest <= 0) return null;
+              const useOver = kOver >= kBtts;
+              const odds = useOver ? m.oddsData.bestOverOdds : m.oddsData.bestBttsOdds;
+              const market = useOver ? 'OVER' : 'BTTS';
+              const canLog = userTier === 'ANALYST' || userTier === 'EDGE';
+              const bet = useOver ? `OVER ${m.oddsData.overLine}` : `BTTS ${m.oddsData.bttsSide || 'YES'}`;
               return (
-                <div className="dp-odds-row">
-                  <span className="l">Kelly stake</span>
-                  <span className="v">{(k * 100).toFixed(1)}% bankroll</span>
-                </div>
+                <>
+                  <div className="dp-odds-row">
+                    <span className="l">Kelly stake</span>
+                    <span className="v">{(kBest * 100).toFixed(1)}% bankroll</span>
+                  </div>
+                  {canLog && onLogBet && odds && (
+                    <button
+                      className="dp-compare-toggle"
+                      style={{ marginTop: 6 }}
+                      onClick={() => onLogBet({
+                        predictionId: m.id,
+                        odds,
+                        market,
+                        kelly: kBest,
+                        bet,
+                        match: `${m.home && m.home.name} vs ${m.away && m.away.name}`,
+                      })}
+                    >
+                      → Log this bet
+                    </button>
+                  )}
+                </>
               );
             })()}
 
@@ -651,6 +678,24 @@ export default function Dashboard() {
   useEffect(() => {
     saveFilters(advFilters);
   }, [advFilters]);
+
+  // Bankroll metadata (for Kelly stake suggestion + Log This Bet flow).
+  // Only fetched for paid tiers; FREE/SCOUT don't have access to /api/bankroll.
+  const isPaidPlus = user.tier === 'ANALYST' || user.tier === 'EDGE';
+  const [bankrollMeta, setBankrollMeta] = useState(null);
+  useEffect(() => {
+    if (!isPaidPlus) return;
+    let cancelled = false;
+    bankrollApi
+      .get()
+      .then((d) => { if (!cancelled) setBankrollMeta(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isPaidPlus]);
+
+  // Log This Bet modal state.
+  const [logBetCtx, setLogBetCtx] = useState(null);
+  const closeLogBet = () => setLogBetCtx(null);
 
   const fetchData = useCallback(async (leagueId, initial = false) => {
     setLoading(true);
@@ -951,7 +996,14 @@ export default function Dashboard() {
                 onAll={() => setActiveLeague(LEAGUES[0].id)}
               />
             ) : (
-              filtered.map((m) => <MatchCard key={m.fixtureId || m.id} m={m} userTier={user.tier} />)
+              filtered.map((m) => (
+                <MatchCard
+                  key={m.fixtureId || m.id}
+                  m={m}
+                  userTier={user.tier}
+                  onLogBet={isPaidPlus ? setLogBetCtx : null}
+                />
+              ))
             )}
 
             {!loading && matches.length === 0 && message && (
@@ -961,6 +1013,127 @@ export default function Dashboard() {
             )}
           </div>
         </main>
+      </div>
+
+      {logBetCtx && (
+        <DashboardLogBetModal
+          ctx={logBetCtx}
+          bankrollMeta={bankrollMeta}
+          onClose={closeLogBet}
+          onSaved={(updated) => {
+            setBankrollMeta(updated);
+            closeLogBet();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============ Log This Bet modal (Dashboard) ============
+function DashboardLogBetModal({ ctx, bankrollMeta, onClose, onSaved }) {
+  const balance = bankrollMeta && bankrollMeta.bankroll ? Number(bankrollMeta.bankroll.currentAmount) : null;
+  const currency = bankrollMeta && bankrollMeta.bankroll ? bankrollMeta.bankroll.currency : 'USD';
+  const suggested = balance != null && ctx.kelly ? Math.round(balance * ctx.kelly * 100) / 100 : '';
+  const [stake, setStake] = useState(suggested === '' ? '' : String(suggested));
+  const [notes, setNotes] = useState(ctx.bet ? `${ctx.match} — ${ctx.bet}` : '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const noBankroll = bankrollMeta && bankrollMeta.bankroll == null;
+  const sym = { USD: '$', GBP: '£', EUR: '€' }[currency] || '$';
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (noBankroll) return;
+    setError('');
+    const s = Number(stake);
+    if (!s || s <= 0) { setError('Enter a stake greater than 0'); return; }
+    setBusy(true);
+    try {
+      await bankrollApi.logBet({
+        predictionId: ctx.predictionId,
+        stake: s,
+        odds: ctx.odds,
+        market: ctx.market,
+        notes,
+      });
+      const fresh = await bankrollApi.get();
+      onSaved(fresh);
+    } catch (err) {
+      setError((err.response && err.response.data && err.response.data.error) || 'Failed to log bet');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // We use inline styles here so the modal renders correctly even without
+  // the bankroll-page-scoped CSS being on the dashboard route.
+  const overlay = {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 100, padding: 20,
+  };
+  const box = {
+    background: '#111118', border: '1px solid #2a2a38', borderRadius: 14,
+    maxWidth: 460, width: '100%', padding: '24px 22px', color: '#e8e8ec',
+    fontFamily: 'Inter, system-ui, sans-serif', position: 'relative',
+  };
+  const label = { fontFamily: 'DM Mono, monospace', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.14em', color: '#5a5a68', display: 'block', marginBottom: 6 };
+  const input = { width: '100%', padding: '10px 12px', background: '#16161f', border: '1px solid #2a2a38', color: '#e8e8ec', borderRadius: 8, fontSize: 14, fontFamily: 'DM Mono, monospace', outline: 'none' };
+  const btn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 38, padding: '0 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid #2a2a38', background: 'transparent', color: '#e8e8ec' };
+  const btnPrimary = { ...btn, background: '#6ee7b7', color: '#052e1f', borderColor: '#6ee7b7', fontWeight: 600 };
+
+  return (
+    <div style={overlay} onClick={onClose}>
+      <div style={box} onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} aria-label="Close" style={{ position: 'absolute', top: 10, right: 14, background: 'transparent', border: 'none', color: '#5a5a68', fontSize: 22, cursor: 'pointer' }}>×</button>
+        <h3 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 20, margin: '0 0 6px', letterSpacing: '-0.015em' }}>Log this bet</h3>
+        <div style={{ color: '#9696a3', fontSize: 13, marginBottom: 18 }}>
+          {ctx.match} · <span style={{ color: '#6ee7b7', fontFamily: 'DM Mono, monospace' }}>{ctx.bet}</span> @ {Number(ctx.odds).toFixed(2)}
+        </div>
+
+        {noBankroll ? (
+          <div style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24', padding: '12px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+            You haven't set up a bankroll yet. <Link to="/bankroll" style={{ color: '#6ee7b7', textDecoration: 'underline' }}>Set one up</Link> and come back.
+          </div>
+        ) : (
+          <form onSubmit={submit}>
+            <div style={{ marginBottom: 12 }}>
+              <label style={label}>
+                Stake
+                {balance != null && (
+                  <span style={{ float: 'right', color: '#9696a3', textTransform: 'none', letterSpacing: 0 }}>
+                    bankroll {sym}{balance.toFixed(2)}
+                  </span>
+                )}
+              </label>
+              <input
+                style={input}
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={stake}
+                onChange={(e) => setStake(e.target.value)}
+                autoFocus
+              />
+              {ctx.kelly > 0 && (
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#9696a3', marginTop: 6 }}>
+                  Kelly suggests {(ctx.kelly * 100).toFixed(1)}% of bankroll{balance != null ? ` = ${sym}${(balance * ctx.kelly).toFixed(2)}` : ''}
+                </div>
+              )}
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={label}>Notes</label>
+              <input style={input} type="text" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </div>
+            {error && <div style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button type="button" style={btn} onClick={onClose}>Cancel</button>
+              <button type="submit" style={btnPrimary} disabled={busy}>{busy ? 'Saving…' : 'Log bet'}</button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

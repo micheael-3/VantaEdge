@@ -1,0 +1,252 @@
+const { sql } = require('./_shared/db');
+const { json, error, notFound, parseBody, subPath } = require('./_shared/response');
+const { requireUser } = require('./_shared/auth-mw');
+const { requireTier } = require('./_shared/tier');
+const {
+  VALID_RESULTS,
+  VALID_MARKETS,
+  computeBetProfit,
+  shapeBankroll,
+  shapeEntry,
+  settlePendingEntry,
+} = require('./_shared/bankroll');
+
+const ALLOWED_CURRENCIES = new Set(['USD', 'GBP', 'EUR']);
+
+// ---------- GET /api/bankroll ----------
+async function getBankroll(event) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+  const gate = requireTier(user, 'ANALYST');
+  if (gate) return gate;
+
+  const [bk] = await sql()`SELECT * FROM bankrolls WHERE user_id = ${user.id}`;
+  if (!bk) return json(200, { bankroll: null, entries: [], series: [] });
+
+  const entries = await sql()`
+    SELECT id, type, market, stake, odds, result, profit_loss, balance_before,
+           balance_after, notes, prediction_id, created_at
+    FROM bankroll_entries
+    WHERE user_id = ${user.id}
+    ORDER BY created_at DESC
+    LIMIT 30`;
+
+  // Growth series — chronological order with starting amount as the first
+  // datapoint so the chart starts at the original deposit.
+  const seriesRows = await sql()`
+    SELECT created_at, balance_after
+    FROM bankroll_entries
+    WHERE user_id = ${user.id}
+    ORDER BY created_at ASC`;
+  const series = [
+    { ts: bk.created_at, balance: Number(bk.starting_amount) },
+    ...seriesRows.map((r) => ({ ts: r.created_at, balance: Number(r.balance_after) })),
+  ];
+
+  // Headline stats — only WIN/LOSS bets count for win rate / ROI; ADJUSTMENTs
+  // and PUSH/PENDING are excluded.
+  const settled = await sql()`
+    SELECT result, stake, profit_loss FROM bankroll_entries
+    WHERE user_id = ${user.id} AND type = 'BET' AND result IN ('WIN', 'LOSS')`;
+  const wins = settled.filter((r) => r.result === 'WIN').length;
+  const losses = settled.length - wins;
+  const totalStaked = settled.reduce((s, r) => s + Number(r.stake || 0), 0);
+  const totalProfit = settled.reduce((s, r) => s + Number(r.profit_loss || 0), 0);
+
+  const pl = Number(bk.current_amount) - Number(bk.starting_amount);
+  const stats = {
+    bets: settled.length,
+    wins,
+    losses,
+    winRate: settled.length ? Math.round((wins / settled.length) * 1000) / 10 : 0,
+    totalStaked: Math.round(totalStaked * 100) / 100,
+    totalProfit: Math.round(totalProfit * 100) / 100,
+    roi: totalStaked > 0 ? Math.round((totalProfit / totalStaked) * 1000) / 10 : 0,
+    pl: Math.round(pl * 100) / 100,
+    plPct:
+      Number(bk.starting_amount) > 0
+        ? Math.round((pl / Number(bk.starting_amount)) * 1000) / 10
+        : 0,
+  };
+
+  return json(200, {
+    bankroll: shapeBankroll(bk),
+    entries: entries.map(shapeEntry),
+    series,
+    stats,
+  });
+}
+
+// ---------- POST /api/bankroll/setup ----------
+async function setupBankroll(event) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+  const gate = requireTier(user, 'ANALYST');
+  if (gate) return gate;
+
+  const body = parseBody(event);
+  const startingAmount = Number(body.startingAmount);
+  const currency = ALLOWED_CURRENCIES.has(body.currency) ? body.currency : 'USD';
+  if (!startingAmount || startingAmount <= 0) return error(400, 'startingAmount must be > 0');
+
+  const [bk] = await sql()`
+    INSERT INTO bankrolls (user_id, starting_amount, current_amount, currency)
+    VALUES (${user.id}, ${startingAmount}, ${startingAmount}, ${currency})
+    ON CONFLICT (user_id) DO UPDATE
+      SET starting_amount = EXCLUDED.starting_amount,
+          current_amount = EXCLUDED.current_amount,
+          currency = EXCLUDED.currency,
+          updated_at = NOW()
+    RETURNING *`;
+
+  // Optional: clear old entries on setup. Spec doesn't require it, so we
+  // keep history intact (user can wipe via Settings → Danger zone if needed).
+  return json(201, { bankroll: shapeBankroll(bk) });
+}
+
+// ---------- POST /api/bankroll/entry ----------
+async function addManualEntry(event) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+  const gate = requireTier(user, 'ANALYST');
+  if (gate) return gate;
+
+  const body = parseBody(event);
+  const type = String(body.type || 'BET').toUpperCase();
+  if (!['BET', 'ADJUSTMENT'].includes(type)) return error(400, 'Invalid type');
+
+  const [bk] = await sql()`SELECT * FROM bankrolls WHERE user_id = ${user.id}`;
+  if (!bk) return error(400, 'Set up your bankroll first');
+
+  const balanceBefore = Number(bk.current_amount);
+  let balanceAfter = balanceBefore;
+  let profitLoss = 0;
+  let result = 'PENDING';
+
+  let stake = null;
+  let odds = null;
+  let market = null;
+
+  if (type === 'ADJUSTMENT') {
+    // body.amount can be positive (deposit) or negative (withdraw).
+    const amount = Number(body.amount);
+    if (!amount || Number.isNaN(amount)) return error(400, 'amount required');
+    profitLoss = amount;
+    balanceAfter = balanceBefore + amount;
+    result = 'WIN'; // not really a bet; we just use this to mark it settled. Frontend filters by type.
+  } else {
+    // BET
+    stake = Number(body.stake);
+    odds = Number(body.odds);
+    if (!stake || stake <= 0) return error(400, 'stake must be > 0');
+    if (!odds || odds <= 1) return error(400, 'odds must be > 1');
+    if (stake > balanceBefore) return error(400, 'stake exceeds current bankroll');
+
+    market = String(body.market || 'OTHER').toUpperCase();
+    if (!VALID_MARKETS.has(market)) market = 'OTHER';
+
+    result = String(body.result || 'PENDING').toUpperCase();
+    if (!VALID_RESULTS.has(result)) result = 'PENDING';
+
+    // Stake leaves the bankroll right away.
+    balanceAfter = balanceBefore - stake;
+    if (result === 'WIN' || result === 'PUSH') {
+      const refund = result === 'WIN' ? stake + (stake * (odds - 1)) : stake;
+      balanceAfter += refund;
+    }
+    profitLoss = computeBetProfit(stake, odds, result);
+  }
+
+  const notes = typeof body.notes === 'string' ? body.notes.slice(0, 500) : null;
+
+  const [inserted] = await sql()`
+    INSERT INTO bankroll_entries
+      (user_id, prediction_id, type, market, stake, odds, result, profit_loss,
+       balance_before, balance_after, notes)
+    VALUES
+      (${user.id}, ${null}, ${type}, ${market}, ${stake}, ${odds}, ${result}, ${profitLoss},
+       ${balanceBefore}, ${balanceAfter}, ${notes})
+    RETURNING *`;
+
+  await sql()`
+    UPDATE bankrolls SET current_amount = ${balanceAfter}, updated_at = NOW()
+    WHERE user_id = ${user.id}`;
+
+  return json(201, { entry: shapeEntry(inserted), newBalance: balanceAfter });
+}
+
+// ---------- POST /api/bankroll/bet ----------
+// Linked to a prediction. Auto-settles immediately if the prediction is already settled.
+async function logBet(event) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+  const gate = requireTier(user, 'ANALYST');
+  if (gate) return gate;
+
+  const body = parseBody(event);
+  const predictionId = body.predictionId;
+  if (!predictionId) return error(400, 'predictionId required');
+  const stake = Number(body.stake);
+  const odds = Number(body.odds);
+  if (!stake || stake <= 0) return error(400, 'stake must be > 0');
+  if (!odds || odds <= 1) return error(400, 'odds must be > 1');
+  const market = String(body.market || 'OVER').toUpperCase();
+  if (!VALID_MARKETS.has(market)) return error(400, 'Invalid market');
+
+  const [bk] = await sql()`SELECT * FROM bankrolls WHERE user_id = ${user.id}`;
+  if (!bk) return error(400, 'Set up your bankroll first');
+  if (stake > Number(bk.current_amount)) return error(400, 'stake exceeds current bankroll');
+
+  // Confirm the prediction exists and belongs to this user (or matches a public fixture).
+  const [pred] = await sql()`
+    SELECT id, user_id, over_hit, btts_hit FROM predictions WHERE id = ${predictionId}`;
+  if (!pred) return error(404, 'Prediction not found');
+
+  const balanceBefore = Number(bk.current_amount);
+  const balanceAfter = balanceBefore - stake;
+
+  const [inserted] = await sql()`
+    INSERT INTO bankroll_entries
+      (user_id, prediction_id, type, market, stake, odds, result, profit_loss,
+       balance_before, balance_after, notes)
+    VALUES
+      (${user.id}, ${predictionId}, 'BET', ${market}, ${stake}, ${odds}, 'PENDING', 0,
+       ${balanceBefore}, ${balanceAfter}, ${typeof body.notes === 'string' ? body.notes.slice(0, 500) : null})
+    RETURNING *`;
+
+  await sql()`
+    UPDATE bankrolls SET current_amount = ${balanceAfter}, updated_at = NOW()
+    WHERE user_id = ${user.id}`;
+
+  // If the linked prediction has already settled, settle this entry now.
+  let settledNow = null;
+  if (pred.over_hit !== null || pred.btts_hit !== null) {
+    settledNow = await settlePendingEntry({ ...inserted, user_id: user.id }, pred);
+  }
+
+  // Re-read for the post-settle state.
+  const [final] = await sql()`SELECT * FROM bankroll_entries WHERE id = ${inserted.id}`;
+  const [bkFinal] = await sql()`SELECT current_amount FROM bankrolls WHERE user_id = ${user.id}`;
+
+  return json(201, {
+    entry: shapeEntry(final),
+    newBalance: Number(bkFinal.current_amount),
+    settled: !!settledNow,
+  });
+}
+
+exports.handler = async (event) => {
+  try {
+    if (event.httpMethod === 'OPTIONS') return { statusCode: 204, body: '' };
+    const path = subPath(event, 'bankroll');
+    const method = event.httpMethod;
+    if (method === 'GET' && (path === '/' || path === '')) return await getBankroll(event);
+    if (method === 'POST' && path === '/setup') return await setupBankroll(event);
+    if (method === 'POST' && path === '/entry') return await addManualEntry(event);
+    if (method === 'POST' && path === '/bet') return await logBet(event);
+    return notFound();
+  } catch (err) {
+    console.error('bankroll handler error:', err);
+    return error(500, err.message || 'Internal server error');
+  }
+};

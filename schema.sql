@@ -208,6 +208,12 @@ CREATE TABLE IF NOT EXISTS bankroll_entries (
 );
 CREATE INDEX IF NOT EXISTS bankroll_entries_user_idx ON bankroll_entries(user_id, created_at DESC);
 
+-- Which side of a prediction the bet was on (OVER / BTTS / OTHER).
+-- Needed so auto-settle can look at the right column (over_hit vs btts_hit).
+ALTER TABLE bankroll_entries ADD COLUMN IF NOT EXISTS market TEXT;
+CREATE INDEX IF NOT EXISTS bankroll_entries_pred_idx
+  ON bankroll_entries(prediction_id) WHERE prediction_id IS NOT NULL AND result = 'PENDING';
+
 -- =====================================================================
 -- Email log (for digest history + debugging)
 -- =====================================================================

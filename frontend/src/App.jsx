@@ -21,6 +21,7 @@ import Blog from './pages/Blog';
 import BlogPost from './pages/BlogPost';
 import Odds from './pages/Odds';
 import AdminOdds from './pages/admin/AdminOdds';
+import Bankroll from './pages/Bankroll';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -59,6 +60,15 @@ function AdminProtected({ children }) {
 }
 
 function OddsGuard({ children }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.tier !== 'ANALYST' && user.tier !== 'EDGE') {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return children;
+}
+
+function BankrollGuard({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   if (user.tier !== 'ANALYST' && user.tier !== 'EDGE') {
@@ -131,6 +141,16 @@ export default function App() {
               <OddsGuard>
                 <Odds />
               </OddsGuard>
+            </Protected>
+          }
+        />
+        <Route
+          path="/bankroll"
+          element={
+            <Protected>
+              <BankrollGuard>
+                <Bankroll />
+              </BankrollGuard>
             </Protected>
           }
         />

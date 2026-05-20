@@ -12,6 +12,7 @@
 const { sql } = require('./_shared/db');
 const { json, error, notFound, subPath } = require('./_shared/response');
 const football = require('./_shared/football');
+const { settleEntriesForPrediction } = require('./_shared/bankroll');
 
 const SCHEDULE = '0 */2 * * *';
 
@@ -87,6 +88,7 @@ async function settleBatch({ dryRun = false } = {}) {
     fixturesMissingScore: 0,
     fixturesErrored: 0,
     predictionsUpdated: 0,
+    bankrollEntriesSettled: 0,
     examples: [],
   };
 
@@ -128,6 +130,15 @@ async function settleBatch({ dryRun = false } = {}) {
           UPDATE predictions
           SET over_hit = ${calc.overHit}, btts_hit = ${calc.bttsHit}
           WHERE id = ${p.id}`;
+        // Cascade settlement to any pending bankroll entries that linked
+        // to this prediction. Errors are swallowed so they don't NACK the
+        // scheduled run for everyone else.
+        try {
+          const settled = await settleEntriesForPrediction(p.id);
+          if (settled.length) report.bankrollEntriesSettled += settled.length;
+        } catch (err) {
+          console.error(`[results] bankroll settle failed for prediction ${p.id}:`, err.message);
+        }
       }
       report.predictionsUpdated += 1;
       if (report.examples.length < 5) {
