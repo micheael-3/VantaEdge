@@ -8,6 +8,7 @@ import { LEAGUES } from '../config/leagues';
 import { calculateEV, calculateKelly } from '../lib/ev';
 import LiveActivity from '../components/LiveActivity';
 import OnboardingOverlay from '../components/OnboardingOverlay';
+import ToolsModal from '../components/ToolsModal';
 import './Dashboard.css';
 
 const FILTER_KEY = 'vantaedge_dash_filters_v1';
@@ -71,7 +72,7 @@ function isStrongValue(m) {
 }
 
 // ============ Sidebar ============
-function Sidebar({ user, onLogout }) {
+function Sidebar({ user, onLogout, onOpenTool }) {
   return (
     <aside className="dp-sidebar">
       <Link to="/" className="dp-brand">
@@ -106,26 +107,40 @@ function Sidebar({ user, onLogout }) {
 
       <div className="dp-side-section">
         <div className="dp-side-label">Tools</div>
-        <div className="dp-side-link disabled" title="Coming soon">
+        <button
+          type="button"
+          className="dp-side-link tool"
+          onClick={() => onOpenTool && onOpenTool('ev')}
+          title="EV Calculator"
+        >
           <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
             <rect x="4" y="4" width="16" height="16" rx="2" />
             <path d="M9 9h6M9 13h6M9 17h3" />
           </svg>
           EV Calculator
-        </div>
-        <div className="dp-side-link disabled" title="Coming soon">
+        </button>
+        <button
+          type="button"
+          className="dp-side-link tool"
+          onClick={() => onOpenTool && onOpenTool('kelly')}
+          title="Kelly Sizer"
+        >
           <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
             <path d="M12 2v20M2 12h20" />
           </svg>
           Kelly Sizer
-        </div>
-        <div className="dp-side-link disabled" title="Coming soon">
+        </button>
+        <NavLink
+          to="/bankroll"
+          className={({ isActive }) => `dp-side-link ${isActive ? 'active' : ''}`}
+          title="Bet Tracker"
+        >
           <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
             <circle cx="12" cy="12" r="9" />
             <path d="M9 12h6" />
           </svg>
           Bet Tracker
-        </div>
+        </NavLink>
       </div>
 
       <div className="dp-side-section">
@@ -958,6 +973,9 @@ export default function Dashboard() {
   const [logBetCtx, setLogBetCtx] = useState(null);
   const closeLogBet = () => setLogBetCtx(null);
 
+  // Tools modal — driven by the sidebar Tools section. 'ev' or 'kelly'.
+  const [activeTool, setActiveTool] = useState(null);
+
   const fetchData = useCallback(async (leagueId, initial = false, dateOverride = null) => {
     setLoading(true);
     setError('');
@@ -1101,7 +1119,7 @@ export default function Dashboard() {
   return (
     <div className="dashboard-page">
       <div className="dp-layout">
-        <Sidebar user={user} onLogout={handleLogout} />
+        <Sidebar user={user} onLogout={handleLogout} onOpenTool={setActiveTool} />
         <main className="dp-main">
           <MobileTop user={user} onLogout={handleLogout} />
 
@@ -1395,6 +1413,8 @@ export default function Dashboard() {
           }}
         />
       )}
+
+      {activeTool && <ToolsModal tool={activeTool} onClose={() => setActiveTool(null)} />}
 
       {/* Mobile-only floating refresh button (replaces the header refresh below 769px) */}
       <button
