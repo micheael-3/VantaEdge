@@ -216,6 +216,164 @@ function FormDots({ form }) {
   );
 }
 
+// ============ Match details (xG / weather / referee / injuries) ============
+function fmtGpg(g) {
+  if (!g || (g.avgFor == null && g.avgAgainst == null)) return '—';
+  const f = g.avgFor != null ? Number(g.avgFor).toFixed(2) : '—';
+  const a = g.avgAgainst != null ? Number(g.avgAgainst).toFixed(2) : '—';
+  return `${f} / ${a}`;
+}
+
+const WEATHER_ICON = {
+  Clear: '☀',
+  Clouds: '☁',
+  Rain: '🌧',
+  Drizzle: '🌦',
+  Thunderstorm: '⛈',
+  Snow: '❄',
+  Mist: '🌫',
+  Fog: '🌫',
+  Haze: '🌫',
+};
+
+const WEATHER_WARN_TEXT = {
+  HEAVY_RAIN: '⚠ Heavy rain forecast — may suppress scoring',
+  STRONG_WIND: '⚠ Strong wind — long-range shooting suffers',
+  EXTREME_HEAT: '⚠ Extreme heat — fatigue impact on second half',
+  COLD: '❄ Cold — minor factor for travelling sides',
+};
+
+function MatchDetails({ m }) {
+  const homeInj = (m.home && Array.isArray(m.home.injuries)) ? m.home.injuries : [];
+  const awayInj = (m.away && Array.isArray(m.away.injuries)) ? m.away.injuries : [];
+  const ref = m.referee;
+  const weather = m.weather;
+  const showXg = (m.home && m.home.goalsPerGame) || (m.away && m.away.goalsPerGame);
+  const showAny = showXg || ref || weather || homeInj.length > 0 || awayInj.length > 0;
+  if (!showAny) return null;
+
+  const refAvg = ref && ref.avgGoalsPerGame;
+  const refAbove = refAvg != null && refAvg > 2.6;
+
+  return (
+    <div className="dp-details">
+      <div className="dp-details-grid">
+        {showXg && (
+          <div className="dp-detail-block">
+            <div className="dp-detail-head">Goals per game (For / Against)</div>
+            <div className="dp-detail-row">
+              <span className="lbl">{m.home && m.home.name}</span>
+              <span>{fmtGpg(m.home && m.home.goalsPerGame)}</span>
+            </div>
+            <div className="dp-detail-row">
+              <span className="lbl">{m.away && m.away.name}</span>
+              <span>{fmtGpg(m.away && m.away.goalsPerGame)}</span>
+            </div>
+          </div>
+        )}
+
+        {weather && (
+          <div className="dp-detail-block">
+            <div className="dp-detail-head">Weather at kickoff {weather.city ? `· ${weather.city}` : ''}</div>
+            <div className="dp-weather-chip">
+              <span style={{ fontSize: 18 }}>{WEATHER_ICON[weather.condition] || '🌡'}</span>
+              <span>{weather.condition || '—'}</span>
+              {weather.temp != null && <span>· {weather.temp}°C</span>}
+              {weather.windSpeed != null && <span>· wind {weather.windSpeed} km/h</span>}
+              {weather.precipitation > 0 && <span>· {weather.precipitation}mm precip</span>}
+            </div>
+            {Array.isArray(weather.warnings) && weather.warnings.length > 0 && (
+              <div style={{ marginTop: 4 }}>
+                {weather.warnings.map((w) => (
+                  <div key={w} className="dp-weather-warn">{WEATHER_WARN_TEXT[w] || w}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {ref && ref.name && (
+          <div className="dp-detail-block">
+            <div className="dp-detail-head">Referee</div>
+            <div className="dp-detail-row">
+              <span className="lbl">Name</span>
+              <span>{ref.name}</span>
+            </div>
+            {ref.matchesAnalysed > 0 ? (
+              <>
+                <div className="dp-detail-row">
+                  <span className="lbl">Avg goals/game</span>
+                  <span>
+                    {ref.avgGoalsPerGame}
+                    {refAbove && <span className="dp-ref-arrow" title="Above the ~2.6 league baseline">↑</span>}
+                  </span>
+                </div>
+                <div className="dp-detail-row">
+                  <span className="lbl">BTTS rate</span>
+                  <span>{ref.bttsRate}%</span>
+                </div>
+                <div className="dp-detail-row">
+                  <span className="lbl">Over 2.5 rate</span>
+                  <span>{ref.over25Rate}%</span>
+                </div>
+                <div className="dp-injury-empty" style={{ marginTop: 4 }}>
+                  Sample: last {ref.matchesAnalysed} matches officiated
+                </div>
+              </>
+            ) : (
+              <div className="dp-injury-empty">No prior matches officiated in our window.</div>
+            )}
+          </div>
+        )}
+
+        {(homeInj.length > 0 || awayInj.length > 0) && (
+          <div className="dp-detail-block">
+            <div className="dp-detail-head">Injuries / suspensions</div>
+            <div className="dp-detail-row" style={{ marginTop: 2 }}>
+              <span className="lbl">{m.home && m.home.name}</span>
+              <span>{homeInj.length} out</span>
+            </div>
+            <div className="dp-injury-list" style={{ marginBottom: homeInj.length ? 8 : 0 }}>
+              {homeInj.length === 0 ? (
+                <div className="dp-injury-empty">No reported absences</div>
+              ) : (
+                homeInj.slice(0, 5).map((i, idx) => (
+                  <div key={`h-${idx}`} className="dp-injury-row">
+                    <span className="name">
+                      {i.player || 'Unknown'}
+                      {i.key && <span className="key-flag" title="Key player">⚠</span>}
+                    </span>
+                    <span className="reason">{i.reason || i.type || ''}</span>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="dp-detail-row" style={{ marginTop: 6 }}>
+              <span className="lbl">{m.away && m.away.name}</span>
+              <span>{awayInj.length} out</span>
+            </div>
+            <div className="dp-injury-list">
+              {awayInj.length === 0 ? (
+                <div className="dp-injury-empty">No reported absences</div>
+              ) : (
+                awayInj.slice(0, 5).map((i, idx) => (
+                  <div key={`a-${idx}`} className="dp-injury-row">
+                    <span className="name">
+                      {i.player || 'Unknown'}
+                      {i.key && <span className="key-flag" title="Key player">⚠</span>}
+                    </span>
+                    <span className="reason">{i.reason || i.type || ''}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ============ Compare Odds (per-bookmaker table) ============
 function CompareOdds({ oddsData, overLineFromAi }) {
   const totals = (oddsData && oddsData.allBookmakers && oddsData.allBookmakers.totals) || [];
@@ -524,6 +682,9 @@ function MatchCard({ m, userTier, onLogBet }) {
           </>
         )}
       </div>
+
+      {/* Match details — xG proxy / weather / referee / injuries */}
+      <MatchDetails m={m} />
 
       {/* Compare Odds — ANALYST/EDGE only, when auto-odds present */}
       {m.oddsData && (userTier === 'ANALYST' || userTier === 'EDGE') && (

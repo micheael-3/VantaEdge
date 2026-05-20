@@ -7,6 +7,7 @@ const football = require('./_shared/football');
 const { analyseMatch } = require('./_shared/claude');
 const { calculateEV, calculateKelly } = require('./_shared/ev');
 const oddsService = require('./_shared/odds');
+const weatherService = require('./_shared/weather');
 
 async function handleLeague(event, leagueId) {
   const { res, user } = await requireUser(event);
@@ -71,11 +72,61 @@ async function handleLeague(event, leagueId) {
         const homeRest = football.calculateRestDays(homeFx);
         const awayRest = football.calculateRestDays(awayFx);
 
+        // ---- Data enrichment (each independent; failures don't break the prediction) ----
+        const refereeName = fx.fixture && fx.fixture.referee ? fx.fixture.referee : null;
+        const venueCity = fx.fixture && fx.fixture.venue && fx.fixture.venue.city;
+
+        const enrichmentResults = await Promise.allSettled([
+          refereeName ? football.getRefereeStats(refereeName) : Promise.resolve(null),
+          football.getTeamInjuries(homeId, fx.fixture.id),
+          football.getTeamInjuries(awayId, fx.fixture.id),
+          venueCity ? weatherService.getMatchWeather(venueCity, fx.fixture.date) : Promise.resolve(null),
+        ]);
+        const refereeStats = enrichmentResults[0].status === 'fulfilled' ? enrichmentResults[0].value : null;
+        const homeInjuries = enrichmentResults[1].status === 'fulfilled' ? enrichmentResults[1].value : [];
+        const awayInjuries = enrichmentResults[2].status === 'fulfilled' ? enrichmentResults[2].value : [];
+        const weather = enrichmentResults[3].status === 'fulfilled' ? enrichmentResults[3].value : null;
+
+        // Goals-per-game proxy from teams/statistics — cheap, no extra API call.
+        function gpgFromStats(stats) {
+          if (!stats || !stats.goals) return null;
+          const f = stats.goals.for && stats.goals.for.average && stats.goals.for.average.total;
+          const a = stats.goals.against && stats.goals.against.average && stats.goals.against.average.total;
+          return {
+            avgFor: f != null ? Number(f) : null,
+            avgAgainst: a != null ? Number(a) : null,
+          };
+        }
+
+        const homeGpg = gpgFromStats(homeStats);
+        const awayGpg = gpgFromStats(awayStats);
+
         const matchData = {
           league: league.name,
           kickoff: fx.fixture.date,
-          home: { id: homeId, name: fx.teams.home.name, form: homeForm, restDays: homeRest, stats: homeStats },
-          away: { id: awayId, name: fx.teams.away.name, form: awayForm, restDays: awayRest, stats: awayStats },
+          venue: venueCity || null,
+          home: {
+            id: homeId,
+            name: fx.teams.home.name,
+            form: homeForm,
+            restDays: homeRest,
+            stats: homeStats,
+            goalsPerGame: homeGpg,
+            injuries: Array.isArray(homeInjuries)
+              ? homeInjuries.map((i) => ({ ...i, key: football.flagKeyPlayer(i) }))
+              : [],
+          },
+          away: {
+            id: awayId,
+            name: fx.teams.away.name,
+            form: awayForm,
+            restDays: awayRest,
+            stats: awayStats,
+            goalsPerGame: awayGpg,
+            injuries: Array.isArray(awayInjuries)
+              ? awayInjuries.map((i) => ({ ...i, key: football.flagKeyPlayer(i) }))
+              : [],
+          },
           h2h: Array.isArray(h2h)
             ? h2h.slice(0, 5).map((g) => ({
                 date: g.fixture.date,
@@ -84,6 +135,8 @@ async function handleLeague(event, leagueId) {
                 score: `${g.goals.home}-${g.goals.away}`,
               }))
             : [],
+          referee: refereeStats,
+          weather: weather,
         };
 
         const analysis = await analyseMatch(matchData, includeFirstHalf, includeAH);
@@ -151,8 +204,25 @@ async function handleLeague(event, leagueId) {
           fixtureId: fx.fixture.id,
           league: league.name,
           kickoff: fx.fixture.date,
-          home: { id: homeId, name: fx.teams.home.name, form: homeForm, restDays: homeRest },
-          away: { id: awayId, name: fx.teams.away.name, form: awayForm, restDays: awayRest },
+          venue: venueCity || null,
+          home: {
+            id: homeId,
+            name: fx.teams.home.name,
+            form: homeForm,
+            restDays: homeRest,
+            goalsPerGame: homeGpg,
+            injuries: matchData.home.injuries,
+          },
+          away: {
+            id: awayId,
+            name: fx.teams.away.name,
+            form: awayForm,
+            restDays: awayRest,
+            goalsPerGame: awayGpg,
+            injuries: matchData.away.injuries,
+          },
+          referee: refereeStats,
+          weather: weather,
           predictions: {
             over: analysis.over,
             btts: analysis.btts,

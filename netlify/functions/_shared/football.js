@@ -77,6 +77,110 @@ async function getFixtureById(fixtureId) {
   return list[0] || null;
 }
 
+// Per-team statistics for a specific (completed) fixture. xG, shots, possession.
+// Returns shape: [{ teamId, name, xg, shotsOn, shotsOff, possession }] or [].
+async function getFixtureStats(fixtureId) {
+  const params = { fixture: fixtureId };
+  return getOrFetch('/fixtures/statistics', params, async () => {
+    try {
+      const res = await client().get('/fixtures/statistics', { params });
+      const data = res.data && Array.isArray(res.data.response) ? res.data.response : [];
+      return data.map((team) => {
+        const stats = Array.isArray(team.statistics) ? team.statistics : [];
+        const grab = (label) => {
+          const m = stats.find((s) => s.type && s.type.toLowerCase() === label.toLowerCase());
+          return m ? m.value : null;
+        };
+        const xg = grab('expected_goals') ?? grab('expected goals') ?? grab('xg');
+        return {
+          teamId: team.team && team.team.id,
+          name: team.team && team.team.name,
+          xg: xg != null ? parseFloat(xg) : null,
+          shotsOn: parseInt(grab('Shots on Goal'), 10) || null,
+          shotsOff: parseInt(grab('Shots off Goal'), 10) || null,
+          possession: grab('Ball Possession') || null,
+        };
+      });
+    } catch {
+      return [];
+    }
+  });
+}
+
+// Referee tendencies across their recent matches officiated.
+// Cached aggressively because trends change slowly. The cache module's
+// default 30-min TTL is too short, so we layer an in-memory 24h cache here.
+const refereeCache = new Map(); // name -> { value, expires }
+const REFEREE_TTL_MS = 24 * 60 * 60 * 1000;
+
+async function getRefereeStats(refereeName) {
+  if (!refereeName) return null;
+  const key = refereeName.toLowerCase();
+  const cached = refereeCache.get(key);
+  if (cached && cached.expires > Date.now()) return cached.value;
+
+  try {
+    const res = await client().get('/fixtures', {
+      params: { referee: refereeName, season: SEASON, last: 20 },
+    });
+    const fixtures = res.data && Array.isArray(res.data.response) ? res.data.response : [];
+    if (fixtures.length === 0) {
+      const empty = { name: refereeName, matchesAnalysed: 0 };
+      refereeCache.set(key, { value: empty, expires: Date.now() + REFEREE_TTL_MS });
+      return empty;
+    }
+    let totalGoals = 0;
+    let bttsCount = 0;
+    let over25Count = 0;
+    for (const f of fixtures) {
+      const h = f.goals && f.goals.home;
+      const a = f.goals && f.goals.away;
+      if (h == null || a == null) continue;
+      totalGoals += Number(h) + Number(a);
+      if (Number(h) > 0 && Number(a) > 0) bttsCount += 1;
+      if (Number(h) + Number(a) >= 3) over25Count += 1;
+    }
+    const n = fixtures.length;
+    const stats = {
+      name: refereeName,
+      matchesAnalysed: n,
+      avgGoalsPerGame: Math.round((totalGoals / n) * 100) / 100,
+      bttsRate: Math.round((bttsCount / n) * 1000) / 10, // percent
+      over25Rate: Math.round((over25Count / n) * 1000) / 10,
+    };
+    refereeCache.set(key, { value: stats, expires: Date.now() + REFEREE_TTL_MS });
+    return stats;
+  } catch (err) {
+    console.error('[football] referee fetch failed:', err.message);
+    return null;
+  }
+}
+
+// Injuries / suspensions for a team in a specific fixture.
+async function getTeamInjuries(teamId, fixtureId) {
+  if (!teamId || !fixtureId) return [];
+  try {
+    const res = await client().get('/injuries', { params: { team: teamId, fixture: fixtureId } });
+    const list = res.data && Array.isArray(res.data.response) ? res.data.response : [];
+    return list.map((item) => ({
+      player: item.player && item.player.name,
+      position: item.player && item.player.position,
+      type: item.player && item.player.type, // "Missing Fixture" / "Suspended" etc.
+      reason: item.player && item.player.reason,
+    }));
+  } catch (err) {
+    console.error('[football] injuries fetch failed:', err.message);
+    return [];
+  }
+}
+
+// Heuristic: a player is "key" if they're a goalkeeper or hold a striker
+// role and we don't have a way to check their season minutes here.
+function flagKeyPlayer(inj) {
+  const pos = String(inj.position || '').toLowerCase();
+  return pos.includes('goalkeeper') || pos.includes('attacker') || pos.includes('forward');
+}
+
 function extractFormForTeam(fixtures, teamId) {
   if (!Array.isArray(fixtures)) return [];
   return fixtures
@@ -109,6 +213,10 @@ module.exports = {
   getTeamStats,
   getTeamFixtures,
   getFixtureById,
+  getFixtureStats,
+  getRefereeStats,
+  getTeamInjuries,
+  flagKeyPlayer,
   extractFormForTeam,
   calculateRestDays,
 };

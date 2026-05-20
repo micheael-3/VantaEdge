@@ -655,6 +655,92 @@
   background: rgba(110, 231, 183, 0.05);
 }
 
+/* ---- Match details (xG / weather / referee / injuries) ---- */
+.dashboard-page .dp-details {
+  grid-column: 1 / -1;
+  margin-top: 12px;
+  border-top: 1px solid var(--dp-border);
+  padding-top: 12px;
+}
+.dashboard-page .dp-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+.dashboard-page .dp-detail-block {
+  background: var(--dp-bg-raised);
+  border: 1px solid var(--dp-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.dashboard-page .dp-detail-head {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dp-text-faint);
+  margin-bottom: 8px;
+}
+.dashboard-page .dp-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: 'DM Mono', monospace;
+  font-size: 12.5px;
+  color: var(--dp-text);
+  margin-bottom: 4px;
+}
+.dashboard-page .dp-detail-row .lbl { color: var(--dp-text-dim); }
+
+.dashboard-page .dp-weather-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'DM Mono', monospace;
+  font-size: 12.5px;
+}
+.dashboard-page .dp-weather-warn {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.08);
+  color: var(--dp-red);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+}
+
+.dashboard-page .dp-injury-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dashboard-page .dp-injury-row {
+  font-family: 'DM Mono', monospace;
+  font-size: 11.5px;
+  color: var(--dp-text);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dashboard-page .dp-injury-row .name { color: var(--dp-text); }
+.dashboard-page .dp-injury-row .reason { color: var(--dp-text-faint); }
+.dashboard-page .dp-injury-row .key-flag {
+  color: var(--dp-red);
+  margin-left: 4px;
+}
+.dashboard-page .dp-injury-empty {
+  font-family: 'DM Mono', monospace;
+  font-size: 11.5px;
+  color: var(--dp-text-faint);
+}
+
+.dashboard-page .dp-ref-arrow {
+  color: var(--dp-mint);
+  margin-left: 4px;
+}
+
 /* ---- Empty state ---- */
 .dashboard-page .dp-empty {
   padding: 80px 24px;

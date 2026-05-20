@@ -25,7 +25,22 @@ Analyse the provided match data and return predictions for:
 
 4. ASIAN HANDICAP: Suggested handicap line for the stronger team. Format: '-0.5', '-1', '-1.5', '+0.5' etc. (Include only if asian_handicap requested)
 
-For every prediction: confidence 0-100, reasoning 2-3 sentences referencing specific stats.
+EXTRA CONTEXT WHEN PRESENT — weight these alongside the base data:
+
+- xG / goals-per-game: a team consistently scoring above their xG is on a hot streak that will regress; below xG is unlucky and due to revert. Weight the underlying chance creation, not the raw goals.
+- Weather:
+  - Heavy rain (precipitation > 5 mm) — reduce total goals by ~0.3 and slightly reduce BTTS probability.
+  - Strong wind (> 40 km/h) — reduce total goals by ~0.2; long-range shooting suffers.
+  - Extreme heat (> 32°C) — reduce second-half goals as fatigue rises; lower BTTS.
+  - Cold (< 2°C) — minimal direct effect but factor it for away sides travelling from warmer climates.
+  - Normal — no adjustment.
+- Referee tendency: when avg goals/game is materially above the league average (~2.6), boost the goals lean. When materially below, fade it.
+- Injuries / suspensions:
+  - Missing goalkeeper — increase opposition scoring expectation by 0.2-0.3.
+  - Missing key striker (or any flagged 'key' attacker) — reduce that team's scoring expectation and reduce BTTS probability.
+  - Multiple absences (3+) — general performance degradation; nudge opposition scoring up.
+
+For every prediction: confidence 0-100, reasoning 2-3 sentences referencing specific stats from the data provided (form, xG, weather, ref, injuries, H2H — whichever drove the call).
 
 Return ONLY valid JSON, no markdown, no text outside JSON:
 {
