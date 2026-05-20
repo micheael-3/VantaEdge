@@ -214,19 +214,21 @@ async function handleLeague(event, leagueId) {
     }
   }
 
-  // Concurrent fixture processing — once AI is on, each fixture takes
-  // 5-10 seconds (Claude call dominates). Sequential would blow the 26s
-  // function timeout on 10 fixtures. Running 4 in parallel cuts wall time
-  // to ~3 chunks of 7s each ≈ 22s, just under the budget. The 4-wide burst
-  // hits API-Football with 4 fixtures × 11 calls = 44 calls in roughly a
-  // second, well below the per-minute cap (~450/min on Pro).
+  // Full-parallel fixture processing with a hard per-fixture timeout.
+  // Total wall time = max(individual fixture time), not sum, so the
+  // whole dashboard load completes in ~10-18s even with Claude calls
+  // averaging 5-10s. Chunking made the math worse: 3 chunks × 22s
+  // worst-case = 66s, blowing the Netlify 26s function timeout.
   //
-  // Also wraps each fixture in a 22s timeout so a slow single Claude
-  // response can't stall the whole dashboard load — partial results
-  // beat no results.
-  const CHUNK_SIZE = 4;
-  const CHUNK_DELAY_MS = 0;
-  const PER_FIXTURE_TIMEOUT_MS = 22000;
+  // API-Football impact: 10 fixtures × ~11 calls = 110 calls in parallel,
+  // but the in-memory cache deduplicates shared teams across fixtures
+  // and the per-minute Pro cap (~450/min) is for total calls/minute,
+  // not in-flight concurrency. Still well under.
+  //
+  // Per-fixture timeout = 18s. If Claude is slow, we ship the analytical
+  // fallback for that one card and the user still gets 9 real predictions
+  // instead of 0.
+  const PER_FIXTURE_TIMEOUT_MS = 18000;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const withTimeout = (promise, ms, fallback) =>
     Promise.race([
@@ -485,9 +487,6 @@ async function handleLeague(event, leagueId) {
       }
   };
 
-  const isRateLimitErr = (r) =>
-    r && r.error && /rateLimit|Too many requests|exceeded the limit/i.test(r.error);
-
   const timeoutFallbackFor = (fx) => ({
     fixtureId: fx.fixture.id,
     league: league.name,
@@ -497,33 +496,14 @@ async function handleLeague(event, leagueId) {
     error: 'Analysis timed out — try refreshing in a moment',
   });
 
-  const results = [];
-  for (let i = 0; i < fixtures.length; i += CHUNK_SIZE) {
-    const chunk = fixtures.slice(i, i + CHUNK_SIZE);
-    const chunkResults = await Promise.all(
-      chunk.map((fx) => withTimeout(processOne(fx), PER_FIXTURE_TIMEOUT_MS, timeoutFallbackFor(fx))),
-    );
-
-    // If any fixture in this chunk hit a rate-limit, wait 2 seconds and
-    // retry once. Most retries succeed because subsequent calls hit the
-    // in-memory cache populated by earlier fixtures.
-    for (let j = 0; j < chunkResults.length; j += 1) {
-      if (isRateLimitErr(chunkResults[j])) {
-        await sleep(2000);
-        try {
-          const retried = await withTimeout(processOne(chunk[j]), PER_FIXTURE_TIMEOUT_MS, timeoutFallbackFor(chunk[j]));
-          chunkResults[j] = retried;
-        } catch {
-          // keep the original error if retry itself throws
-        }
-      }
-    }
-
-    results.push(...chunkResults);
-    if (i + CHUNK_SIZE < fixtures.length && CHUNK_DELAY_MS > 0) {
-      await sleep(CHUNK_DELAY_MS);
-    }
-  }
+  // All fixtures in flight at once. Total time bound = max single fixture
+  // ≤ PER_FIXTURE_TIMEOUT_MS = 18s, leaving 8s headroom before the 26s
+  // Netlify function timeout.
+  const results = await Promise.all(
+    fixtures.map((fx) =>
+      withTimeout(processOne(fx), PER_FIXTURE_TIMEOUT_MS, timeoutFallbackFor(fx)),
+    ),
+  );
 
   return json(200, {
     league: league.name,
