@@ -1,4 +1,5 @@
-// TESTING MODE: all tier gates disabled. Restore originals when re-enabling paid tiers.
+// MLS-only lineup. FREE / ANALYST / EDGE all see the same league set —
+// upgrade-required gates are off in this build.
 
 const RANK = { FREE: 0, ANALYST: 1, EDGE: 2 };
 
@@ -11,15 +12,13 @@ function requireTier(_user, _minTier) {
   return null;
 }
 
-// Three-league lineup post-simplification. Keep the SCOUT entries in any
-// legacy DB rows working by mapping SCOUT → same league list as FREE.
+// MLS only (id 253). Other leagues were removed during the MLS-only
+// simplification — keep this map narrow so any stray league lookup
+// surfaces as "Invalid league" instead of silently fetching data.
 const LEAGUES = {
   253: { name: 'MLS', minTier: 'FREE' },
-  78:  { name: 'Bundesliga', minTier: 'FREE' },
-  88:  { name: 'Eredivisie', minTier: 'FREE' },
 };
 
-// Every tier can access every league in the current simplified setup.
 const ALL_LEAGUES = Object.keys(LEAGUES).map((k) => parseInt(k, 10));
 const TIER_LEAGUES = {
   FREE:    ALL_LEAGUES,

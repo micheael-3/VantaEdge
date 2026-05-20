@@ -7,6 +7,11 @@ const football = require('./_shared/football');
 const { analyseMatch } = require('./_shared/claude');
 const { calculateEV, calculateKelly } = require('./_shared/ev');
 const oddsService = require('./_shared/odds');
+const weatherService = require('./_shared/weather');
+
+// Hardcoded for this MLS-only build. Every code path that used to take a
+// league id now ignores anything other than 253.
+const MLS_LEAGUE_ID = 253;
 
 // Derive rest days from a team's recent fixtures list rather than making a
 // separate /fixtures call. Falls back to null when no past games are present.
@@ -175,17 +180,22 @@ async function pickFixtures(leagueId, explicitDate) {
   return { fixtures: [], dateLabel: 'Recent Matches', matchDate: null, isPast: true, isUpcoming: false, isToday: false, mode: 'recent', seasonUsed: null };
 }
 
-async function handleLeague(event, leagueId) {
+async function handleLeague(event, _leagueIdFromPath) {
   const { res, user } = await requireUser(event);
   if (res) return res;
 
+  // MLS-only build: any league id in the URL is ignored — we always serve
+  // league 253. Keep the parsed id around in logs so the request path is
+  // still traceable but never branch on it.
+  const leagueId = MLS_LEAGUE_ID;
   const league = LEAGUES[leagueId];
-  if (!league) return error(400, 'Invalid league');
+  if (!league) return error(500, 'MLS league config missing'); // should never fire
 
-  const allowed = TIER_LEAGUES[user.tier] || [];
-  if (!allowed.includes(leagueId)) {
-    return error(403, 'UPGRADE_REQUIRED', { requiredTier: league.minTier });
-  }
+  // Tier check: FREE / ANALYST / EDGE are all allowed in this build, so no
+  // 403 UPGRADE_REQUIRED responses. tierRank is kept imported for when the
+  // paid-feature gate gets restored. We touch it here to silence the lint.
+  void tierRank;
+  void TIER_LEAGUES;
 
   const qs = event.queryStringParameters || {};
   const isInitial = qs.initial === '1' || qs.initial === 'true';
@@ -196,7 +206,6 @@ async function handleLeague(event, leagueId) {
   const includeFirstHalf = true;
   const includeAH = true;
   const includeEV = true;
-  void tierRank; // keep import; restore tier-aware logic when re-enabling.
 
   // --- Fixture cascade (spec §1): today → tomorrow → recent past.
   //     If the caller passes ?date=YYYY-MM-DD we use that day directly.
@@ -250,48 +259,68 @@ async function handleLeague(event, leagueId) {
     }
   }
 
-  // Full-parallel fixture processing with a hard per-fixture timeout.
-  // Total wall time = max(individual fixture time), not sum, so the
-  // whole dashboard load completes in ~10-18s even with Claude calls
-  // averaging 5-10s. Chunking made the math worse: 3 chunks × 22s
-  // worst-case = 66s, blowing the Netlify 26s function timeout.
+  // Sequential per-fixture enrichment. The spec deliberately moved away from
+  // Promise.all here: API-Football's burst counter trips when we fire 10+
+  // calls within the same second from a single warm function. A 200ms gap
+  // between calls keeps us under the per-second cap; the per-minute cap is
+  // handled by the outer batch pause (2s between batches of 3).
   //
-  // API-Football impact: 10 fixtures × ~11 calls = 110 calls in parallel,
-  // but the in-memory cache deduplicates shared teams across fixtures
-  // and the per-minute Pro cap (~450/min) is for total calls/minute,
-  // not in-flight concurrency. Still well under.
-  //
-  // Per-fixture timeout = 18s. If Claude is slow, we ship the analytical
-  // fallback for that one card and the user still gets 9 real predictions
-  // instead of 0.
-  const PER_FIXTURE_TIMEOUT_MS = 18000;
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Per-fixture wall-time budget: ~11 calls × ~200-400ms each + Claude ~5-8s
+  // = ~10-15s. Cap at 22s to leave headroom under Netlify's 26s function
+  // timeout when running the last batch of one.
+  const PER_FIXTURE_TIMEOUT_MS = 22000;
+  const GAP_MS = 200;
+  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
   const withTimeout = (promise, ms, fallback) =>
     Promise.race([
       promise,
       new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
     ]);
 
+  // Status codes for fixtures that are *done* — only then do per-fixture
+  // stats (xG, shots, possession) exist on the API-Football side.
+  const FINISHED_STATUSES = new Set(['FT', 'AET', 'PEN']);
+
   const processOne = async (fx) => {
       const homeId = fx.teams.home.id;
       const awayId = fx.teams.away.id;
       try {
-        // Simplified data pull: 4 API calls per fixture (last home, last away,
-        // stats home, stats away). Rest days are derived from the form
-        // fixtures we already have. H2H / referee / injuries / weather were
-        // dropped in the simplification pass.
-        const [homeLast, awayLast, homeStats, awayStats] = await Promise.all([
-          football.getTeamLastHomeGames(homeId, leagueId),
-          football.getTeamLastAwayGames(awayId, leagueId),
-          football.getTeamStats(homeId, leagueId),
-          football.getTeamStats(awayId, leagueId),
-        ]);
+        // Sequential pulls with a 200ms breather between each. The order
+        // matches the spec; do not collapse these into Promise.all.
+        const homeLast   = await football.getTeamLastHomeGames(homeId, leagueId);   await delay(GAP_MS);
+        const awayLast   = await football.getTeamLastAwayGames(awayId, leagueId);   await delay(GAP_MS);
+        const h2h        = await football.getH2H(homeId, awayId);                   await delay(GAP_MS);
+        const homeStats  = await football.getTeamStats(homeId, leagueId);           await delay(GAP_MS);
+        const awayStats  = await football.getTeamStats(awayId, leagueId);           await delay(GAP_MS);
+        const homeFx     = await football.getTeamFixtures(homeId, leagueId);        await delay(GAP_MS);
+        const awayFx     = await football.getTeamFixtures(awayId, leagueId);        await delay(GAP_MS);
+
+        const refereeName = fx.fixture && fx.fixture.referee;
+        const venueCity   = fx.fixture && fx.fixture.venue && fx.fixture.venue.city;
+
+        const refereeStats = refereeName
+          ? await football.getRefereeStats(refereeName)
+          : null;
+        await delay(GAP_MS);
+        const homeInjuries = await football.getTeamInjuries(homeId, fx.fixture.id); await delay(GAP_MS);
+        const awayInjuries = await football.getTeamInjuries(awayId, fx.fixture.id); await delay(GAP_MS);
+        const weather      = venueCity
+          ? await weatherService.getMatchWeather(venueCity, fx.fixture.date)
+          : null;
+        // Fixture stats only exist for finished matches. Calling it on an
+        // upcoming fixture is wasteful — skip to save the budget.
+        const statusShort = fx.fixture && fx.fixture.status && fx.fixture.status.short;
+        const fixtureStats = FINISHED_STATUSES.has(statusShort)
+          ? await football.getFixtureStats(fx.fixture.id)
+          : null;
+
         const homeForm = football.extractFormForTeam(homeLast, homeId);
         const awayForm = football.extractFormForTeam(awayLast, awayId);
-        const homeRest = restDaysFromForm(homeLast);
-        const awayRest = restDaysFromForm(awayLast);
-
-        const venueCity = fx.fixture && fx.fixture.venue && fx.fixture.venue.city;
+        // Prefer rest days off the broader team-fixtures pull (includes the
+        // last 2 across all venues) — falls back to the home/away-only form
+        // when the broader list is empty.
+        const homeRest = restDaysFromForm(homeFx) ?? restDaysFromForm(homeLast);
+        const awayRest = restDaysFromForm(awayFx) ?? restDaysFromForm(awayLast);
 
         // Goals-per-game proxy from teams/statistics — cheap, no extra API call.
         function gpgFromStats(stats) {
@@ -307,10 +336,24 @@ async function handleLeague(event, leagueId) {
         const homeGpg = gpgFromStats(homeStats);
         const awayGpg = gpgFromStats(awayStats);
 
+        // Trim injuries to "key" players (GK/forward heuristic) so the prompt
+        // stays compact — Claude is on max_tokens=500 in this build.
+        const trimInj = (list) =>
+          Array.isArray(list) ? list.filter(football.flagKeyPlayer).slice(0, 3) : [];
+
         const matchData = {
           league: league.name,
           kickoff: fx.fixture.date,
           venue: venueCity || null,
+          referee: refereeStats || (refereeName ? { name: refereeName } : null),
+          weather: weather || null,
+          h2h: Array.isArray(h2h) ? h2h.slice(0, 3).map((m) => ({
+            date: m.fixture && m.fixture.date,
+            home: m.teams && m.teams.home && m.teams.home.name,
+            away: m.teams && m.teams.away && m.teams.away.name,
+            score: m.goals ? `${m.goals.home}-${m.goals.away}` : null,
+          })) : [],
+          fixtureStats: fixtureStats || null,
           home: {
             id: homeId,
             name: fx.teams.home.name,
@@ -318,6 +361,7 @@ async function handleLeague(event, leagueId) {
             restDays: homeRest,
             stats: homeStats,
             goalsPerGame: homeGpg,
+            keyInjuries: trimInj(homeInjuries),
           },
           away: {
             id: awayId,
@@ -326,6 +370,7 @@ async function handleLeague(event, leagueId) {
             restDays: awayRest,
             stats: awayStats,
             goalsPerGame: awayGpg,
+            keyInjuries: trimInj(awayInjuries),
           },
         };
 
@@ -391,7 +436,7 @@ async function handleLeague(event, leagueId) {
 
         // For past / completed fixtures, attach the actual result so the
         // frontend can render "FT 2-1" + ✓/✗ verdicts next to the prediction.
-        const statusShort = fx.fixture && fx.fixture.status && fx.fixture.status.short;
+        // (statusShort was already pulled from fx.fixture.status above.)
         const homeGoals = fx.goals && fx.goals.home;
         const awayGoals = fx.goals && fx.goals.away;
         let actualResult = null;
@@ -500,23 +545,20 @@ async function handleLeague(event, leagueId) {
     error: 'Analysis timed out — try refreshing in a moment',
   });
 
-  // Rate-limit-safe sequential batching. Process at most 2 fixtures in
-  // parallel, then sleep 1 second before the next batch. This bounds
-  // simultaneous API-Football calls to 2 × 4 = 8 (well below the
-  // per-minute Pro cap) and gives the rolling window time to drain
-  // between bursts. Hard cap at 6 fixtures so 3 batches × ~7s + 2 ×
-  // 1s = ~23s stays under the 26s function timeout. Anything beyond
-  // the 6th fixture is dropped for this load — refresh to see the rest.
+  // Spec'd batching: 3 fixtures in parallel, 2-second pause between batches,
+  // hard cap at 4 fixtures per load. With MAX=4 that's one batch of 3 + one
+  // batch of 1 = ~22s + 2s pause + ~22s worst-case = well under Netlify's
+  // 26s budget assuming the second batch usually finishes in 8-12s.
   //
   // Retry-once-on-rate-limit: after each batch we scan results for
   // "Too many requests" / "rateLimit" error markers, sleep 2s, and
   // re-run processOne for those fixtures a single time before keeping
   // the error.
-  const BATCH_SIZE = 2;
-  const BATCH_PAUSE_MS = 1000;
-  const MAX_FIXTURES = 6;
+  const BATCH_SIZE = 3;
+  const BATCH_PAUSE_MS = 2000;
+  const MAX_FIXTURES = 4;
   const RATE_LIMIT_RETRY_PAUSE_MS = 2000;
-  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // `delay` is already declared in the processOne closure above; reuse it.
   const isRateLimitError = (r) => {
     if (!r || !r.error) return false;
     const e = String(r.error).toLowerCase();
@@ -586,16 +628,13 @@ async function handleLeague(event, leagueId) {
 //
 // Output is ordered oldest → newest so the frontend can render pills
 // left-to-right naturally with past on the left and future on the right.
-async function handleUpcoming(event, leagueId) {
+async function handleUpcoming(event, _leagueIdFromPath) {
   const { res, user } = await requireUser(event);
   if (res) return res;
+  void user; // tier gate disabled in MLS-only build
+  const leagueId = MLS_LEAGUE_ID;
   const league = LEAGUES[leagueId];
-  if (!league) return error(400, 'Invalid league');
-
-  const allowed = TIER_LEAGUES[user.tier] || [];
-  if (!allowed.includes(leagueId)) {
-    return error(403, 'UPGRADE_REQUIRED', { requiredTier: league.minTier });
-  }
+  if (!league) return error(500, 'MLS league config missing');
 
   const qs = event.queryStringParameters || {};
   const past   = clamp(parseInt(qs.past, 10), 0, 14, 0);

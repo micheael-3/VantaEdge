@@ -3,44 +3,14 @@ const axios = require('axios');
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'anthropic/claude-3.5-haiku';
 
-const SYSTEM_PROMPT = `You are an expert football analyst specialising in goals markets across MLS, Bundesliga, and Eredivisie.
-
-Each league has distinct scoring tendencies:
-- MLS: High variance, weak defences, altitude/travel factors.
-- Bundesliga: High-press transitions, consistently high scoring.
-- Eredivisie: Highest goals/game in Europe, very open play.
-
-You will receive, per match:
-- League name
-- Each team's recent form (sequence of W / L / D from the last 5 games)
-- Rest days since each team last played
-- Season goals/game stats (avgFor, avgAgainst) for each team
-
-Analyse the data and return predictions for:
-
-1. OVER LINE: Most statistically justified line. Choose from: 0.5, 1.5, 2.5, 3.5, 4.5. Account for league context. Do not default to 2.5.
-
-2. BTTS: YES or NO. Both teams to score.
-
-3. FIRST HALF OVER: Most justified first half over line. Choose from: 0.5, 1.5, 2.5. (Include only if first_half requested)
-
-4. ASIAN HANDICAP: Suggested handicap line for the stronger team. Format: '-0.5', '-1', '-1.5', '+0.5' etc. (Include only if asian_handicap requested)
-
-HOW TO WEIGHT THE INPUTS:
-
-- Form: a string of W's suggests momentum; mix of L/D suggests inconsistency. The home team's home form and the away team's away form are the most predictive signals.
-- Rest days: < 3 days short rest can suppress scoring; 4-6 days is normal; 7+ days is well-rested.
-- Goals/game stats: sum the home team's avgFor and the away team's avgAgainst (and vice versa) to estimate expected goals. Lean Over when the combined expectation is comfortably above the line; lean Under when below.
-
-For every prediction: confidence 0-100, reasoning 2-3 sentences referencing specific stats from the data provided (form, rest days, goals/game — whichever drove the call).
-
-Return ONLY valid JSON, no markdown, no text outside JSON:
+const SYSTEM_PROMPT = `You are an expert MLS football analyst. Analyse team form and goals data to predict Over/Under line and BTTS. Be specific and reference the actual numbers provided. Return only valid JSON with this exact shape:
 {
-  "over": { "line": number, "confidence": number, "reasoning": string },
-  "btts": { "prediction": "YES"|"NO", "confidence": number, "reasoning": string },
-  "firstHalf": { "line": number, "confidence": number, "reasoning": string } | null,
+  "over":  { "line": number, "confidence": number 0-100, "reasoning": "2-3 sentences" },
+  "btts":  { "prediction": "YES"|"NO", "confidence": number 0-100, "reasoning": "2-3 sentences" },
+  "firstHalf":     { "line": number, "confidence": number, "reasoning": string } | null,
   "asianHandicap": { "line": string, "team": string, "confidence": number, "reasoning": string } | null
-}`;
+}
+Lines available: 0.5, 1.5, 2.5, 3.5, 4.5. Do not default to 2.5 — pick the most defensible line for the matchup.`;
 
 function fallback(reason) {
   return {
@@ -86,7 +56,7 @@ async function callOpenRouter(userMessage) {
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userMessage },
     ],
-    max_tokens: 1000,
+    max_tokens: 500,
   };
 
   // 15s timeout — anything slower would lose the Netlify 26s function

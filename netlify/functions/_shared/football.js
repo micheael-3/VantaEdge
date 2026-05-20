@@ -147,23 +147,26 @@ async function getFixtureCountByDateAuto(leagueId, dateStr, ttlSeconds) {
 // home/away split without venue lookups, fetch the team's last N games
 // regardless of venue, then filter in JS by checking the home/away team
 // ids on each returned fixture.
+// Per-call TTLs are explicit so cache.js's default never silently downgrades
+// us. 3600s (1h) is the spec-mandated default for everything except live
+// fixture lookups (which already use date-aware TTLs above).
 async function getTeamLastHomeGames(teamId, leagueId) {
   const params = { team: teamId, league: leagueId, season: SEASON, last: 10 };
-  const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params));
+  const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 3600);
   if (!Array.isArray(all)) return [];
   return all.filter((f) => f.teams && f.teams.home && f.teams.home.id === teamId).slice(0, 5);
 }
 
 async function getTeamLastAwayGames(teamId, leagueId) {
   const params = { team: teamId, league: leagueId, season: SEASON, last: 10 };
-  const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params));
+  const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 3600);
   if (!Array.isArray(all)) return [];
   return all.filter((f) => f.teams && f.teams.away && f.teams.away.id === teamId).slice(0, 5);
 }
 
 async function getH2H(homeId, awayId) {
   const params = { h2h: `${homeId}-${awayId}`, last: 5 };
-  return getOrFetch('/fixtures/headtohead', params, () => apiGet('/fixtures/headtohead', params));
+  return getOrFetch('/fixtures/headtohead', params, () => apiGet('/fixtures/headtohead', params), 3600);
 }
 
 async function getTeamStats(teamId, leagueId) {
@@ -171,12 +174,12 @@ async function getTeamStats(teamId, leagueId) {
   return getOrFetch('/teams/statistics', params, async () => {
     const res = await client().get('/teams/statistics', { params });
     return res.data && res.data.response ? res.data.response : null;
-  });
+  }, 3600);
 }
 
 async function getTeamFixtures(teamId, leagueId) {
   const params = { team: teamId, league: leagueId, season: SEASON, last: 2 };
-  return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params));
+  return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 3600);
 }
 
 // Fetch a single fixture by its API-Football ID. Bypasses the general cache
@@ -195,7 +198,7 @@ async function getFixtureById(fixtureId) {
 // Returns shape: [{ teamId, name, xg, shotsOn, shotsOff, possession }] or [].
 async function getFixtureStats(fixtureId) {
   const params = { fixture: fixtureId };
-  return getOrFetch('/fixtures/statistics', params, async () => {
+  return getOrFetch('/fixtures/statistics', params, async () => {  // 1h TTL — once a match ends, stats are stable.
     try {
       const res = await client().get('/fixtures/statistics', { params });
       const data = res.data && Array.isArray(res.data.response) ? res.data.response : [];
@@ -218,7 +221,7 @@ async function getFixtureStats(fixtureId) {
     } catch {
       return [];
     }
-  });
+  }, 3600);
 }
 
 // Referee tendencies across their recent matches officiated.
@@ -270,22 +273,26 @@ async function getRefereeStats(refereeName) {
   }
 }
 
-// Injuries / suspensions for a team in a specific fixture.
+// Injuries / suspensions for a team in a specific fixture. Cached 1h —
+// injury lists do change intra-day but rarely within a 60-minute window.
 async function getTeamInjuries(teamId, fixtureId) {
   if (!teamId || !fixtureId) return [];
-  try {
-    const res = await client().get('/injuries', { params: { team: teamId, fixture: fixtureId } });
-    const list = res.data && Array.isArray(res.data.response) ? res.data.response : [];
-    return list.map((item) => ({
-      player: item.player && item.player.name,
-      position: item.player && item.player.position,
-      type: item.player && item.player.type, // "Missing Fixture" / "Suspended" etc.
-      reason: item.player && item.player.reason,
-    }));
-  } catch (err) {
-    console.error('[football] injuries fetch failed:', err.message);
-    return [];
-  }
+  const params = { team: teamId, fixture: fixtureId };
+  return getOrFetch('/injuries', params, async () => {
+    try {
+      const res = await client().get('/injuries', { params });
+      const list = res.data && Array.isArray(res.data.response) ? res.data.response : [];
+      return list.map((item) => ({
+        player: item.player && item.player.name,
+        position: item.player && item.player.position,
+        type: item.player && item.player.type, // "Missing Fixture" / "Suspended" etc.
+        reason: item.player && item.player.reason,
+      }));
+    } catch (err) {
+      console.error('[football] injuries fetch failed:', err.message);
+      return [];
+    }
+  }, 3600);
 }
 
 // Heuristic: a player is "key" if they're a goalkeeper or hold a striker

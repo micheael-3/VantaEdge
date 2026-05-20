@@ -2,7 +2,10 @@
 
 const { sql } = require('./db');
 
-const LEAGUE_IDS = [253, 78, 88, 40, 61, 179, 140, 39];
+// MLS-only build. The agent system used to round-robin through 8 leagues;
+// now it only sees league 253 so every agent function processes a single
+// league per run.
+const LEAGUE_IDS = [253];
 
 // ---------- agent_state key/value helpers ----------
 async function getState(key) {
@@ -21,7 +24,7 @@ async function setState(key, value) {
 // Round-robin: returns the next slice of `size` league ids starting from the
 // stored offset, advancing the offset for next time. Scanner pages through
 // all 8 leagues across multiple runs to stay within the 10s function budget.
-async function nextLeagueBatch(size = 3) {
+async function nextLeagueBatch(size = 1) {
   const state = await getState('scanner_offset');
   let offset = state && Number.isInteger(state.offset) ? state.offset : 0;
   if (offset >= LEAGUE_IDS.length) offset = 0;

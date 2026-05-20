@@ -1,7 +1,10 @@
 // Lightweight in-process cache. Survives within a single warm function instance,
 // not across cold starts. Good enough to amortise API-Football calls inside a burst.
 
-const DEFAULT_TTL_MS = 30 * 60 * 1000;
+// Default TTL is 1 hour (3600s). Callers can override per-fetch by passing
+// `ttlSeconds` to getOrFetch. Bumped from 30m to amortise API-Football calls
+// across the longer fixture-refresh cadence we use post-MLS-only.
+const DEFAULT_TTL_MS = 60 * 60 * 1000;
 const store = new Map();
 
 function key(endpoint, params) {

@@ -1,7 +1,7 @@
 // agent-scanner — main brain of the autonomous system.
 //
-// Runs every 30 minutes on Netlify cron. Round-robins through 3 leagues per
-// run (stays under the 10s budget) and:
+// Runs every 30 minutes on Netlify cron. MLS-only build: processes the
+// single MLS league per run (no round-robin needed) and:
 //   1. takes a current odds snapshot per fixture
 //   2. classifies movement vs the opening line
 //   3. emits VALUE_APPEARED / SHARP_MOVE alerts
@@ -28,7 +28,7 @@ const {
 const { createAgentAlert } = require('./_shared/alerts');
 
 const SCHEDULE = '*/30 * * * *';
-const PER_RUN_LEAGUE_BUDGET = 3;
+const PER_RUN_LEAGUE_BUDGET = 1; // MLS-only — only one league exists to scan
 const PER_RUN_FIXTURE_BUDGET = 12; // hard cap so one heavy league doesn't time us out
 
 function isAuthorised(event) {
