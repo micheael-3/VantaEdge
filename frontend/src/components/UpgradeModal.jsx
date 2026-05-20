@@ -138,7 +138,7 @@ export default function UpgradeModal({ onClose }) {
               className="mono"
               style={{ fontSize: 11, color: 'var(--text-3)' }}
             >
-              FIRST 7 DAYS · 50% OFF
+              CANCEL ANYTIME
             </span>
           </div>
           <ul
@@ -191,7 +191,7 @@ export default function UpgradeModal({ onClose }) {
             letterSpacing: '0.04em',
           }}
         >
-          NO CARD REQUIRED FOR FIRST 7 DAYS · CANCEL ANYTIME · 18+ BET RESPONSIBLY
+          CANCEL ANYTIME · 18+ BET RESPONSIBLY
         </p>
       </div>
     </div>
