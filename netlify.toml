@@ -79,6 +79,16 @@
   to     = "/.netlify/functions/best-bet"
   status = 200
 
+[[redirects]]
+  from   = "/api/odds/*"
+  to     = "/.netlify/functions/odds/:splat"
+  status = 200
+
+[[redirects]]
+  from   = "/api/odds"
+  to     = "/.netlify/functions/odds"
+  status = 200
+
 # SPA fallback — every non-API, non-asset path serves index.html.
 [[redirects]]
   from   = "/*"

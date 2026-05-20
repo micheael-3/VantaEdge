@@ -306,53 +306,116 @@ function MatchCard({ m }) {
       </div>
 
       <div className="dp-right">
-        <div>
-          <label className="dp-odds-row" style={{ marginBottom: 4 }}>
-            <span className="l">Over odds</span>
-            <span />
-          </label>
-          <input
-            className="dp-odds-input"
-            type="number"
-            step="0.01"
-            min="1"
-            placeholder="1.85"
-            value={overOdds}
-            onChange={(e) => setOverOdds(e.target.value)}
-            inputMode="decimal"
-          />
-        </div>
-        <div>
-          <label className="dp-odds-row" style={{ marginBottom: 4 }}>
-            <span className="l">BTTS odds</span>
-            <span />
-          </label>
-          <input
-            className="dp-odds-input"
-            type="number"
-            step="0.01"
-            min="1"
-            placeholder="1.90"
-            value={bttsOdds}
-            onChange={(e) => setBttsOdds(e.target.value)}
-            inputMode="decimal"
-          />
-        </div>
+        {m.oddsData ? (
+          <>
+            <div className="dp-liveodds">
+              <div className="dp-liveodds-head">
+                <span>📊 Live Odds</span>
+                <span>{m.oddsData.bookmakerCount || 0} bookies</span>
+              </div>
+              {m.oddsData.bestOverOdds != null && (
+                <div className="dp-liveodds-row">
+                  <span className="label">Over {m.oddsData.overLine}</span>
+                  <span>
+                    <span className="odds">{m.oddsData.bestOverOdds.toFixed(2)}</span>{' '}
+                    <span className="bookie">@ {m.oddsData.bestOverBookmaker}</span>
+                  </span>
+                </div>
+              )}
+              {m.oddsData.bestBttsOdds != null && (
+                <div className="dp-liveodds-row">
+                  <span className="label">BTTS {m.oddsData.bttsSide || 'YES'}</span>
+                  <span>
+                    <span className="odds">{m.oddsData.bestBttsOdds.toFixed(2)}</span>{' '}
+                    <span className="bookie">@ {m.oddsData.bestBttsBookmaker}</span>
+                  </span>
+                </div>
+              )}
+            </div>
 
-        <div className={`dp-ev-pill ${!hasOdds ? 'empty' : positive ? 'positive' : ''}`}>
-          <span className="l">Your Edge</span>
-          <span className="v">
-            {!hasOdds
-              ? 'enter odds'
-              : `${primaryEV.edge >= 0 ? '+' : ''}${primaryEV.edge.toFixed(1)}%`}
-          </span>
-        </div>
+            {(() => {
+              const auto = m.oddsData.autoEV || {};
+              const bestEdge = Math.max(
+                auto.overEdge != null ? auto.overEdge : -Infinity,
+                auto.bttsEdge != null ? auto.bttsEdge : -Infinity,
+              );
+              const has = Number.isFinite(bestEdge);
+              const pos = has && bestEdge >= 1;
+              return (
+                <div className={`dp-ev-pill ${!has ? 'empty' : pos ? 'positive' : ''}`}>
+                  <span className="l">Your Edge</span>
+                  <span className="v">
+                    {has ? `${bestEdge >= 0 ? '+' : ''}${bestEdge.toFixed(1)}%` : '—'}
+                  </span>
+                </div>
+              );
+            })()}
 
-        {overKelly > 0 && (
-          <div className="dp-odds-row">
-            <span className="l">Kelly stake</span>
-            <span className="v">{(overKelly * 100).toFixed(1)}% bankroll</span>
-          </div>
+            {(() => {
+              const k = m.oddsData.autoEV && (m.oddsData.autoEV.kellyOver || m.oddsData.autoEV.kellyBtts);
+              if (!k || k <= 0) return null;
+              return (
+                <div className="dp-odds-row">
+                  <span className="l">Kelly stake</span>
+                  <span className="v">{(k * 100).toFixed(1)}% bankroll</span>
+                </div>
+              );
+            })()}
+
+            <div className="dp-liveodds-foot">odds via the-odds-api · refreshed every 5 min</div>
+          </>
+        ) : (
+          <>
+            <div className="dp-liveodds-foot" style={{ marginBottom: 2 }}>
+              Auto odds unavailable — enter manually
+            </div>
+            <div>
+              <label className="dp-odds-row" style={{ marginBottom: 4 }}>
+                <span className="l">Over odds</span>
+                <span />
+              </label>
+              <input
+                className="dp-odds-input"
+                type="number"
+                step="0.01"
+                min="1"
+                placeholder="1.85"
+                value={overOdds}
+                onChange={(e) => setOverOdds(e.target.value)}
+                inputMode="decimal"
+              />
+            </div>
+            <div>
+              <label className="dp-odds-row" style={{ marginBottom: 4 }}>
+                <span className="l">BTTS odds</span>
+                <span />
+              </label>
+              <input
+                className="dp-odds-input"
+                type="number"
+                step="0.01"
+                min="1"
+                placeholder="1.90"
+                value={bttsOdds}
+                onChange={(e) => setBttsOdds(e.target.value)}
+                inputMode="decimal"
+              />
+            </div>
+            <div className={`dp-ev-pill ${!hasOdds ? 'empty' : positive ? 'positive' : ''}`}>
+              <span className="l">Your Edge</span>
+              <span className="v">
+                {!hasOdds
+                  ? 'enter odds'
+                  : `${primaryEV.edge >= 0 ? '+' : ''}${primaryEV.edge.toFixed(1)}%`}
+              </span>
+            </div>
+            {overKelly > 0 && (
+              <div className="dp-odds-row">
+                <span className="l">Kelly stake</span>
+                <span className="v">{(overKelly * 100).toFixed(1)}% bankroll</span>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -1,0 +1,143 @@
+/* VantaEdge — /odds power-user table, scoped under .odds-page */
+
+.odds-page {
+  --op-bg: #0a0a0f;
+  --op-bg-card: #111118;
+  --op-bg-raised: #16161f;
+  --op-border: #2a2a38;
+  --op-border-strong: #3a3a48;
+  --op-text: #e8e8ec;
+  --op-text-dim: #9696a3;
+  --op-text-faint: #5a5a68;
+  --op-mint: #6ee7b7;
+  --op-indigo: #818cf8;
+  --op-red: #f87171;
+  --op-radius: 14px;
+
+  background: var(--op-bg);
+  color: var(--op-text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+.odds-page button { font-family: inherit; }
+
+.odds-page .op-head {
+  padding: 28px 36px 22px;
+  border-bottom: 1px solid var(--op-border);
+}
+@media (max-width: 720px) { .odds-page .op-head { padding: 20px 20px 16px; } }
+.odds-page .op-head h1 {
+  font-family: 'Syne', sans-serif;
+  font-weight: 700; font-size: 28px; letter-spacing: -0.02em;
+  margin: 0 0 6px;
+}
+.odds-page .op-head p { color: var(--op-text-dim); font-size: 14px; }
+
+.odds-page .op-filter-bar {
+  padding: 14px 36px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--op-border);
+}
+@media (max-width: 720px) { .odds-page .op-filter-bar { padding: 14px 20px; } }
+.odds-page .op-filter-label {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--op-text-faint);
+}
+.odds-page .op-select, .odds-page .op-input {
+  background: var(--op-bg-raised);
+  border: 1px solid var(--op-border);
+  color: var(--op-text);
+  font-family: 'DM Mono', monospace;
+  font-size: 12px; padding: 6px 10px;
+  border-radius: 6px;
+}
+.odds-page .op-toggle {
+  border: 1px solid var(--op-border);
+  background: transparent;
+  color: var(--op-text-dim);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.odds-page .op-toggle.on {
+  background: rgba(110, 231, 183, 0.1);
+  border-color: rgba(110, 231, 183, 0.4);
+  color: var(--op-mint);
+}
+.odds-page .op-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--op-border);
+  background: transparent;
+  color: var(--op-text);
+  height: 32px; padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px; font-weight: 500; cursor: pointer;
+}
+.odds-page .op-btn:hover { border-color: var(--op-border-strong); background: var(--op-bg-raised); }
+
+.odds-page .op-table-wrap { padding: 24px 36px 60px; overflow-x: auto; }
+@media (max-width: 720px) { .odds-page .op-table-wrap { padding: 20px 20px 60px; } }
+
+.odds-page .op-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.odds-page .op-table th {
+  text-align: left;
+  padding: 12px 12px;
+  border-bottom: 1px solid var(--op-border);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--op-text-faint);
+  white-space: nowrap;
+}
+.odds-page .op-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--op-border);
+  font-family: 'DM Mono', monospace;
+  vertical-align: middle;
+}
+.odds-page .op-table tr:hover { background: rgba(22, 22, 31, 0.5); }
+.odds-page .op-team { font-family: 'Syne', sans-serif; font-weight: 600; font-size: 14px; }
+.odds-page .op-badge {
+  display: inline-flex; align-items: center;
+  padding: 4px 9px;
+  border-radius: 4px;
+  font-size: 11px; letter-spacing: 0.04em;
+  border: 1px solid var(--op-border-strong);
+  color: var(--op-text-dim);
+}
+.odds-page .op-badge.mint {
+  background: rgba(110, 231, 183, 0.12);
+  border-color: rgba(110, 231, 183, 0.4);
+  color: var(--op-mint);
+}
+.odds-page .op-badge.indigo {
+  background: rgba(129, 140, 248, 0.12);
+  border-color: rgba(129, 140, 248, 0.4);
+  color: var(--op-indigo);
+}
+.odds-page .op-edge.positive { color: var(--op-mint); font-weight: 500; }
+.odds-page .op-edge.negative { color: var(--op-text-faint); }
+.odds-page .op-empty {
+  padding: 60px 24px;
+  text-align: center;
+  border: 1px dashed var(--op-border);
+  border-radius: var(--op-radius);
+  color: var(--op-text-dim);
+}
+.odds-page .op-empty strong {
+  display: block;
+  font-family: 'Syne', sans-serif; font-weight: 700;
+  font-size: 20px; color: var(--op-text); margin-bottom: 8px;
+}
+.odds-page .op-quota {
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  color: var(--op-text-faint);
+  margin-left: auto;
+}
+.odds-page .op-quota.warn { color: var(--op-red); }

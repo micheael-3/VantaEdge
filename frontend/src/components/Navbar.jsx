@@ -26,6 +26,11 @@ export default function Navbar() {
               <NavLink to="/history" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
                 History
               </NavLink>
+              {(user.tier === 'ANALYST' || user.tier === 'EDGE') && (
+                <NavLink to="/odds" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
+                  Odds
+                </NavLink>
+              )}
               <NavLink to="/affiliate/dashboard" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
                 Affiliates
               </NavLink>

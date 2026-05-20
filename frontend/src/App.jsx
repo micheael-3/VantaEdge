@@ -19,6 +19,8 @@ import AffiliateDashboard from './pages/AffiliateDashboard';
 import RefCapture from './pages/RefCapture';
 import Blog from './pages/Blog';
 import BlogPost from './pages/BlogPost';
+import Odds from './pages/Odds';
+import AdminOdds from './pages/admin/AdminOdds';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -52,6 +54,15 @@ function AdminProtected({ children }) {
   const location = useLocation();
   if (!getAdminToken()) {
     return <Navigate to="/admin/login" replace state={{ from: location.pathname }} />;
+  }
+  return children;
+}
+
+function OddsGuard({ children }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.tier !== 'ANALYST' && user.tier !== 'EDGE') {
+    return <Navigate to="/dashboard" replace />;
   }
   return children;
 }
@@ -114,6 +125,16 @@ export default function App() {
           }
         />
         <Route
+          path="/odds"
+          element={
+            <Protected>
+              <OddsGuard>
+                <Odds />
+              </OddsGuard>
+            </Protected>
+          }
+        />
+        <Route
           path="/settings"
           element={
             <Protected>
@@ -146,6 +167,7 @@ export default function App() {
           <Route path="users" element={<AdminUsers />} />
           <Route path="predictions" element={<AdminPredictions />} />
           <Route path="stats" element={<AdminStats />} />
+          <Route path="odds" element={<AdminOdds />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

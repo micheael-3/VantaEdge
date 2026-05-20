@@ -1,6 +1,7 @@
 const { sql } = require('./_shared/db');
 const { json, error, notFound, subPath } = require('./_shared/response');
 const { requireAdmin } = require('./_shared/admin-mw');
+const { getQuotaSnapshot, isConfigured } = require('./_shared/odds');
 
 function startOfTodayUtc() {
   const d = new Date();
@@ -89,6 +90,9 @@ exports.handler = async (event) => {
     if (method === 'GET' && path === '/users') return await listUsers(event);
     if (method === 'GET' && path === '/predictions') return await listPredictionsToday(event);
     if (method === 'GET' && path === '/stats') return await stats(event);
+    if (method === 'GET' && path === '/odds-quota') {
+      return json(200, { oddsConfigured: isConfigured(), quota: getQuotaSnapshot() });
+    }
     if (method === 'POST' && path === '/login') return await loginPing(event);
 
     return notFound();

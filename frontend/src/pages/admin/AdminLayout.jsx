@@ -42,6 +42,12 @@ export default function AdminLayout() {
           >
             Stats
           </NavLink>
+          <NavLink
+            to="/admin/odds"
+            className={({ isActive }) => (isActive ? 'admin-nav-link active' : 'admin-nav-link')}
+          >
+            Odds API
+          </NavLink>
         </nav>
         <div style={{ marginTop: 'auto' }}>
           <button className="btn btn-ghost" onClick={handleLogout} style={{ width: '100%' }}>

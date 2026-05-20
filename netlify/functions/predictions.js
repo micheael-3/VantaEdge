@@ -6,6 +6,7 @@ const { consumeRefresh } = require('./_shared/refresh-limit');
 const football = require('./_shared/football');
 const { analyseMatch } = require('./_shared/claude');
 const { calculateEV, calculateKelly } = require('./_shared/ev');
+const oddsService = require('./_shared/odds');
 
 async function handleLeague(event, leagueId) {
   const { res, user } = await requireUser(event);
@@ -40,6 +41,15 @@ async function handleLeague(event, leagueId) {
       fixtures: [],
       message: 'No matches today',
     });
+  }
+
+  // Fetch live bookmaker odds for the whole league once (cached 5 min).
+  // Returns null when ODDS_API_KEY is unset — we fall back to manual entry per card.
+  let leagueOdds = null;
+  try {
+    leagueOdds = await oddsService.getMatchOdds(leagueId);
+  } catch (err) {
+    console.error('odds fetch failed:', err.message);
   }
 
   const results = await Promise.all(
@@ -78,21 +88,43 @@ async function handleLeague(event, leagueId) {
 
         const analysis = await analyseMatch(matchData, includeFirstHalf, includeAH);
 
-        const overOdds = parseFloat(qs[`over_${fx.fixture.id}`]) || null;
-        const bttsOdds = parseFloat(qs[`btts_${fx.fixture.id}`]) || null;
+        // ---- Auto-odds via The Odds API ----
+        let oddsData = null;
+        const matchedOdds = oddsService.findOddsForFixture(leagueOdds, fx);
+        if (matchedOdds) {
+          oddsData = oddsService.buildOddsData(matchedOdds, analysis);
+        }
 
-        let evOver = null;
-        let evBtts = null;
-        let kellyOver = null;
-        let kellyBtts = null;
+        // Auto EV from real bookmaker odds — preferred when present.
+        let autoEvOver = null;
+        let autoEvBtts = null;
+        let kellyOverAuto = 0;
+        let kellyBttsAuto = 0;
+        if (oddsData && oddsData.bestOverOdds) {
+          autoEvOver = calculateEV(analysis.over.confidence, oddsData.bestOverOdds);
+          kellyOverAuto = calculateKelly(analysis.over.confidence, oddsData.bestOverOdds);
+        }
+        if (oddsData && oddsData.bestBttsOdds) {
+          autoEvBtts = calculateEV(analysis.btts.confidence, oddsData.bestBttsOdds);
+          kellyBttsAuto = calculateKelly(analysis.btts.confidence, oddsData.bestBttsOdds);
+        }
+
+        // Manual user-provided odds (legacy fallback path, still supported via query string).
+        const overOddsManual = parseFloat(qs[`over_${fx.fixture.id}`]) || null;
+        const bttsOddsManual = parseFloat(qs[`btts_${fx.fixture.id}`]) || null;
+
+        let evOver = autoEvOver;
+        let evBtts = autoEvBtts;
+        let kellyOver = kellyOverAuto;
+        let kellyBtts = kellyBttsAuto;
         if (includeEV) {
-          if (overOdds) {
-            evOver = calculateEV(analysis.over.confidence, overOdds);
-            kellyOver = calculateKelly(analysis.over.confidence, overOdds);
+          if (!evOver && overOddsManual) {
+            evOver = calculateEV(analysis.over.confidence, overOddsManual);
+            kellyOver = calculateKelly(analysis.over.confidence, overOddsManual);
           }
-          if (bttsOdds) {
-            evBtts = calculateEV(analysis.btts.confidence, bttsOdds);
-            kellyBtts = calculateKelly(analysis.btts.confidence, bttsOdds);
+          if (!evBtts && bttsOddsManual) {
+            evBtts = calculateEV(analysis.btts.confidence, bttsOddsManual);
+            kellyBtts = calculateKelly(analysis.btts.confidence, bttsOddsManual);
           }
         }
 
@@ -100,13 +132,18 @@ async function handleLeague(event, leagueId) {
           INSERT INTO predictions
             (user_id, league, fixture_id, home_team, away_team, kickoff,
              over_line, over_confidence, btts, btts_confidence,
-             ev_edge_over, ev_edge_btts, kelly_over, kelly_btts)
+             ev_edge_over, ev_edge_btts, kelly_over, kelly_btts,
+             best_over_odds, best_over_bookmaker, best_btts_odds, best_btts_bookmaker,
+             auto_ev_over, auto_ev_btts)
           VALUES
             (${user.id}, ${league.name}, ${fx.fixture.id}, ${fx.teams.home.name}, ${fx.teams.away.name},
              ${fx.fixture.date}, ${analysis.over.line}, ${Math.round(analysis.over.confidence)},
              ${analysis.btts.prediction}, ${Math.round(analysis.btts.confidence)},
              ${evOver ? evOver.edge : null}, ${evBtts ? evBtts.edge : null},
-             ${kellyOver}, ${kellyBtts})
+             ${kellyOver}, ${kellyBtts},
+             ${oddsData ? oddsData.bestOverOdds : null}, ${oddsData ? oddsData.bestOverBookmaker : null},
+             ${oddsData ? oddsData.bestBttsOdds : null}, ${oddsData ? oddsData.bestBttsBookmaker : null},
+             ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null})
           RETURNING id`;
 
         return {
@@ -123,6 +160,26 @@ async function handleLeague(event, leagueId) {
             asianHandicap: analysis.asianHandicap,
           },
           ev: { over: evOver, btts: evBtts, kellyOver, kellyBtts },
+          oddsData: oddsData
+            ? {
+                overLine: oddsData.overLine,
+                bestOverOdds: oddsData.bestOverOdds,
+                bestOverBookmaker: oddsData.bestOverBookmaker,
+                bestBttsOdds: oddsData.bestBttsOdds,
+                bestBttsBookmaker: oddsData.bestBttsBookmaker,
+                bttsSide: oddsData.bttsSide,
+                bookmakerCount: oddsData.bookmakerCount,
+                allBookmakers: oddsData.allBookmakers,
+                autoEV: {
+                  overEdge: autoEvOver ? autoEvOver.edge : null,
+                  overBadge: autoEvOver ? autoEvOver.valueBadge : null,
+                  bttsEdge: autoEvBtts ? autoEvBtts.edge : null,
+                  bttsBadge: autoEvBtts ? autoEvBtts.valueBadge : null,
+                  kellyOver: kellyOverAuto || null,
+                  kellyBtts: kellyBttsAuto || null,
+                },
+              }
+            : null,
         };
       } catch (err) {
         console.error(`Fixture ${fx.fixture.id} failed:`, err.message);
