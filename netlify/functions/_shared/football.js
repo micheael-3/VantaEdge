@@ -32,9 +32,31 @@ function todayString() {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
+// Fetch fixtures for a specific date. Caller picks TTL based on temporality:
+//   • today -> 300s (lineups, late changes)
+//   • future -> 3600s (rarely changes)
+//   • past   -> 86400s (final results don't change)
+async function getFixturesByDate(leagueId, dateStr, ttlSeconds) {
+  const params = { league: leagueId, season: SEASON, date: dateStr };
+  return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), ttlSeconds);
+}
+
 async function getTodayFixtures(leagueId) {
-  const params = { league: leagueId, season: SEASON, date: todayString() };
-  return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params));
+  return getFixturesByDate(leagueId, todayString(), 300);
+}
+
+// Last N completed fixtures for the league (across all teams). Used as the
+// graceful fallback when there are no upcoming matches in the next week.
+async function getRecentPlayedFixtures(leagueId, last = 10) {
+  const params = { league: leagueId, season: SEASON, last };
+  return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 86400);
+}
+
+// Lightweight: just the count of fixtures on a date. Reuses the same cache
+// entry as a full fetch, so a subsequent call for the same date is free.
+async function getFixtureCountByDate(leagueId, dateStr, ttlSeconds) {
+  const list = await getFixturesByDate(leagueId, dateStr, ttlSeconds);
+  return Array.isArray(list) ? list.length : 0;
 }
 
 async function getTeamLastHomeGames(teamId, leagueId) {
@@ -207,6 +229,9 @@ function calculateRestDays(fixtures) {
 
 module.exports = {
   getTodayFixtures,
+  getFixturesByDate,
+  getRecentPlayedFixtures,
+  getFixtureCountByDate,
   getTeamLastHomeGames,
   getTeamLastAwayGames,
   getH2H,

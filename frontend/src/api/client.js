@@ -53,6 +53,8 @@ export const auth = {
 export const predictions = {
   getByLeague: (leagueId, opts = {}) =>
     api.get(`/api/predictions/${leagueId}`, { params: opts }).then((r) => r.data),
+  getUpcoming: (leagueId) =>
+    api.get(`/api/predictions/upcoming/${leagueId}`).then((r) => r.data),
 };
 
 export const history = {

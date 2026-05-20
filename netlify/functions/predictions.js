@@ -9,6 +9,110 @@ const { calculateEV, calculateKelly } = require('./_shared/ev');
 const oddsService = require('./_shared/odds');
 const weatherService = require('./_shared/weather');
 
+// ---------- Date helpers ----------
+function todayDateStr() {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+function addDaysStr(baseDateStr, days) {
+  const d = new Date(`${baseDateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+function isoToDateStr(iso) {
+  if (!iso) return null;
+  try {
+    const d = new Date(iso);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  } catch {
+    return null;
+  }
+}
+
+function labelForDateStr(dateStr) {
+  const today = todayDateStr();
+  if (dateStr === today) return 'Today';
+  if (dateStr === addDaysStr(today, 1)) return 'Tomorrow';
+  if (dateStr === addDaysStr(today, -1)) return 'Yesterday';
+  try {
+    const d = new Date(`${dateStr}T12:00:00Z`);
+    return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+  } catch {
+    return dateStr;
+  }
+}
+
+// TTL chooser: 300s today, 3600s future, 86400s past.
+function ttlForDate(dateStr) {
+  const today = todayDateStr();
+  if (dateStr === today) return 300;
+  if (dateStr > today) return 3600;
+  return 86400;
+}
+
+// Status codes from API-Football that mean the match is over with a final score.
+const TERMINAL_STATUSES = new Set(['FT', 'AET', 'PEN', 'AWD', 'WO']);
+
+// Find a sensible fixture batch. If the caller supplied an explicit date we
+// fetch only that. Otherwise we cascade: today → tomorrow → recent past.
+async function pickFixtures(leagueId, explicitDate) {
+  if (explicitDate) {
+    const list = await football.getFixturesByDate(leagueId, explicitDate, ttlForDate(explicitDate));
+    const today = todayDateStr();
+    return {
+      fixtures: list || [],
+      dateLabel: labelForDateStr(explicitDate),
+      matchDate: explicitDate,
+      isPast: explicitDate < today,
+      isUpcoming: explicitDate > today,
+      isToday: explicitDate === today,
+      mode: 'explicit',
+    };
+  }
+
+  const today = todayDateStr();
+  // 1. Today
+  let list = await football.getFixturesByDate(leagueId, today, 300);
+  if (list && list.length) {
+    return {
+      fixtures: list,
+      dateLabel: 'Today',
+      matchDate: today,
+      isPast: false,
+      isUpcoming: false,
+      isToday: true,
+      mode: 'today',
+    };
+  }
+  // 2. Tomorrow (per spec, only today + tomorrow get pre-scanned on initial load)
+  const tomorrow = addDaysStr(today, 1);
+  list = await football.getFixturesByDate(leagueId, tomorrow, 3600);
+  if (list && list.length) {
+    return {
+      fixtures: list,
+      dateLabel: 'Tomorrow',
+      matchDate: tomorrow,
+      isPast: false,
+      isUpcoming: true,
+      isToday: false,
+      mode: 'tomorrow',
+    };
+  }
+  // 3. Recent past as the last-resort fallback so the page is never empty.
+  const recent = await football.getRecentPlayedFixtures(leagueId, 10);
+  return {
+    fixtures: Array.isArray(recent) ? recent : [],
+    dateLabel: 'Recent Matches',
+    matchDate: null,
+    isPast: true,
+    isUpcoming: false,
+    isToday: false,
+    mode: 'recent',
+  };
+}
+
 async function handleLeague(event, leagueId) {
   const { res, user } = await requireUser(event);
   if (res) return res;
@@ -32,7 +136,14 @@ async function handleLeague(event, leagueId) {
   const includeEV = true;
   void tierRank; // keep import; restore tier-aware logic when re-enabling.
 
-  const fixtures = await football.getTodayFixtures(leagueId);
+  // --- Fixture cascade (spec §1): today → tomorrow → recent past.
+  //     If the caller passes ?date=YYYY-MM-DD we use that day directly.
+  const explicitDate = typeof qs.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(qs.date) ? qs.date : null;
+  const picked = await pickFixtures(leagueId, explicitDate);
+  const fixtures = picked.fixtures;
+
+  // Even on an empty pick we still return the date metadata so the frontend
+  // can render something useful (e.g. an empty-state with a "Try Tomorrow" CTA).
   if (!fixtures || fixtures.length === 0) {
     return json(200, {
       league: league.name,
@@ -40,7 +151,13 @@ async function handleLeague(event, leagueId) {
       tier: user.tier,
       dailyRefreshes: consumed.dailyRefreshes,
       fixtures: [],
-      message: 'No matches today',
+      dateLabel: picked.dateLabel,
+      matchDate: picked.matchDate,
+      isPast: picked.isPast,
+      isUpcoming: picked.isUpcoming,
+      isToday: picked.isToday,
+      mode: picked.mode,
+      message: 'No fixtures available right now — try a different date.',
     });
   }
 
@@ -199,6 +316,38 @@ async function handleLeague(event, leagueId) {
              ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null})
           RETURNING id`;
 
+        // For past / completed fixtures, attach the actual result so the
+        // frontend can render "FT 2-1" + ✓/✗ verdicts next to the prediction.
+        const statusShort = fx.fixture && fx.fixture.status && fx.fixture.status.short;
+        const homeGoals = fx.goals && fx.goals.home;
+        const awayGoals = fx.goals && fx.goals.away;
+        let actualResult = null;
+        if (TERMINAL_STATUSES.has(statusShort) && homeGoals != null && awayGoals != null) {
+          const total = Number(homeGoals) + Number(awayGoals);
+          const bothScored = Number(homeGoals) > 0 && Number(awayGoals) > 0;
+          const overHit = total > Number(analysis.over.line);
+          const bttsCall = String(analysis.btts.prediction || 'YES').toUpperCase();
+          const bttsHit = bttsCall === 'YES' ? bothScored : !bothScored;
+          actualResult = {
+            status: 'FT',
+            homeGoals: Number(homeGoals),
+            awayGoals: Number(awayGoals),
+            totalGoals: total,
+            bothScored,
+            overHit,
+            bttsHit,
+          };
+          // Backfill the hit columns so /history and the results worker
+          // stay consistent with what the user sees on the dashboard.
+          try {
+            await sql()`UPDATE predictions
+                        SET over_hit = ${overHit}, btts_hit = ${bttsHit}
+                        WHERE id = ${inserted[0].id}`;
+          } catch (e) {
+            console.error('past-fixture hit backfill failed:', e.message);
+          }
+        }
+
         return {
           id: inserted[0].id,
           fixtureId: fx.fixture.id,
@@ -223,6 +372,7 @@ async function handleLeague(event, leagueId) {
           },
           referee: refereeStats,
           weather: weather,
+          actualResult,
           predictions: {
             over: analysis.over,
             btts: analysis.btts,
@@ -270,8 +420,52 @@ async function handleLeague(event, leagueId) {
     leagueId,
     tier: user.tier,
     dailyRefreshes: consumed.dailyRefreshes,
+    dateLabel: picked.dateLabel,
+    matchDate: picked.matchDate,
+    isPast: picked.isPast,
+    isUpcoming: picked.isUpcoming,
+    isToday: picked.isToday,
+    mode: picked.mode,
     fixtures: results,
   });
+}
+
+// GET /api/predictions/upcoming/:leagueId — scans the next 7 days and
+// returns [{date, count, label, isToday}]. Lightweight: only the per-date
+// fixture count is needed, and every call reuses the shared cache so a
+// dashboard refresh after a tab switch is free.
+async function handleUpcoming(event, leagueId) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+  const league = LEAGUES[leagueId];
+  if (!league) return error(400, 'Invalid league');
+
+  const allowed = TIER_LEAGUES[user.tier] || [];
+  if (!allowed.includes(leagueId)) {
+    return error(403, 'UPGRADE_REQUIRED', { requiredTier: league.minTier });
+  }
+
+  const today = todayDateStr();
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const dateStr = addDaysStr(today, i);
+    let count = null;
+    try {
+      // i === 0 → today (5min TTL), i ≥ 1 → future (1h TTL)
+      const ttl = i === 0 ? 300 : 3600;
+      count = await football.getFixtureCountByDate(leagueId, dateStr, ttl);
+    } catch (e) {
+      console.error(`upcoming scan failed for ${dateStr}:`, e.message);
+    }
+    days.push({
+      date: dateStr,
+      count: count == null ? null : Number(count),
+      label: labelForDateStr(dateStr),
+      isToday: i === 0,
+    });
+  }
+
+  return json(200, { leagueId, league: league.name, days });
 }
 
 exports.handler = async (event) => {
@@ -280,6 +474,11 @@ exports.handler = async (event) => {
     if (event.httpMethod !== 'GET') return error(405, 'Method not allowed');
 
     const path = subPath(event, 'predictions');
+
+    // /upcoming/:leagueId — date-pill helper
+    const upcomingMatch = path.match(/^\/upcoming\/(\d+)\/?$/);
+    if (upcomingMatch) return await handleUpcoming(event, parseInt(upcomingMatch[1], 10));
+
     const leagueMatch = path.match(/^\/(\d+)\/?$/);
     if (leagueMatch) return await handleLeague(event, parseInt(leagueMatch[1], 10));
 

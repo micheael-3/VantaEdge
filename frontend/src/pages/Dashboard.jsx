@@ -493,13 +493,44 @@ function MatchCard({ m, userTier, onLogBet }) {
     );
   }
 
+  // ---- Past-result + upcoming pill helpers ----
+  const ar = m.actualResult;
+  const isPastCard = !!ar;
+  let pastBorderClass = '';
+  if (isPastCard) {
+    if (ar.overHit && ar.bttsHit) pastBorderClass = 'past-result both-hit';
+    else if (!ar.overHit && !ar.bttsHit) pastBorderClass = 'past-result both-miss';
+    else pastBorderClass = 'past-result split';
+  }
+  const daysUntilKickoff = (() => {
+    if (!m.kickoff) return null;
+    try {
+      const ko = new Date(m.kickoff);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const koDay = new Date(ko);
+      koDay.setHours(0, 0, 0, 0);
+      const ms = koDay.getTime() - today.getTime();
+      return Math.round(ms / (1000 * 60 * 60 * 24));
+    } catch { return null; }
+  })();
+  const whenPill = (() => {
+    if (isPastCard) return null;
+    if (daysUntilKickoff == null || daysUntilKickoff <= 0) return null;
+    if (daysUntilKickoff === 1) return 'in 1 day';
+    if (daysUntilKickoff <= 6) return `in ${daysUntilKickoff} days`;
+    return null;
+  })();
+
   return (
-    <div className={`dp-match ${isStrong ? 'glow' : ''}`}>
+    <div className={`dp-match ${isStrong ? 'glow' : ''} ${pastBorderClass}`}>
       <div className="dp-match-main">
+        {isPastCard && <div className="dp-past-label">Final Result</div>}
         <div className="dp-match-league">
           <span>{m.league}</span>
           <span className="sep">·</span>
           <span>{kickoffStr(m.kickoff)}</span>
+          {whenPill && <span className="dp-when-pill">{whenPill}</span>}
         </div>
         <div className="dp-match-teams">
           <span className="dp-team">
@@ -535,12 +566,32 @@ function MatchCard({ m, userTier, onLogBet }) {
         <ConfBar value={headlineConfidence} />
         <div className="dp-bet-badges">
           {over && (
-            <span className={`dp-bet-badge on mint`}>OVER {over.line}</span>
+            <span className={`dp-bet-badge on mint`}>
+              OVER {over.line}
+              {isPastCard && (
+                <span className={`dp-hit-icon ${ar.overHit ? 'hit' : 'miss'}`}>
+                  {ar.overHit ? '✓' : '✗'}
+                </span>
+              )}
+            </span>
           )}
           {btts && (
-            <span className={`dp-bet-badge on`}>BTTS {btts.prediction}</span>
+            <span className={`dp-bet-badge on`}>
+              BTTS {btts.prediction}
+              {isPastCard && (
+                <span className={`dp-hit-icon ${ar.bttsHit ? 'hit' : 'miss'}`}>
+                  {ar.bttsHit ? '✓' : '✗'}
+                </span>
+              )}
+            </span>
           )}
         </div>
+        {isPastCard && (
+          <div className="dp-final-score">
+            <span className="ft">FT</span>
+            <span>{ar.homeGoals} — {ar.awayGoals}</span>
+          </div>
+        )}
       </div>
 
       <div className="dp-right">
@@ -835,6 +886,13 @@ export default function Dashboard() {
   const [showLegend, setShowLegend] = useState(true);
   const [advFilters, setAdvFilters] = useState(loadFilters);
 
+  // ---- Date selector state ----
+  const [dateLabel, setDateLabel] = useState('Today');
+  const [matchDate, setMatchDate] = useState(null);     // YYYY-MM-DD or null (when 'recent')
+  const [isPast, setIsPast] = useState(false);
+  const [activeDate, setActiveDate] = useState(null);   // null = auto cascade; else YYYY-MM-DD
+  const [upcomingDays, setUpcomingDays] = useState([]); // [{date, count, label, isToday}]
+
   // Persist filters across sessions.
   useEffect(() => {
     saveFilters(advFilters);
@@ -858,13 +916,19 @@ export default function Dashboard() {
   const [logBetCtx, setLogBetCtx] = useState(null);
   const closeLogBet = () => setLogBetCtx(null);
 
-  const fetchData = useCallback(async (leagueId, initial = false) => {
+  const fetchData = useCallback(async (leagueId, initial = false, dateOverride = null) => {
     setLoading(true);
     setError('');
     setMessage('');
     try {
-      const data = await predictionsApi.getByLeague(leagueId, initial ? { initial: 1 } : {});
+      const params = {};
+      if (initial) params.initial = 1;
+      if (dateOverride) params.date = dateOverride;
+      const data = await predictionsApi.getByLeague(leagueId, params);
       setMatches(data.fixtures || []);
+      setDateLabel(data.dateLabel || 'Today');
+      setMatchDate(data.matchDate || null);
+      setIsPast(!!data.isPast);
       if (data.message) setMessage(data.message);
       setHasLoadedOnce(true);
     } catch (err) {
@@ -877,9 +941,29 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Fetch the 7-day scan for the date pills whenever the league changes.
   useEffect(() => {
-    fetchData(activeLeague, !hasLoadedOnce);
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await predictionsApi.getUpcoming(activeLeague);
+        if (!cancelled) setUpcomingDays(Array.isArray(data.days) ? data.days : []);
+      } catch {
+        if (!cancelled) setUpcomingDays([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeLeague]);
+
+  // Fetch predictions on league change or active-date change.
+  useEffect(() => {
+    fetchData(activeLeague, !hasLoadedOnce, activeDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeLeague, activeDate]);
+
+  // Reset date pin when switching leagues — let the backend cascade re-pick.
+  useEffect(() => {
+    setActiveDate(null);
   }, [activeLeague]);
 
   const handleLogout = async () => {
@@ -1030,6 +1114,51 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Date label + horizontal scroll of next 7 days */}
+          <div className="dp-date-row">
+            <div className={`dp-date-label ${isPast ? 'past' : ''}`}>
+              {isPast ? 'Recent Results' : dateLabel}
+              {matchDate && (
+                <span style={{ color: 'var(--dp-text-faint)', marginLeft: 8 }}>· {(() => {
+                  try { return new Date(`${matchDate}T12:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); }
+                  catch { return matchDate; }
+                })()}</span>
+              )}
+            </div>
+          </div>
+          <div className="dp-date-pills">
+            {upcomingDays.length === 0 ? (
+              <span className="dp-mono" style={{ fontSize: 11, color: 'var(--dp-text-faint)' }}>
+                Scanning fixtures…
+              </span>
+            ) : (
+              upcomingDays.map((d) => {
+                const isActive = activeDate === d.date || (activeDate === null && matchDate === d.date);
+                const empty = !d.count || d.count === 0;
+                const shortLabel =
+                  d.isToday ? 'Today'
+                  : d.label === 'Tomorrow' ? 'Tomorrow'
+                  : (() => {
+                      try {
+                        return new Date(`${d.date}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' });
+                      } catch { return d.date; }
+                    })();
+                return (
+                  <button
+                    key={d.date}
+                    type="button"
+                    className={`dp-date-pill ${isActive ? 'active' : ''} ${empty ? 'empty' : ''}`}
+                    onClick={() => setActiveDate(d.date)}
+                    title={`${d.count == null ? '?' : d.count} matches on ${d.label}`}
+                  >
+                    <span>{shortLabel}</span>
+                    {d.count != null && <span className="ct">{d.count}</span>}
+                  </button>
+                );
+              })
+            )}
+          </div>
+
           <div className="dp-filter-bar">
             <div className="dp-filter-group">
               <span className="dp-filter-label">Min confidence</span>
@@ -1138,24 +1267,59 @@ export default function Dashboard() {
             )}
 
             {loading ? (
-              <div className="dp-mono" style={{ color: 'var(--dp-text-dim)', padding: '40px 0', textAlign: 'center' }}>
-                Loading fixtures…
-              </div>
+              // Skeleton cards keep the layout stable — never "empty" state
+              <>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="dp-match" style={{ opacity: 0.55, animation: 'skel 1.4s ease-in-out infinite' }}>
+                    <div className="dp-match-main">
+                      <div className="skeleton" style={{ height: 12, width: 120, borderRadius: 4 }} />
+                      <div className="skeleton" style={{ height: 20, width: '70%', marginTop: 10, borderRadius: 4 }} />
+                      <div className="skeleton" style={{ height: 12, width: 200, marginTop: 12, borderRadius: 4 }} />
+                    </div>
+                    <div className="dp-conf-wrap">
+                      <div className="skeleton" style={{ height: 22, width: 60, borderRadius: 4 }} />
+                      <div className="skeleton" style={{ height: 6, marginTop: 10, borderRadius: 3 }} />
+                    </div>
+                    <div className="dp-right">
+                      <div className="skeleton" style={{ height: 14, borderRadius: 4 }} />
+                      <div className="skeleton" style={{ height: 14, marginTop: 8, borderRadius: 4 }} />
+                      <div className="skeleton" style={{ height: 36, marginTop: 8, borderRadius: 8 }} />
+                    </div>
+                  </div>
+                ))}
+              </>
             ) : error ? (
               <div className="dp-empty">
                 <h3>Something went wrong</h3>
                 <p>{error}</p>
                 <div className="dp-empty-actions">
-                  <button className="dp-btn dp-btn-sm" onClick={() => fetchData(activeLeague, false)}>
+                  <button className="dp-btn dp-btn-sm" onClick={() => fetchData(activeLeague, false, activeDate)}>
                     Try again
                   </button>
                 </div>
               </div>
             ) : filtered.length === 0 ? (
-              <Empty
-                leagueName={activeLeagueObj.name}
-                onAll={() => setActiveLeague(LEAGUES[0].id)}
-              />
+              <div className="dp-empty">
+                <div className="icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M21 21l-5-5" />
+                  </svg>
+                </div>
+                <h3>Scanning fixtures…</h3>
+                <p>
+                  No matches found for {dateLabel}{matchDate ? ` (${matchDate})` : ''} in
+                  {' '}{activeLeagueObj.name}. Pick a different date above, or jump leagues.
+                </p>
+                <div className="dp-empty-actions">
+                  <button className="dp-btn dp-btn-sm" onClick={() => setActiveDate(null)}>
+                    Auto-pick nearest date
+                  </button>
+                  <button className="dp-btn dp-btn-sm" onClick={() => setActiveLeague(LEAGUES[0].id)}>
+                    Try {LEAGUES[0].name}
+                  </button>
+                </div>
+              </div>
             ) : (
               filtered.map((m) => (
                 <MatchCard

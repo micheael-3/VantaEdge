@@ -813,6 +813,140 @@
   .dashboard-page .dp-main { padding-bottom: env(safe-area-inset-bottom); }
 }
 
+/* ============================================================
+   Date selector pills (below league tabs)
+   ============================================================ */
+.dashboard-page .dp-date-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 36px 4px;
+  flex-wrap: wrap;
+}
+@media (max-width: 720px) { .dashboard-page .dp-date-row { padding: 10px 16px 4px; } }
+.dashboard-page .dp-date-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--dp-text-dim);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.dashboard-page .dp-date-label.past { color: var(--dp-indigo); }
+
+.dashboard-page .dp-date-pills {
+  display: flex;
+  gap: 6px;
+  padding: 0 36px 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.dashboard-page .dp-date-pills::-webkit-scrollbar { height: 0; }
+@media (max-width: 720px) { .dashboard-page .dp-date-pills { padding: 0 16px 12px; } }
+.dashboard-page .dp-date-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--dp-border);
+  background: transparent;
+  color: var(--dp-text-dim);
+  border-radius: 999px;
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 150ms;
+  min-height: 36px;
+}
+.dashboard-page .dp-date-pill:hover { color: var(--dp-text); border-color: var(--dp-border-strong); }
+.dashboard-page .dp-date-pill.active {
+  background: rgba(110, 231, 183, 0.12);
+  border-color: rgba(110, 231, 183, 0.45);
+  color: var(--dp-mint);
+}
+.dashboard-page .dp-date-pill.empty { opacity: 0.55; }
+.dashboard-page .dp-date-pill .ct {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--dp-border);
+  color: var(--dp-text-faint);
+}
+.dashboard-page .dp-date-pill.active .ct {
+  border-color: rgba(110, 231, 183, 0.4);
+  color: var(--dp-mint);
+}
+
+/* ============================================================
+   Past-match indicators (FT badge, hit/miss, colored border)
+   ============================================================ */
+.dashboard-page .dp-match.past-result { padding-left: 22px; }
+.dashboard-page .dp-match.past-result.both-hit {
+  border-left: 3px solid var(--dp-mint);
+}
+.dashboard-page .dp-match.past-result.both-miss {
+  border-left: 3px solid var(--dp-red);
+}
+.dashboard-page .dp-match.past-result.split {
+  border-left: 3px solid #fbbf24;
+}
+
+.dashboard-page .dp-past-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9.5px;
+  color: var(--dp-indigo);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.dashboard-page .dp-final-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--dp-bg-raised);
+  border: 1px solid var(--dp-border-strong);
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  color: var(--dp-text);
+  margin-top: 6px;
+  letter-spacing: 0.02em;
+}
+.dashboard-page .dp-final-score .ft {
+  font-size: 9px;
+  color: var(--dp-text-faint);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.dashboard-page .dp-hit-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+}
+.dashboard-page .dp-hit-icon.hit { color: var(--dp-mint); }
+.dashboard-page .dp-hit-icon.miss { color: var(--dp-red); }
+
+/* "in 2 days" pill on upcoming non-today cards */
+.dashboard-page .dp-when-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(129, 140, 248, 0.1);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  color: var(--dp-indigo);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-left: 8px;
+}
+
 /* Very small phones — kill last bits of overflow risk */
 @media (max-width: 380px) {
   .dashboard-page .dp-match-teams { font-size: 13px; }
