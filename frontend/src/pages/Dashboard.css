@@ -607,6 +607,54 @@
   color: var(--dp-text-faint);
 }
 
+.dashboard-page .dp-compare-toggle {
+  background: transparent;
+  border: 1px dashed var(--dp-border);
+  color: var(--dp-text-dim);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: center;
+}
+.dashboard-page .dp-compare-toggle:hover { color: var(--dp-text); border-color: var(--dp-border-strong); }
+
+.dashboard-page .dp-compare {
+  margin-top: 12px;
+  border-top: 1px solid var(--dp-border);
+  padding-top: 12px;
+  grid-column: 1 / -1; /* span full card width on multi-col layout */
+  overflow-x: auto;
+}
+.dashboard-page .dp-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+}
+.dashboard-page .dp-compare-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dp-border);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--dp-text-faint);
+  white-space: nowrap;
+}
+.dashboard-page .dp-compare-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dp-border);
+  color: var(--dp-text);
+}
+.dashboard-page .dp-compare-table tr:last-child td { border-bottom: none; }
+.dashboard-page .dp-compare-table td.best {
+  color: var(--dp-mint);
+  font-weight: 500;
+  background: rgba(110, 231, 183, 0.05);
+}
+
 /* ---- Empty state ---- */
 .dashboard-page .dp-empty {
   padding: 80px 24px;

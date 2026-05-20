@@ -107,7 +107,17 @@ async function logout(event) {
 async function me(event) {
   const { res, user } = await requireUser(event);
   if (res) return res;
-  return json(200, { user: { id: user.id, email: user.email, tier: user.tier, dailyRefreshes: user.daily_refreshes } });
+  // user comes from requireUser query; include email_notifications.
+  const [extra] = await sql()`SELECT email_notifications FROM users WHERE id = ${user.id}`;
+  return json(200, {
+    user: {
+      id: user.id,
+      email: user.email,
+      tier: user.tier,
+      dailyRefreshes: user.daily_refreshes,
+      emailNotifications: extra ? !!extra.email_notifications : true,
+    },
+  });
 }
 
 exports.handler = async (event) => {

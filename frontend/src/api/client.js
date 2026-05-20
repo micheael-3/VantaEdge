@@ -67,4 +67,8 @@ export const user = {
   deleteAccount: (password) => api.delete('/api/user', { data: { password } }).then((r) => r.data),
 };
 
+export const emailPrefs = {
+  toggle: (enabled) => api.post('/api/email/toggle', { enabled }).then((r) => r.data),
+};
+
 export default api;

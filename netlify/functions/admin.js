@@ -1,7 +1,8 @@
 const { sql } = require('./_shared/db');
-const { json, error, notFound, subPath } = require('./_shared/response');
+const { json, error, notFound, subPath, parseBody } = require('./_shared/response');
 const { requireAdmin } = require('./_shared/admin-mw');
-const { getQuotaSnapshot, isConfigured } = require('./_shared/odds');
+const { getQuotaSnapshot, isConfigured, listLeagueConfig, setLeagueEnabled } = require('./_shared/odds');
+const { LEAGUES } = require('./_shared/tier');
 
 function startOfTodayUtc() {
   const d = new Date();
@@ -92,6 +93,22 @@ exports.handler = async (event) => {
     if (method === 'GET' && path === '/stats') return await stats(event);
     if (method === 'GET' && path === '/odds-quota') {
       return json(200, { oddsConfigured: isConfigured(), quota: getQuotaSnapshot() });
+    }
+    if (method === 'GET' && path === '/odds-config') {
+      const rows = await listLeagueConfig();
+      const enriched = rows.map((r) => ({
+        ...r,
+        name: LEAGUES[r.leagueId] ? LEAGUES[r.leagueId].name : `League ${r.leagueId}`,
+      }));
+      return json(200, { leagues: enriched });
+    }
+    if (method === 'POST' && path === '/odds-config') {
+      const body = parseBody(event);
+      const leagueId = parseInt(body.leagueId, 10);
+      if (!leagueId || !LEAGUES[leagueId]) return error(400, 'Invalid leagueId');
+      const enabled = !!body.enabled;
+      await setLeagueEnabled(leagueId, enabled);
+      return json(200, { leagueId, enabled });
     }
     if (method === 'POST' && path === '/login') return await loginPing(event);
 

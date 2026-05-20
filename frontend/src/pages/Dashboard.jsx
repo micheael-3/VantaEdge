@@ -215,10 +215,89 @@ function FormDots({ form }) {
   );
 }
 
+// ============ Compare Odds (per-bookmaker table) ============
+function CompareOdds({ oddsData, overLineFromAi }) {
+  const totals = (oddsData && oddsData.allBookmakers && oddsData.allBookmakers.totals) || [];
+  const btts = (oddsData && oddsData.allBookmakers && oddsData.allBookmakers.btts) || [];
+
+  // Build one row per bookmaker, merging totals + btts entries.
+  const byBookie = new Map();
+  for (const t of totals) {
+    if (!byBookie.has(t.bookmaker)) byBookie.set(t.bookmaker, { bookmaker: t.bookmaker });
+    const row = byBookie.get(t.bookmaker);
+    // Prefer the row matching the AI's predicted line; fall back to closest.
+    const dist = Math.abs(t.line - overLineFromAi);
+    if (row.totalsDist == null || dist < row.totalsDist) {
+      row.totalsDist = dist;
+      row.totalsLine = t.line;
+      row.over = t.overOdds;
+      row.under = t.underOdds;
+    }
+  }
+  for (const b of btts) {
+    if (!byBookie.has(b.bookmaker)) byBookie.set(b.bookmaker, { bookmaker: b.bookmaker });
+    const row = byBookie.get(b.bookmaker);
+    row.bttsYes = b.yesOdds;
+    row.bttsNo = b.noOdds;
+  }
+
+  const rows = Array.from(byBookie.values());
+  if (rows.length === 0) {
+    return (
+      <div className="dp-mono" style={{ fontSize: 11, color: 'var(--dp-text-faint)', padding: 8 }}>
+        No per-bookmaker breakdown available.
+      </div>
+    );
+  }
+
+  // Identify best (max) odds per column.
+  const max = (key) => Math.max(...rows.map((r) => r[key] || 0));
+  const bestOver = max('over');
+  const bestUnder = max('under');
+  const bestYes = max('bttsYes');
+  const bestNo = max('bttsNo');
+
+  // Use the most common totals line across rows for the column header.
+  const lineCounts = new Map();
+  for (const r of rows) if (r.totalsLine != null) lineCounts.set(r.totalsLine, (lineCounts.get(r.totalsLine) || 0) + 1);
+  let headerLine = overLineFromAi;
+  if (lineCounts.size) {
+    headerLine = Array.from(lineCounts.entries()).sort((a, b) => b[1] - a[1])[0][0];
+  }
+
+  const fmt = (n) => (n == null || !Number.isFinite(n) ? '—' : Number(n).toFixed(2));
+
+  return (
+    <table className="dp-compare-table">
+      <thead>
+        <tr>
+          <th>Bookmaker</th>
+          <th>Over {headerLine}</th>
+          <th>Under {headerLine}</th>
+          <th>BTTS Yes</th>
+          <th>BTTS No</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.bookmaker}>
+            <td style={{ color: 'var(--dp-text-dim)' }}>{r.bookmaker}</td>
+            <td className={r.over === bestOver && bestOver > 0 ? 'best' : ''}>{fmt(r.over)}</td>
+            <td className={r.under === bestUnder && bestUnder > 0 ? 'best' : ''}>{fmt(r.under)}</td>
+            <td className={r.bttsYes === bestYes && bestYes > 0 ? 'best' : ''}>{fmt(r.bttsYes)}</td>
+            <td className={r.bttsNo === bestNo && bestNo > 0 ? 'best' : ''}>{fmt(r.bttsNo)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 // ============ Match card ============
-function MatchCard({ m }) {
+function MatchCard({ m, userTier }) {
   const [overOdds, setOverOdds] = useState('');
   const [bttsOdds, setBttsOdds] = useState('');
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const over = m.predictions && m.predictions.over;
   const btts = m.predictions && m.predictions.btts;
@@ -418,6 +497,27 @@ function MatchCard({ m }) {
           </>
         )}
       </div>
+
+      {/* Compare Odds — ANALYST/EDGE only, when auto-odds present */}
+      {m.oddsData && (userTier === 'ANALYST' || userTier === 'EDGE') && (
+        <div className="dp-compare">
+          <button
+            className="dp-compare-toggle"
+            onClick={() => setCompareOpen((v) => !v)}
+            style={{ width: '100%' }}
+          >
+            {compareOpen ? '▲ Hide bookmaker comparison' : `▼ Compare ${m.oddsData.bookmakerCount || ''} bookmakers`}
+          </button>
+          {compareOpen && (
+            <div style={{ marginTop: 12 }}>
+              <CompareOdds
+                oddsData={m.oddsData}
+                overLineFromAi={(m.predictions && m.predictions.over && m.predictions.over.line) || 2.5}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -851,7 +951,7 @@ export default function Dashboard() {
                 onAll={() => setActiveLeague(LEAGUES[0].id)}
               />
             ) : (
-              filtered.map((m) => <MatchCard key={m.fixtureId || m.id} m={m} />)
+              filtered.map((m) => <MatchCard key={m.fixtureId || m.id} m={m} userTier={user.tier} />)
             )}
 
             {!loading && matches.length === 0 && message && (

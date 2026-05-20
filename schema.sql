@@ -46,7 +46,9 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by         TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notifications BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_time   TEXT    NOT NULL DEFAULT '08:00';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS unsubscribe_token   TEXT;
 CREATE INDEX IF NOT EXISTS users_referred_by_idx ON users(referred_by);
+CREATE INDEX IF NOT EXISTS users_unsubscribe_token_idx ON users(unsubscribe_token);
 
 -- =====================================================================
 -- Predictions
@@ -218,6 +220,15 @@ CREATE TABLE IF NOT EXISTS email_log (
   detail   TEXT
 );
 CREATE INDEX IF NOT EXISTS email_log_user_idx ON email_log(user_id, sent_at DESC);
+
+-- =====================================================================
+-- Odds API per-league enable/disable (admin-controlled)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS odds_config (
+  league_id  INTEGER     PRIMARY KEY,
+  enabled    BOOLEAN     NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- Blog posts are auto-seeded by the /api/blog function the first time it
 -- sees an empty blog_posts table. Canonical content lives in

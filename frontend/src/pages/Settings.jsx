@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
-import { user as userApi } from '../api/client';
+import { user as userApi, emailPrefs } from '../api/client';
 
 export default function Settings() {
   const { user, setUser, logout } = useAuth();
@@ -13,6 +13,38 @@ export default function Settings() {
 
   const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '' });
   const [pwdMsg, setPwdMsg] = useState({ type: '', text: '' });
+
+  const [emailNotif, setEmailNotif] = useState(
+    user && typeof user.emailNotifications === 'boolean' ? user.emailNotifications : true,
+  );
+  const [emailNotifBusy, setEmailNotifBusy] = useState(false);
+  const [emailNotifMsg, setEmailNotifMsg] = useState({ type: '', text: '' });
+
+  useEffect(() => {
+    if (user && typeof user.emailNotifications === 'boolean') setEmailNotif(user.emailNotifications);
+  }, [user]);
+
+  const isPaid = user && user.tier && user.tier !== 'FREE';
+
+  const toggleEmailNotif = async (next) => {
+    setEmailNotifBusy(true);
+    setEmailNotifMsg({ type: '', text: '' });
+    // Optimistic flip.
+    setEmailNotif(next);
+    try {
+      await emailPrefs.toggle(next);
+      setUser((u) => (u ? { ...u, emailNotifications: next } : u));
+      setEmailNotifMsg({ type: 'success', text: next ? 'Daily digest enabled' : 'Daily digest disabled' });
+    } catch (err) {
+      setEmailNotif(!next);
+      setEmailNotifMsg({
+        type: 'error',
+        text: (err.response && err.response.data && err.response.data.error) || 'Failed to update',
+      });
+    } finally {
+      setEmailNotifBusy(false);
+    }
+  };
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
@@ -130,6 +162,39 @@ export default function Settings() {
               <div className={pwdMsg.type === 'success' ? 'success-text' : 'error-text'}>{pwdMsg.text}</div>
             )}
           </form>
+        </section>
+
+        <section className="card" style={{ marginBottom: 20 }}>
+          <h3>Email notifications</h3>
+          {isPaid ? (
+            <>
+              <p className="muted small" style={{ marginTop: -4 }}>
+                Get a daily digest of today's top value bets across your accessible leagues, sent at 07:00 UTC.
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!emailNotif}
+                    onChange={(e) => toggleEmailNotif(e.target.checked)}
+                    disabled={emailNotifBusy}
+                  />
+                  <span className="mono small">{emailNotif ? 'Daily digest ON' : 'Daily digest OFF'}</span>
+                </label>
+                {emailNotifBusy && <span className="muted small mono">saving…</span>}
+              </div>
+              {emailNotifMsg.text && (
+                <div className={emailNotifMsg.type === 'success' ? 'success-text' : 'error-text'}>
+                  {emailNotifMsg.text}
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="muted small" style={{ marginTop: -4 }}>
+              Daily digest emails are a paid-tier feature. Upgrade to Scout or higher to receive
+              today's top picks every morning.
+            </p>
+          )}
         </section>
 
         <section className="card" style={{ marginBottom: 20 }}>

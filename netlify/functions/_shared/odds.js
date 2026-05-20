@@ -9,6 +9,7 @@
 // of the app falls back to manual odds input on every match card.
 
 const axios = require('axios');
+const { sql } = require('./db');
 
 const BASE_URL = 'https://api.the-odds-api.com/v4';
 const REGIONS = 'eu';
@@ -65,6 +66,55 @@ function getQuotaSnapshot() {
 
 function isConfigured() {
   return !!process.env.ODDS_API_KEY;
+}
+
+// ---------- Admin-controlled per-league enable/disable ----------
+
+const CONFIG_TTL_MS = 5 * 60 * 1000;
+let configCache = null; // { map: { [leagueId]: boolean }, expires }
+
+function invalidateConfigCache() {
+  configCache = null;
+}
+
+async function loadLeagueConfig() {
+  if (configCache && configCache.expires > Date.now()) return configCache.map;
+  const map = {};
+  try {
+    const rows = await sql()`SELECT league_id, enabled FROM odds_config`;
+    for (const r of rows) map[r.league_id] = r.enabled !== false;
+  } catch (e) {
+    // Table may not exist yet (schema not run) — treat all as enabled.
+    console.error('[odds] loadLeagueConfig failed:', e.message);
+  }
+  configCache = { map, expires: Date.now() + CONFIG_TTL_MS };
+  return map;
+}
+
+async function isLeagueEnabled(leagueId) {
+  const map = await loadLeagueConfig();
+  // Default to enabled if no row exists.
+  return map[leagueId] !== false;
+}
+
+async function setLeagueEnabled(leagueId, enabled) {
+  await sql()`
+    INSERT INTO odds_config (league_id, enabled, updated_at)
+    VALUES (${leagueId}, ${!!enabled}, NOW())
+    ON CONFLICT (league_id) DO UPDATE
+      SET enabled = EXCLUDED.enabled, updated_at = NOW()`;
+  invalidateConfigCache();
+}
+
+async function listLeagueConfig() {
+  // Return [{leagueId, enabled, supported}]
+  await loadLeagueConfig();
+  const out = [];
+  for (const leagueId of Object.keys(LEAGUE_TO_SPORT_KEY)) {
+    const id = parseInt(leagueId, 10);
+    out.push({ leagueId: id, sportKey: LEAGUE_TO_SPORT_KEY[leagueId], enabled: configCache.map[id] !== false });
+  }
+  return out;
 }
 
 // ---------- Fuzzy team-name matching ----------
@@ -212,6 +262,11 @@ async function getMatchOdds(leagueId) {
   const sportKey = LEAGUE_TO_SPORT_KEY[leagueId];
   if (!sportKey) return null;
 
+  // Admin-disabled league
+  if (!(await isLeagueEnabled(leagueId))) {
+    return { disabled: true, matches: [] };
+  }
+
   // Quota gating
   if (quota.remaining != null) {
     if (quota.remaining === 0) {
@@ -305,4 +360,7 @@ module.exports = {
   buildOddsData,
   matchTeamNames,
   getQuotaSnapshot,
+  listLeagueConfig,
+  setLeagueEnabled,
+  isLeagueEnabled,
 };
