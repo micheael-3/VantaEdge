@@ -18,6 +18,22 @@ const { requireUser } = require('./_shared/auth-mw');
 
 const VALID_TIERS = new Set(['FREE', 'ANALYST', 'EDGE']);
 
+// Same helpers as predictions.handleWeek — duplicated locally to avoid a
+// cross-function import. mondayOf returns the Monday of the week containing
+// the given date as YYYY-MM-DD UTC; addDaysStr shifts by N days.
+function mondayOf(date) {
+  const d = new Date(date);
+  const day = d.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+function addDaysStr(baseDateStr, days) {
+  const d = new Date(`${baseDateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
 async function requireAdmin(event) {
   const { res, user } = await requireUser(event);
   if (res) return { res };
@@ -91,6 +107,53 @@ async function listPredictions() {
   return json(200, { predictions: rows });
 }
 
+// POST /api/admin/rescan/:leagueId
+// Wipes this week's predictions + scan_status for the league, then triggers
+// the background scanner to rebuild. Used by the AdminPanel "Force Rescan"
+// button when you need to refresh predictions mid-week (e.g. after a Claude
+// prompt change).
+async function forceRescan(leagueId) {
+  if (!Number.isFinite(leagueId)) return error(400, 'Invalid leagueId');
+  const weekStart = mondayOf(new Date());
+  const weekEnd = addDaysStr(weekStart, 6);
+  const scanId = `league-${leagueId}-week-${weekStart}`;
+
+  // 1. Clear this week's predictions for the league.
+  // The legacy `predictions.league` column stores the league name (e.g.
+  // "MLS"); we only have the ID here. Easiest: scope by kickoff window —
+  // MLS is the only league in this build, so the window is unambiguous.
+  await sql()`
+    DELETE FROM predictions
+    WHERE kickoff >= ${weekStart}::date
+      AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')`;
+
+  // 2. Clear the scan_status row so /week re-triggers cleanly.
+  await sql()`DELETE FROM scan_status WHERE id = ${scanId}`;
+
+  // 3. Fire the background scan.
+  const base = process.env.URL || process.env.DEPLOY_URL || '';
+  const secret = process.env.JWT_SECRET || '';
+  if (!base || !secret) {
+    return error(500, 'Server misconfigured: URL and JWT_SECRET required to trigger background scan');
+  }
+  try {
+    const axios = require('axios');
+    axios.post(`${base}/.netlify/functions/predictions-scan-background`,
+      { leagueId, weekStart },
+      {
+        headers: { 'x-internal-scan-secret': secret, 'content-type': 'application/json' },
+        timeout: 5000,
+        validateStatus: () => true,
+      }).catch((err) => {
+        console.error('[admin/rescan] bg trigger failed:', err.message);
+      });
+  } catch (err) {
+    console.error('[admin/rescan] bg trigger setup failed:', err.message);
+  }
+
+  return json(200, { ok: true, leagueId, weekStart, weekEnd });
+}
+
 // POST /api/admin/users/:id/tier  body { tier }
 async function setUserTier(event, userId) {
   const body = parseBody(event);
@@ -121,6 +184,10 @@ exports.handler = async (event) => {
     // --- POST /users/:id/tier ---
     const tierMatch = path.match(/^\/users\/([0-9a-f-]+)\/tier\/?$/i);
     if (tierMatch && method === 'POST') return await setUserTier(event, tierMatch[1]);
+
+    // --- POST /rescan/:leagueId ---
+    const rescanMatch = path.match(/^\/rescan\/(\d+)\/?$/);
+    if (rescanMatch && method === 'POST') return await forceRescan(parseInt(rescanMatch[1], 10));
 
     if (method === 'GET' && (path === '/users' || path === '/users/')) return await listUsers();
     if (method === 'GET' && (path === '/stats' || path === '/stats/')) return await getStats();

@@ -66,6 +66,11 @@ export const predictions = {
     api.get('/api/predictions/analyze', { params: { fixtureId } }).then((r) => r.data),
   upcoming: (opts = { past: 7, future: 7 }) =>
     api.get('/api/predictions/upcoming/253', { params: opts }).then((r) => r.data),
+  // Weekly read endpoint. Server figures out the Monday-Sunday window, reads
+  // every prediction row in it, and triggers a background scan if the table
+  // is empty. Returns { dates, scanning, progress, lastScanned, weekStart }.
+  week: () =>
+    api.get('/api/predictions/week').then((r) => r.data),
 };
 
 export const history = {
@@ -89,6 +94,10 @@ export const admin = {
   predictions: () => api.get('/api/admin/predictions').then((r) => r.data),
   setTier: (userId, tier) =>
     api.post(`/api/admin/users/${userId}/tier`, { tier }).then((r) => r.data),
+  // Force a fresh weekly scan for the given league. Deletes this week's
+  // predictions + scan_status, then fires the background scanner.
+  forceRescan: (leagueId) =>
+    api.post(`/api/admin/rescan/${leagueId}`).then((r) => r.data),
 };
 
 export const affiliate = {

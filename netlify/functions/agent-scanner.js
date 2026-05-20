@@ -175,6 +175,77 @@ async function processFixture(fixture, league, oddsBundle, report) {
   }
 }
 
+// Monday of the week containing `date` (UTC), YYYY-MM-DD.
+function mondayOf(date) {
+  const d = new Date(date);
+  const day = d.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+// Trigger the weekly scan if the predictions table is empty for the
+// current calendar week. The /api/predictions/week endpoint normally does
+// this on first dashboard load, but the cron belt-and-braces means a
+// fresh Monday morning always has predictions ready even if nobody opens
+// the dashboard until later.
+async function ensureWeeklyScanReady() {
+  const weekStart = mondayOf(new Date());
+  const weekEnd = (() => {
+    const d = new Date(`${weekStart}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 6);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  })();
+  const leagueId = 253; // MLS-only build
+  const scanId = `league-${leagueId}-week-${weekStart}`;
+
+  // Skip if status already says scanning or complete for this week.
+  try {
+    const statusRows = await sql()`SELECT status FROM scan_status WHERE id = ${scanId} LIMIT 1`;
+    const status = statusRows[0] && statusRows[0].status;
+    if (status === 'scanning' || status === 'complete') return false;
+  } catch (e) {
+    console.error('[agent-scanner] scan_status read failed (table may not exist yet):', e.message);
+  }
+
+  // Skip if predictions already exist in this week's kickoff window.
+  try {
+    const rows = await sql()`
+      SELECT 1 FROM predictions
+      WHERE kickoff >= ${weekStart}::date
+        AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')
+      LIMIT 1`;
+    if (rows.length > 0) return false;
+  } catch (e) {
+    console.error('[agent-scanner] predictions probe failed:', e.message);
+    return false;
+  }
+
+  const base = process.env.URL || process.env.DEPLOY_URL || '';
+  const secret = process.env.JWT_SECRET || '';
+  if (!base || !secret) {
+    console.warn('[agent-scanner] weekly scan ready, but URL/JWT_SECRET missing — cannot trigger');
+    return false;
+  }
+  try {
+    const axios = require('axios');
+    axios.post(`${base}/.netlify/functions/predictions-scan-background`,
+      { leagueId, weekStart },
+      {
+        headers: { 'x-internal-scan-secret': secret, 'content-type': 'application/json' },
+        timeout: 5000,
+        validateStatus: () => true,
+      }).catch((err) => {
+        console.error('[agent-scanner] bg trigger failed:', err.message);
+      });
+    console.log(`[agent-scanner] triggered weekly scan league=${leagueId} weekStart=${weekStart}`);
+    return true;
+  } catch (e) {
+    console.error('[agent-scanner] bg trigger setup failed:', e.message);
+    return false;
+  }
+}
+
 async function runScan({ leaguesArg } = {}) {
   const report = {
     leaguesProcessed: 0,
@@ -183,9 +254,18 @@ async function runScan({ leaguesArg } = {}) {
     sharpMoves: 0,
     valueAlerts: 0,
     errors: 0,
+    weeklyScanTriggered: false,
     durationMs: 0,
   };
   const t0 = Date.now();
+
+  // First: kick off the weekly Claude scan if needed. Cheap no-op when
+  // the DB already has rows for this week.
+  try {
+    report.weeklyScanTriggered = await ensureWeeklyScanReady();
+  } catch (e) {
+    console.error('[agent-scanner] ensureWeeklyScanReady failed:', e.message);
+  }
 
   // Either an explicit list (manual trigger) or the next round-robin batch.
   let batch;

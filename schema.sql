@@ -351,3 +351,22 @@ CREATE TABLE IF NOT EXISTS accuracy_model (
 );
 CREATE INDEX IF NOT EXISTS accuracy_model_dim_idx
   ON accuracy_model(dimension);
+
+-- =====================================================================
+-- Weekly scan state — drives the once-per-week MLS prediction scan.
+-- One row per (league, Monday-of-week). The background function updates
+-- progress so the dashboard can render a live "Analysing X of Y…" status.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS scan_status (
+  id           TEXT         PRIMARY KEY,         -- e.g. "league-253-week-2026-05-18"
+  league_id    INTEGER      NOT NULL,
+  week_start   TEXT         NOT NULL,            -- Monday YYYY-MM-DD
+  status       TEXT         NOT NULL,            -- 'idle' | 'scanning' | 'complete' | 'error'
+  total        INTEGER      NOT NULL DEFAULT 0,
+  done         INTEGER      NOT NULL DEFAULT 0,
+  error        TEXT,
+  started_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS scan_status_league_week_idx
+  ON scan_status(league_id, week_start);

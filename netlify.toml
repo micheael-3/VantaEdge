@@ -54,6 +54,13 @@
   to     = "/.netlify/functions/auth/:splat"
   status = 200
 
+# Weekly read endpoint — match BEFORE the wildcard so /week resolves to
+# the predictions function (not a literal subpath).
+[[redirects]]
+  from   = "/api/predictions/week"
+  to     = "/.netlify/functions/predictions/week"
+  status = 200
+
 # Progressive-load endpoints — match BEFORE the wildcard below so the
 # specific paths win the route lookup. /quick returns fixtures+form+stats
 # (no Claude); /analyze runs Claude for a single fixtureId.

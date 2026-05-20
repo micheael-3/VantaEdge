@@ -87,25 +87,53 @@ function StatsTab() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [rescanState, setRescanState] = useState({ busy: false, message: '' });
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadStats = (cancelledRef) => {
+    setLoading(true);
     adminApi
       .stats()
       .then((r) => {
-        if (!cancelled) setStats(r);
+        if (cancelledRef && cancelledRef.cancelled) return;
+        setStats(r);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (cancelledRef && cancelledRef.cancelled) return;
         setError(err?.response?.data?.error || err.message || 'Failed to load stats');
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (cancelledRef && cancelledRef.cancelled) return;
+        setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    const cancelledRef = { cancelled: false };
+    loadStats(cancelledRef);
     return () => {
-      cancelled = true;
+      cancelledRef.cancelled = true;
     };
   }, []);
+
+  const onForceRescan = async () => {
+    if (rescanState.busy) return;
+    setRescanState({ busy: true, message: '' });
+    try {
+      await adminApi.forceRescan(253);
+      setRescanState({ busy: true, message: 'Rescan triggered. Predictions will populate over the next few minutes.' });
+      // Refresh stats after the scan has had time to finish.
+      setTimeout(() => {
+        loadStats({ cancelled: false });
+        setRescanState({ busy: false, message: 'Stats refreshed.' });
+        setTimeout(() => setRescanState((s) => ({ ...s, message: '' })), 4000);
+      }, 30000);
+    } catch (err) {
+      setRescanState({
+        busy: false,
+        message: err?.response?.data?.error || err.message || 'Rescan failed',
+      });
+    }
+  };
 
   if (loading) return <Loading label="Loading stats…" />;
   if (error) {
@@ -168,6 +196,43 @@ function StatsTab() {
         <div className="display" style={{ fontSize: 20, fontWeight: 600 }}>
           {byTier.EDGE ?? 0}
         </div>
+      </div>
+      <div
+        className="card"
+        style={{
+          marginTop: 16,
+          padding: 16,
+          display: 'flex',
+          gap: 18,
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em' }}>
+            WEEKLY SCAN
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>
+            Wipe this week's MLS predictions and trigger a fresh background scan.
+          </div>
+          {rescanState.message && (
+            <div
+              className="mono"
+              style={{ marginTop: 8, fontSize: 11, color: rescanState.busy ? 'var(--mint)' : 'var(--text-3)' }}
+            >
+              {rescanState.message}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={onForceRescan}
+          disabled={rescanState.busy}
+        >
+          {rescanState.busy ? 'Rescanning…' : 'Force Rescan'}
+        </button>
       </div>
     </>
   );

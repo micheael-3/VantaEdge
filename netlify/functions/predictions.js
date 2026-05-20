@@ -272,6 +272,148 @@ function buildActualResult(fx, analysis) {
   };
 }
 
+// ---------- /week — weekly Monday-Sunday read endpoint ----------
+//
+// Reads the predictions table for the current calendar week (Mon-Sun) and
+// the scan_status row. If no rows exist yet and the scan isn't already
+// running, fires off the background scan and returns scanning:true so the
+// frontend can show a progress UI while polling.
+function mondayOf(date) {
+  const d = new Date(date);
+  const day = d.getUTCDay(); // 0=Sun, 1=Mon, ... 6=Sat
+  const diff = day === 0 ? -6 : 1 - day; // shift back to Monday
+  d.setUTCDate(d.getUTCDate() + diff);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+function shapeForFrontend(row) {
+  // Shape a `predictions` row into the same fixture object the dashboard
+  // MatchCard reads. Predictions are stored as integers/strings; we
+  // wrap them in the legacy { line, confidence, prediction } objects.
+  return {
+    id: row.id,
+    fixtureId: row.fixture_id,
+    league: row.league,
+    kickoff: row.kickoff,
+    home: { name: row.home_team },
+    away: { name: row.away_team },
+    predictions: {
+      over: {
+        line: row.over_line,
+        confidence: row.over_confidence,
+        reasoning: null,
+      },
+      btts: {
+        prediction: row.btts,
+        confidence: row.btts_confidence,
+        reasoning: null,
+      },
+      firstHalf: null,
+      asianHandicap: null,
+    },
+    actualResult: row.over_hit != null || row.btts_hit != null ? {
+      status: 'FT',
+      overHit: row.over_hit,
+      bttsHit: row.btts_hit,
+    } : null,
+    ev: {
+      over: row.ev_edge_over != null ? { edge: row.ev_edge_over } : null,
+      btts: row.ev_edge_btts != null ? { edge: row.ev_edge_btts } : null,
+    },
+    aiStatus: 'ok',
+    aiReason: null,
+  };
+}
+
+async function triggerBackgroundScan(leagueId, weekStart) {
+  const base = process.env.URL || process.env.DEPLOY_URL || '';
+  if (!base) {
+    console.warn('[predictions/week] no URL env var — cannot trigger background scan');
+    return;
+  }
+  const url = `${base}/.netlify/functions/predictions-scan-background`;
+  const secret = process.env.JWT_SECRET || '';
+  if (!secret) {
+    console.warn('[predictions/week] JWT_SECRET missing — cannot sign internal call');
+    return;
+  }
+  try {
+    // Fire-and-forget. We do NOT await the body; the background function
+    // returns 202 instantly anyway.
+    const axios = require('axios');
+    axios.post(url, { leagueId, weekStart }, {
+      headers: { 'x-internal-scan-secret': secret, 'content-type': 'application/json' },
+      timeout: 5000,
+      validateStatus: () => true,
+    }).catch((err) => {
+      console.error('[predictions/week] bg trigger failed:', err.message);
+    });
+    console.log(`[predictions/week] background scan triggered league=${leagueId} weekStart=${weekStart}`);
+  } catch (err) {
+    console.error('[predictions/week] bg trigger setup failed:', err.message);
+  }
+}
+
+async function handleWeek(event) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+
+  const leagueId = MLS_LEAGUE_ID;
+  const weekStart = mondayOf(new Date());
+  const weekEnd = addDaysStr(weekStart, 6);
+
+  // 1. All predictions in the kickoff window (shared rows; not per-user).
+  //    We don't filter by user_id because the weekly scan stores rows
+  //    against the scan-owner; everyone reads the same week.
+  void user;
+  const rows = await sql()`
+    SELECT id, fixture_id, league, home_team, away_team, kickoff,
+           over_line, over_confidence, btts, btts_confidence,
+           ev_edge_over, ev_edge_btts, over_hit, btts_hit, created_at
+    FROM predictions
+    WHERE kickoff >= ${weekStart}::date
+      AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')
+    ORDER BY kickoff ASC`;
+
+  // 2. Group by date (YYYY-MM-DD via kickoff UTC date).
+  const dates = {};
+  for (const r of rows) {
+    let dateKey;
+    try {
+      dateKey = new Date(r.kickoff).toISOString().slice(0, 10);
+    } catch {
+      continue;
+    }
+    if (!dates[dateKey]) dates[dateKey] = [];
+    dates[dateKey].push(shapeForFrontend(r));
+  }
+
+  // 3. scan_status for this week.
+  const statusRows = await sql()`
+    SELECT status, total, done, error, updated_at
+    FROM scan_status
+    WHERE id = ${`league-${leagueId}-week-${weekStart}`}
+    LIMIT 1`;
+  const status = statusRows[0] || { status: 'idle', total: 0, done: 0, error: null, updated_at: null };
+
+  // 4. If no rows yet and not currently scanning, fire the background scan.
+  let scanning = status.status === 'scanning';
+  if (rows.length === 0 && status.status !== 'scanning' && status.status !== 'complete') {
+    await triggerBackgroundScan(leagueId, weekStart);
+    scanning = true;
+  }
+
+  return json(200, {
+    leagueId,
+    weekStart,
+    weekEnd,
+    dates,
+    scanning,
+    progress: { done: Number(status.done) || 0, total: Number(status.total) || 0, error: status.error || null },
+    lastScanned: status.updated_at,
+  });
+}
+
 // ---------- /quick — fixtures + form + stats, NO Claude ----------
 //
 // Returns the same fixture shape as /253 (handleLeague) but with
@@ -1082,6 +1224,12 @@ exports.handler = async (event) => {
 
     // /ai-test — unauthenticated OpenRouter probe.
     if (path === '/ai-test' || path === '/ai-test/') return await handleAITest(event);
+
+    // /week — weekly Monday-Sunday read endpoint. Triggers background scan
+    // when the table is empty for the current week.
+    if (path === '/week' || path === '/week/') {
+      return await handleWeek(event);
+    }
 
     // /quick — fixtures + form + stats only (NO Claude). Progressive-load entry.
     if (path === '/quick' || path === '/quick/' || path === '/253/quick' || path === '/253/quick/') {
