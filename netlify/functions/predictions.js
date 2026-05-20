@@ -366,6 +366,9 @@ async function handleWeek(event) {
   //    We don't filter by user_id because the weekly scan stores rows
   //    against the scan-owner; everyone reads the same week.
   void user;
+  // MLS-only build: predictions.league is stored as the league NAME
+  // string. We filter to 'MLS' here so legacy multi-league rows
+  // (Bundesliga / Eredivisie / etc.) don't leak into the weekly view.
   const rows = await sql()`
     SELECT id, fixture_id, league, home_team, away_team, kickoff,
            over_line, over_confidence, btts, btts_confidence,
@@ -373,6 +376,7 @@ async function handleWeek(event) {
     FROM predictions
     WHERE kickoff >= ${weekStart}::date
       AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')
+      AND league = 'MLS'
     ORDER BY kickoff ASC`;
 
   // 2. Group by date (YYYY-MM-DD via kickoff UTC date).

@@ -69,13 +69,25 @@ export function useAuth() {
 }
 
 // Tier helpers — ANALYST and EDGE both render as "Sharp" in the UI.
+// Admins always count as Sharp regardless of their stored tier so they
+// bypass the FREE paywall everywhere (EV calc, Kelly, Bet Tracker, AI
+// analysis blur, upgrade prompts, etc.).
 export function isSharp(user) {
-  if (!user || !user.tier) return false;
+  if (!user) return false;
+  if (user.isAdmin) return true;
   return user.tier === 'ANALYST' || user.tier === 'EDGE';
 }
 
-export function tierLabel(tier) {
-  if (tier === 'ANALYST' || tier === 'EDGE') return 'Sharp';
+// tierLabel shows what the user *sees* — admins get a clear "Admin"
+// pill so they know their access is granted, not subscribed.
+export function tierLabel(user) {
+  if (typeof user === 'string') {
+    // Back-compat: some call sites pass `user.tier` directly.
+    if (user === 'ANALYST' || user === 'EDGE') return 'Sharp';
+    return 'Free';
+  }
+  if (user && user.isAdmin) return 'Admin';
+  if (user && (user.tier === 'ANALYST' || user.tier === 'EDGE')) return 'Sharp';
   return 'Free';
 }
 

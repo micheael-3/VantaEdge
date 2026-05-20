@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import { userApi } from '../api/client.js';
-import { isSharp, tierLabel, useAuth } from '../context/AuthContext.jsx';
+import { isAdmin, isSharp, tierLabel, useAuth } from '../context/AuthContext.jsx';
 import { openWhopCheckout } from '../lib/checkout.js';
+import Icon from '../components/Icon.jsx';
 
 // Settings page — restyled to use the design's card + token system.
 // The visual structure stays simple (the design bundle did not include
@@ -13,7 +14,9 @@ export default function Settings() {
   const { user, logout, refreshUser } = useAuth();
   const navigate = useNavigate();
   const sharp = isSharp(user);
-  const tier = tierLabel(user && user.tier);
+  const admin = isAdmin(user);
+  // Pass the whole user so admins see "Admin", not just their tier string.
+  const tier = tierLabel(user);
 
   const [newEmail, setNewEmail] = useState(user ? user.email : '');
   const [emailPassword, setEmailPassword] = useState('');
@@ -250,6 +253,49 @@ export default function Settings() {
               </div>
             </form>
           </div>
+
+          {admin && (
+            <div
+              className="card"
+              style={{
+                padding: 24,
+                marginBottom: 16,
+                borderColor: 'rgba(110,231,183,0.35)',
+                background:
+                  'linear-gradient(180deg, rgba(110,231,183,0.07), transparent), var(--card)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 12,
+                  gap: 12,
+                }}
+              >
+                <h3
+                  className="display"
+                  style={{ margin: 0, fontSize: 18, fontWeight: 600 }}
+                >
+                  Admin Panel
+                </h3>
+                <span className="badge badge-mint">ADMIN</span>
+              </div>
+              <p style={{ margin: '0 0 14px', color: 'var(--text-2)', fontSize: 13 }}>
+                Manage users, view system stats, and force a rescan of this
+                week's MLS predictions.
+              </p>
+              <Link
+                to="/admin-panel"
+                className="btn btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+              >
+                <Icon name="shield" size={14} />
+                Open Admin Panel
+              </Link>
+            </div>
+          )}
 
           <div
             className="card"
