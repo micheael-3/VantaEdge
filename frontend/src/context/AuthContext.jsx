@@ -78,3 +78,9 @@ export function tierLabel(tier) {
   if (tier === 'ANALYST' || tier === 'EDGE') return 'Sharp';
   return 'Free';
 }
+
+// True when the user has the `is_admin` flag set on the server. Always falsy
+// for unauthenticated users — caller does not need to null-check.
+export function isAdmin(user) {
+  return !!(user && user.isAdmin);
+}

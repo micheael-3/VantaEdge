@@ -116,6 +116,7 @@ async function me(event) {
       id: user.id,
       email: user.email,
       tier: user.tier,
+      isAdmin: !!user.is_admin,
       dailyRefreshes: user.daily_refreshes,
       emailNotifications: extra ? !!extra.email_notifications : true,
       onboardingCompleted: extra ? !!extra.onboarding_completed : false,

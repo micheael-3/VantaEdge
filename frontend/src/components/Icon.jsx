@@ -148,6 +148,13 @@ export default function Icon({ name, size = 16, color = 'currentColor' }) {
           <polygon points="13,2 4,14 11,14 9,22 20,10 13,10" />
         </svg>
       );
+    case 'shield':
+      return (
+        <svg width={s} height={s} viewBox="0 0 24 24" {...stroke}>
+          <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6z" />
+          <polyline points="9,12 11,14 15,10" />
+        </svg>
+      );
     case 'menu':
       return (
         <svg width={s} height={s} viewBox="0 0 24 24" {...stroke}>

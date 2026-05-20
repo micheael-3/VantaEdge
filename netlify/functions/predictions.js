@@ -13,6 +13,57 @@ const weatherService = require('./_shared/weather');
 // league id now ignores anything other than 253.
 const MLS_LEAGUE_ID = 253;
 
+// ---------- Function-instance /quick response cache ----------
+// Stores the full /quick response keyed by `${leagueId}|${date}`. Saves a
+// stack of API-Football calls when two clients hit the same warm function
+// instance within the TTL window. TTL = min(1h, time-until-midnight-UTC).
+// Per-instance only — different warm instances don't share. That's fine.
+const quickCache = new Map();
+function quickCacheKey(leagueId, date) {
+  return `${leagueId}|${date || 'auto'}`;
+}
+function quickCacheGet(key) {
+  const hit = quickCache.get(key);
+  if (!hit) return null;
+  if (hit.expires < Date.now()) {
+    quickCache.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+function quickCacheSet(key, value, dateStr) {
+  let ttlMs = 3600 * 1000; // 1h cap
+  if (dateStr) {
+    try {
+      const midnight = new Date(`${dateStr}T23:59:59Z`).getTime();
+      const tillMidnight = midnight - Date.now();
+      if (tillMidnight > 0 && tillMidnight < ttlMs) ttlMs = tillMidnight;
+    } catch { /* fall through */ }
+  }
+  quickCache.set(key, { value, expires: Date.now() + ttlMs });
+}
+
+// ---------- Rate-limit detection + retry helper ----------
+function isRateLimitErr(err) {
+  const msg = String((err && err.message) || err || '').toLowerCase();
+  return msg.includes('429') ||
+         msg.includes('rate limit') ||
+         msg.includes('ratelimit') ||
+         msg.includes('too many requests') ||
+         msg.includes('exceeded the limit');
+}
+
+async function retryOnRateLimit(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!isRateLimitErr(err)) throw err;
+    console.warn('[predictions] rate limited — retrying once after 2s:', err.message);
+    await new Promise((r) => setTimeout(r, 2000));
+    return await fn();
+  }
+}
+
 // Derive rest days from a team's recent fixtures list rather than making a
 // separate /fixtures call. Falls back to null when no past games are present.
 function restDaysFromForm(formFixtures) {
@@ -226,6 +277,25 @@ function buildActualResult(fx, analysis) {
 // Returns the same fixture shape as /253 (handleLeague) but with
 // `predictions: null` and `aiStatus: 'pending'`. The frontend then fires
 // /analyze?fixtureId=X per fixture in parallel.
+// Walk forward up to 6 days from `fromDate` and return the first date
+// that has at least one fixture in API-Football. Honours `getFixturesByDateAuto`
+// season-cycling so a date in season 2026 still works while SEASON=2025.
+async function findNextDateWithFixtures(leagueId, fromDate) {
+  for (let i = 1; i <= 6; i++) {
+    const candidate = addDaysStr(fromDate, i);
+    try {
+      const result = await football.getFixturesByDateAuto(leagueId, candidate, 3600);
+      const list = (result && result.fixtures) || [];
+      if (list.length > 0) {
+        return { date: candidate, fixtures: list, season: result.season };
+      }
+    } catch (err) {
+      console.error(`[predictions] auto-next scan ${candidate} failed: ${err.message}`);
+    }
+  }
+  return null;
+}
+
 async function handleQuick(event) {
   const { res, user } = await requireUser(event);
   if (res) return res;
@@ -243,8 +313,42 @@ async function handleQuick(event) {
   if (!consumed.ok) return error(429, consumed.reason, { tier: user.tier });
 
   const explicitDate = typeof qs.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(qs.date) ? qs.date : null;
-  const picked = await pickFixtures(leagueId, explicitDate);
-  const fixtures = picked.fixtures;
+
+  // Function-instance cache check — same league+date within TTL returns
+  // the cached payload without touching API-Football.
+  const cacheKey = quickCacheKey(leagueId, explicitDate);
+  const cachedQuick = quickCacheGet(cacheKey);
+  if (cachedQuick) {
+    console.log(`[predictions/quick] cache hit ${cacheKey}`);
+    // Stamp fresh refresh counter so the client sees an accurate quota.
+    return json(200, { ...cachedQuick, dailyRefreshes: consumed.dailyRefreshes, cached: true });
+  }
+
+  let picked = await pickFixtures(leagueId, explicitDate);
+  let fixtures = picked.fixtures;
+
+  // Auto-find-next: if today (no explicit date) returned empty, scan
+  // forward up to 6 days for the next playable matchday.
+  let autoSelected = false;
+  if ((!fixtures || fixtures.length === 0) && !explicitDate) {
+    const baseDate = picked.matchDate || todayDateStr();
+    const next = await findNextDateWithFixtures(leagueId, baseDate);
+    if (next) {
+      picked = {
+        fixtures: next.fixtures,
+        dateLabel: labelForDateStr(next.date),
+        matchDate: next.date,
+        isPast: false,
+        isUpcoming: true,
+        isToday: false,
+        mode: 'auto-next',
+        seasonUsed: next.season,
+      };
+      fixtures = next.fixtures;
+      autoSelected = true;
+      console.log(`[predictions/quick] auto-selected next playable date: ${next.date}`);
+    }
+  }
 
   if (!fixtures || fixtures.length === 0) {
     return json(200, {
@@ -272,11 +376,14 @@ async function handleQuick(event) {
 
   // All 4 fixtures processed in parallel; each fixture's 4 calls also in
   // parallel via fetchFixtureDetail. Net: 16 in-flight API-Football calls
-  // max, all parallel. Cache hits skip the API entirely.
+  // max, all parallel. Cache hits skip the API entirely. Each fixture
+  // detail call gets a one-shot rate-limit retry; failures surface as
+  // a friendly "Data temporarily unavailable" string rather than the raw
+  // API-Football error.
   const results = await Promise.all(
     limited.map(async (fx) => {
       try {
-        const detail = await fetchFixtureDetail(fx, leagueId);
+        const detail = await retryOnRateLimit(() => fetchFixtureDetail(fx, leagueId));
         return {
           // No DB id yet — /analyze inserts the prediction row and the
           // frontend receives the row id on that response.
@@ -306,8 +413,9 @@ async function handleQuick(event) {
           aiReason: null,
         };
       } catch (err) {
-        const detail = err && err.message ? err.message : String(err);
-        console.error(`[predictions/quick] fixture ${fx.fixture.id} detail failed:`, detail);
+        const detailMsg = err && err.message ? err.message : String(err);
+        const rateLimited = isRateLimitErr(err);
+        console.error(`[predictions/quick] fixture ${fx.fixture.id} detail failed:`, detailMsg);
         return {
           fixtureId: fx.fixture.id,
           league: league.name,
@@ -315,14 +423,14 @@ async function handleQuick(event) {
           home: { name: fx.teams.home.name },
           away: { name: fx.teams.away.name },
           predictions: null,
-          aiStatus: 'error',
-          error: `Fixture detail failed: ${detail}`,
+          aiStatus: rateLimited ? 'pending' : 'error',
+          error: 'Data temporarily unavailable',
         };
       }
     }),
   );
 
-  return json(200, {
+  const payload = {
     league: league.name,
     leagueId,
     tier: user.tier,
@@ -332,10 +440,18 @@ async function handleQuick(event) {
     isPast: picked.isPast,
     isUpcoming: picked.isUpcoming,
     isToday: picked.isToday,
+    autoSelected,
     mode: picked.mode,
     seasonUsed: picked.seasonUsed,
     fixtures: results,
-  });
+  };
+  // Cache by both the original key (so a same-day no-date request gets the
+  // same cached payload) and the resolved matchDate key when auto-selected.
+  quickCacheSet(cacheKey, payload, picked.matchDate);
+  if (autoSelected && picked.matchDate) {
+    quickCacheSet(quickCacheKey(leagueId, picked.matchDate), payload, picked.matchDate);
+  }
+  return json(200, payload);
 }
 
 // ---------- /analyze — Claude-only path for one fixture ----------
@@ -360,20 +476,30 @@ async function handleAnalyze(event) {
   // Pull the raw fixture record for teams + status + venue.
   let fx;
   try {
-    fx = await football.getFixtureById(fixtureId);
+    fx = await retryOnRateLimit(() => football.getFixtureById(fixtureId));
   } catch (err) {
     console.error('[predictions/analyze] getFixtureById failed:', err.message);
-    return error(502, `fixture lookup failed: ${err.message}`);
+    return json(200, {
+      fixtureId,
+      predictions: null,
+      aiStatus: 'error',
+      aiReason: 'Data temporarily unavailable',
+    });
   }
   if (!fx) return error(404, 'fixture not found');
 
   // Lean 4-call detail — cached from /quick when the dashboard called it.
   let detail;
   try {
-    detail = await fetchFixtureDetail(fx, leagueId);
+    detail = await retryOnRateLimit(() => fetchFixtureDetail(fx, leagueId));
   } catch (err) {
     console.error('[predictions/analyze] detail fetch failed:', err.message);
-    return error(502, `detail fetch failed: ${err.message}`);
+    return json(200, {
+      fixtureId,
+      predictions: null,
+      aiStatus: 'error',
+      aiReason: 'Data temporarily unavailable',
+    });
   }
 
   // Build the minimal matchData payload for Claude. No referee / weather /

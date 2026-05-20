@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Protected from './components/Protected.jsx';
 import PublicOnly from './components/PublicOnly.jsx';
+import AdminOnly from './components/AdminOnly.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -10,6 +11,7 @@ import Affiliate from './pages/Affiliate.jsx';
 import EVCalculator from './pages/EVCalculator.jsx';
 import KellySizer from './pages/KellySizer.jsx';
 import Bankroll from './pages/Bankroll.jsx';
+import AdminPanel from './pages/AdminPanel.jsx';
 
 export default function App() {
   return (
@@ -84,6 +86,16 @@ export default function App() {
         element={
           <Protected>
             <Affiliate />
+          </Protected>
+        }
+      />
+      <Route
+        path="/admin-panel"
+        element={
+          <Protected>
+            <AdminOnly>
+              <AdminPanel />
+            </AdminOnly>
           </Protected>
         }
       />

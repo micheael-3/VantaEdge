@@ -27,6 +27,9 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
   if (!fixture) return null;
 
   // Per-fixture error path: backend pipeline failed for just this match.
+  // We deliberately never surface the raw API-Football error to the user —
+  // the backend already converts known failures (rate limit, etc.) to the
+  // friendly "Data temporarily unavailable" string.
   if (fixture.error) {
     return (
       <div
@@ -50,8 +53,8 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
         >
           {fixture.home?.name} vs {fixture.away?.name}
         </div>
-        <div style={{ color: 'var(--red)', fontSize: 13 }}>
-          Analysis failed: {fixture.error}
+        <div className="mono" style={{ color: 'var(--text-3)', fontSize: 12 }}>
+          Data temporarily unavailable — try refresh
         </div>
       </div>
     );
@@ -235,14 +238,14 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
             marginBottom: 12,
             padding: '8px 10px',
             borderRadius: 6,
-            background: 'rgba(239,68,68,0.08)',
-            border: '1px solid rgba(239,68,68,0.25)',
+            background: 'var(--bg-2)',
+            border: '1px solid var(--border-soft)',
             fontSize: 11,
-            color: 'var(--red)',
+            color: 'var(--text-3)',
             letterSpacing: '0.04em',
           }}
         >
-          AI ANALYSIS FAILED · {fixture.error || fixture.aiReason || 'try refresh'}
+          Data temporarily unavailable — try refresh
         </div>
       )}
 

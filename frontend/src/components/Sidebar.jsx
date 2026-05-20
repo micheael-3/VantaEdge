@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { isSharp, useAuth } from '../context/AuthContext.jsx';
+import { isAdmin, isSharp, useAuth } from '../context/AuthContext.jsx';
 import { openWhopCheckout } from '../lib/checkout.js';
 import Logo from './Logo.jsx';
 import Icon from './Icon.jsx';
@@ -23,6 +23,7 @@ export default function Sidebar({ onUpgrade }) {
   const navigate = useNavigate();
   const location = useLocation();
   const sharp = isSharp(user);
+  const admin = isAdmin(user);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleLogout = async () => {
@@ -73,6 +74,18 @@ export default function Sidebar({ onUpgrade }) {
               </NavLink>
             );
           })}
+          {admin && (
+            <NavLink
+              to="/admin-panel"
+              onClick={() => setMobileOpen(false)}
+              className={({ isActive }) =>
+                `nav-item ${isActive || location.pathname === '/admin-panel' ? 'active' : ''}`
+              }
+            >
+              <Icon name="shield" size={16} />
+              <span style={{ flex: 1 }}>Admin Panel</span>
+            </NavLink>
+          )}
         </nav>
 
         <div style={{ flex: 1 }} />
@@ -158,13 +171,22 @@ export default function Sidebar({ onUpgrade }) {
               >
                 {(user && user.email) || 'guest'}
               </div>
-              <div style={{ marginTop: 2 }}>
+              <div style={{ marginTop: 2, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                 <span
                   className={sharp ? 'badge badge-mint' : 'badge badge-soft'}
                   style={{ fontSize: 9, padding: '2px 6px' }}
                 >
                   {sharp ? 'SHARP' : 'FREE'}
                 </span>
+                {admin && (
+                  <span
+                    className="badge badge-mint"
+                    style={{ fontSize: 9, padding: '2px 6px' }}
+                    title="Admin account"
+                  >
+                    ADMIN
+                  </span>
+                )}
               </div>
             </div>
             <button

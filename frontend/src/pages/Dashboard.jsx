@@ -63,6 +63,74 @@ function CheckoutToast({ message, onClose }) {
   );
 }
 
+// MLS-only build; we still need a per-league cache key so a future
+// multi-league switch doesn't need a key-format migration.
+const MLS_LEAGUE_ID = 253;
+
+// User's browser timezone — used to compute their local "today" and to
+// timestamp the "Last updated" label in the right wall-clock hour. We
+// intentionally do NOT hardcode Asia/Nicosia so a Cyprus user travelling
+// to NYC still sees the right thing.
+function userTz() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+// YYYY-MM-DD in the user's local timezone via en-CA (ISO format).
+function todayLocalStr() {
+  try {
+    return new Date().toLocaleDateString('en-CA', { timeZone: userTz() });
+  } catch {
+    // Fall back to UTC slice — same risk window as the legacy path.
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+function cacheKeyFor(leagueId, dateStr) {
+  return `fastscore_predictions_${leagueId}_${dateStr}`;
+}
+
+function loadCache(leagueId, dateStr) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(cacheKeyFor(leagueId, dateStr));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.date === dateStr && parsed.data) return parsed;
+  } catch {
+    /* ignore quota / parse errors */
+  }
+  return null;
+}
+
+function saveCache(leagueId, dateStr, data) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      cacheKeyFor(leagueId, dateStr),
+      JSON.stringify({ data, cachedAt: new Date().toISOString(), date: dateStr }),
+    );
+  } catch {
+    /* quota — silently drop */
+  }
+}
+
+function formatLastUpdated(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: userTz(),
+    });
+  } catch {
+    return '';
+  }
+}
+
 // Today's Edge — the dashboard root.
 //
 // Progressive loading flow (was a single 22s blocking fetch):
@@ -70,6 +138,10 @@ function CheckoutToast({ message, onClose }) {
 //   2. predictions.analyze(id)   → fires N times in parallel, one per fixture
 //      Each .then() splices the prediction into that one card. Other cards
 //      stay live throughout — no Promise.all gate.
+//
+// Same-day reloads are served from localStorage so refresh doesn't re-run
+// any Claude calls. The cache key embeds the user's local "today" date,
+// so a midnight crossing automatically invalidates yesterday's payload.
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
   const sharp = isSharp(user);
@@ -80,6 +152,7 @@ export default function Dashboard() {
   const [switching, setSwitching] = useState(false);
   const [pinnedDate, setPinnedDate] = useState(null);
   const [error, setError] = useState('');
+  const [cachedAt, setCachedAt] = useState(null);
   // Token to invalidate in-flight /analyze responses when the user switches
   // days mid-fetch (otherwise a slow Claude call could splice into the
   // wrong day's fixtures after the user moved on).
@@ -159,7 +232,9 @@ export default function Dashboard() {
 
   // Splice one analyzed fixture's prediction into `data.fixtures` by fixtureId.
   // Guarded by fetchToken so a stale analyze response from a previous day
-  // doesn't corrupt the current view.
+  // doesn't corrupt the current view. Also overwrites the matching slot in
+  // the localStorage cache so a same-day reload doesn't re-run the Claude
+  // call for this fixture.
   const applyAnalysis = useCallback((fixtureId, partial, token) => {
     setData((prev) => {
       if (!prev || token !== fetchTokenRef.current) return prev;
@@ -168,23 +243,62 @@ export default function Dashboard() {
       if (idx === -1) return prev;
       const updated = list.slice();
       updated[idx] = { ...updated[idx], ...partial };
-      return { ...prev, fixtures: updated };
+      const next = { ...prev, fixtures: updated };
+      // Mirror the splice into the localStorage cache. Key off the
+      // resolved matchDate (handles auto-selected next dates) and fall
+      // back to the user's local today if the server didn't send one.
+      const cacheDate = next.matchDate || todayLocalStr();
+      saveCache(MLS_LEAGUE_ID, cacheDate, next);
+      return next;
     });
   }, []);
 
   const fetchDay = useCallback(
-    async (date, isInitial) => {
+    async (date, isInitial, opts = {}) => {
       const myToken = ++fetchTokenRef.current;
+      const force = !!opts.force;
+      // Effective target date — when no explicit date, use the user's
+      // local "today" so the server gets a TZ-correct calendar day.
+      const targetDate = date || todayLocalStr();
+
+      // Cache short-circuit: same-day reload renders instantly with no
+      // network calls. Refresh button bypasses by passing force=true.
+      if (!force) {
+        const cached = loadCache(MLS_LEAGUE_ID, targetDate);
+        if (
+          cached &&
+          cached.data &&
+          Array.isArray(cached.data.fixtures) &&
+          cached.data.fixtures.length > 0
+        ) {
+          setData(cached.data);
+          setCachedAt(cached.cachedAt || null);
+          setLoading(false);
+          setSwitching(false);
+          setError('');
+          return;
+        }
+      }
+
       if (isInitial) setLoading(true);
       else setSwitching(true);
       setError('');
       try {
-        const params = {};
-        if (date) params.date = date;
+        const params = { date: targetDate };
         if (isInitial) params.initial = 1;
         const res = await predictions.quick(params);
         if (myToken !== fetchTokenRef.current) return; // user moved on
         setData(res);
+        const stamp = new Date().toISOString();
+        setCachedAt(stamp);
+        // Cache under the date the server actually resolved to (could be
+        // a future date when autoSelected fired) AND the date we asked for
+        // so the next reload of either key short-circuits.
+        const resolvedDate = res.matchDate || targetDate;
+        saveCache(MLS_LEAGUE_ID, resolvedDate, res);
+        if (resolvedDate !== targetDate) {
+          saveCache(MLS_LEAGUE_ID, targetDate, res);
+        }
 
         // Fan-out one analyze() per fixture in parallel. We don't await
         // Promise.all — each promise settles independently and splices
@@ -218,8 +332,7 @@ export default function Dashboard() {
                   aiStatus: 'error',
                   aiReason:
                     err?.response?.data?.error || err?.message || 'analysis failed',
-                  error:
-                    err?.response?.data?.error || err?.message || 'analysis failed',
+                  error: 'Data temporarily unavailable',
                 },
                 myToken,
               );
@@ -264,12 +377,24 @@ export default function Dashboard() {
       label = data.matchDate;
     }
     const count = (data.fixtures || []).length;
-    return `${label} · ${count} MATCH${count === 1 ? '' : 'ES'} ANALYSED`;
+    // When the backend auto-jumped past an empty "today" to the next
+    // playable date, prefix the line so users see why the date moved.
+    const prefix = data.autoSelected
+      ? `NEXT MATCHES · ${label}`
+      : label;
+    return `${prefix} · ${count} MATCH${count === 1 ? '' : 'ES'} ANALYSED`;
   }, [data]);
 
   const onSelectDay = (date) => {
     setPinnedDate(date);
     fetchDay(date, false);
+  };
+
+  // Force-refresh button: skips the localStorage cache, hits /quick,
+  // and re-runs analyze() for each fixture. Overwrites the cache so
+  // subsequent reloads short-circuit on the fresh payload.
+  const onRefresh = () => {
+    fetchDay(pinnedDate, false, { force: true });
   };
 
   // Sort fixtures by agent score desc so the best ones surface first.
@@ -342,7 +467,24 @@ export default function Dashboard() {
                   {headerSub}
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {cachedAt && (
+                  <span
+                    className="mono"
+                    style={{ fontSize: 11, color: 'var(--text-3)' }}
+                    title={new Date(cachedAt).toString()}
+                  >
+                    Last updated · {formatLastUpdated(cachedAt)}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={onRefresh}
+                  title="Force a fresh fetch (bypasses cache)"
+                >
+                  Refresh
+                </button>
                 <button type="button" className="btn btn-ghost btn-sm">
                   <Icon name="trending" size={13} /> MLS
                 </button>

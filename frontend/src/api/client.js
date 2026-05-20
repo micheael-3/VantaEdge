@@ -83,6 +83,14 @@ export const userApi = {
     api.post('/api/user/password', { currentPassword, newPassword }).then((r) => r.data),
 };
 
+export const admin = {
+  stats: () => api.get('/api/admin/stats').then((r) => r.data),
+  users: () => api.get('/api/admin/users').then((r) => r.data),
+  predictions: () => api.get('/api/admin/predictions').then((r) => r.data),
+  setTier: (userId, tier) =>
+    api.post(`/api/admin/users/${userId}/tier`, { tier }).then((r) => r.data),
+};
+
 export const affiliate = {
   dashboard: () => api.get('/api/affiliate/dashboard').then((r) => r.data),
   join: () => api.post('/api/affiliate/join').then((r) => r.data),
