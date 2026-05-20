@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { sql } = require('./_shared/db');
 const { json, error, notFound, parseRaw, subPath } = require('./_shared/response');
+const { COMMISSION } = require('./_shared/affiliate');
 
 const PRODUCT_TO_TIER = {
   vantaedge_scout_monthly: 'SCOUT',
@@ -25,6 +26,95 @@ function verifySignature(event) {
   return timingSafeEqual(provided, secret);
 }
 
+async function creditCommissionForPurchase(user, plan) {
+  if (!user.referred_by || !COMMISSION[plan]) return;
+  const affRows = await sql()`SELECT id FROM affiliates WHERE code = ${user.referred_by}`;
+  if (affRows.length === 0) return;
+  const affiliateId = affRows[0].id;
+  const commission = COMMISSION[plan];
+
+  // Has this referral been seen before?
+  const existing = await sql()`SELECT id, status, plan FROM referrals WHERE referred_user_id = ${user.id}`;
+
+  if (existing.length === 0) {
+    // New referral — credit and bump counters.
+    await sql()`
+      INSERT INTO referrals (affiliate_id, referred_user_id, plan, status, monthly_commission, last_paid_at)
+      VALUES (${affiliateId}, ${user.id}, ${plan}, 'ACTIVE', ${commission}, NOW())`;
+    await sql()`
+      UPDATE affiliates
+      SET total_referrals  = total_referrals + 1,
+          active_referrals = active_referrals + 1,
+          total_earned     = total_earned + ${commission},
+          pending_payout   = pending_payout + ${commission}
+      WHERE id = ${affiliateId}`;
+    console.log(`[AFFILIATE_COMMISSION] new referral, affiliate=${affiliateId} user=${user.id} plan=${plan} +$${commission}`);
+    return;
+  }
+
+  const ref = existing[0];
+  // Resubscription after a cancel or plan change on the way in.
+  const wasInactive = ref.status !== 'ACTIVE';
+  await sql()`
+    UPDATE referrals
+    SET status = 'ACTIVE', plan = ${plan}, monthly_commission = ${commission}, last_paid_at = NOW()
+    WHERE id = ${ref.id}`;
+  if (wasInactive) {
+    await sql()`
+      UPDATE affiliates
+      SET active_referrals = active_referrals + 1,
+          total_earned     = total_earned + ${commission},
+          pending_payout   = pending_payout + ${commission}
+      WHERE id = ${affiliateId}`;
+  } else {
+    // Plan change while active: pay the new commission for this month.
+    await sql()`
+      UPDATE affiliates
+      SET total_earned   = total_earned + ${commission},
+          pending_payout = pending_payout + ${commission}
+      WHERE id = ${affiliateId}`;
+  }
+  console.log(`[AFFILIATE_COMMISSION] reactivation, affiliate=${affiliateId} user=${user.id} plan=${plan} +$${commission}`);
+}
+
+async function creditCommissionForRenewal(user, plan) {
+  if (!user.referred_by || !COMMISSION[plan]) return;
+  const affRows = await sql()`SELECT id FROM affiliates WHERE code = ${user.referred_by}`;
+  if (affRows.length === 0) return;
+  const affiliateId = affRows[0].id;
+  const commission = COMMISSION[plan];
+
+  const refs = await sql()`SELECT id FROM referrals WHERE referred_user_id = ${user.id}`;
+  if (refs.length === 0) {
+    // RENEWAL without an INITIAL_PURCHASE on record — treat as new active.
+    await creditCommissionForPurchase(user, plan);
+    return;
+  }
+  await sql()`
+    UPDATE referrals
+    SET status = 'ACTIVE', plan = ${plan}, monthly_commission = ${commission}, last_paid_at = NOW()
+    WHERE id = ${refs[0].id}`;
+  await sql()`
+    UPDATE affiliates
+    SET total_earned   = total_earned + ${commission},
+        pending_payout = pending_payout + ${commission}
+    WHERE id = ${affiliateId}`;
+  console.log(`[AFFILIATE_COMMISSION] renewal, affiliate=${affiliateId} user=${user.id} plan=${plan} +$${commission}`);
+}
+
+async function deactivateReferral(user) {
+  const refs = await sql()`SELECT id, affiliate_id, status FROM referrals WHERE referred_user_id = ${user.id}`;
+  if (refs.length === 0) return;
+  const ref = refs[0];
+  if (ref.status === 'CANCELLED') return;
+  await sql()`UPDATE referrals SET status = 'CANCELLED' WHERE id = ${ref.id}`;
+  await sql()`
+    UPDATE affiliates
+    SET active_referrals = GREATEST(active_referrals - 1, 0)
+    WHERE id = ${ref.affiliate_id}`;
+  console.log(`[AFFILIATE_COMMISSION] cancelled, affiliate=${ref.affiliate_id} user=${user.id}`);
+}
+
 async function revenuecat(event) {
   if (!verifySignature(event)) return error(401, 'invalid signature');
 
@@ -45,11 +135,11 @@ async function revenuecat(event) {
 
   let user = null;
   if (lookupIds.length) {
-    const matches = await sql()`SELECT id, tier FROM users WHERE revenuecat_id = ANY(${lookupIds})`;
+    const matches = await sql()`SELECT id, email, tier, referred_by FROM users WHERE revenuecat_id = ANY(${lookupIds})`;
     user = matches[0] || null;
   }
   if (!user && appUserId && appUserId.includes('@')) {
-    const matches = await sql()`SELECT id, tier FROM users WHERE email = ${appUserId.toLowerCase()}`;
+    const matches = await sql()`SELECT id, email, tier, referred_by FROM users WHERE email = ${appUserId.toLowerCase()}`;
     user = matches[0] || null;
   }
   if (!user) return json(200, { received: true, matched: false });
@@ -62,10 +152,25 @@ async function revenuecat(event) {
     newTier = 'FREE';
   }
 
-  await sql()`UPDATE users
-              SET tier = ${newTier},
-                  revenuecat_id = COALESCE(${appUserId}, revenuecat_id)
-              WHERE id = ${user.id}`;
+  await sql()`
+    UPDATE users
+    SET tier = ${newTier},
+        revenuecat_id = COALESCE(${appUserId}, revenuecat_id)
+    WHERE id = ${user.id}`;
+
+  // Affiliate commission tracking (only if the user was referred and the plan is paid).
+  const planForCommission = PRODUCT_TO_TIER[productId];
+  try {
+    if (type === 'INITIAL_PURCHASE' || type === 'UNCANCELLATION' || type === 'PRODUCT_CHANGE') {
+      if (planForCommission) await creditCommissionForPurchase(user, planForCommission);
+    } else if (type === 'RENEWAL') {
+      if (planForCommission) await creditCommissionForRenewal(user, planForCommission);
+    } else if (type === 'CANCELLATION' || type === 'EXPIRATION') {
+      await deactivateReferral(user);
+    }
+  } catch (err) {
+    console.error('Affiliate commission update failed (webhook still acks):', err.message);
+  }
 
   return json(200, { received: true });
 }

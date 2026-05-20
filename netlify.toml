@@ -54,6 +54,11 @@
   to     = "/.netlify/functions/admin/:splat"
   status = 200
 
+[[redirects]]
+  from   = "/api/affiliate/*"
+  to     = "/.netlify/functions/affiliate/:splat"
+  status = 200
+
 # SPA fallback — every non-API, non-asset path serves index.html.
 [[redirects]]
   from   = "/*"

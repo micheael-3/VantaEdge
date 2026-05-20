@@ -32,16 +32,25 @@ async function setAuthCookies(user) {
 }
 
 async function register(event) {
-  const { email, password } = parseBody(event);
+  const { email, password, referralCode } = parseBody(event);
   if (!validEmail(email)) return error(400, 'Invalid email');
   if (typeof password !== 'string' || password.length < 8) {
     return error(400, 'Password must be at least 8 characters');
   }
   const existing = await sql()`SELECT id FROM users WHERE email = ${email.toLowerCase()}`;
   if (existing.length) return error(409, 'Email already registered');
+
+  // Validate referral code if supplied. Don't block on invalid — silently drop.
+  let referredBy = null;
+  if (typeof referralCode === 'string' && /^[A-Z0-9]{4,12}$/.test(referralCode.toUpperCase())) {
+    const code = referralCode.toUpperCase();
+    const match = await sql()`SELECT code FROM affiliates WHERE code = ${code}`;
+    if (match.length) referredBy = code;
+  }
+
   const passwordHash = await bcrypt.hash(password, 12);
-  const rows = await sql()`INSERT INTO users (email, password_hash, tier)
-                           VALUES (${email.toLowerCase()}, ${passwordHash}, 'FREE')
+  const rows = await sql()`INSERT INTO users (email, password_hash, tier, referred_by)
+                           VALUES (${email.toLowerCase()}, ${passwordHash}, 'FREE', ${referredBy})
                            RETURNING id, email, tier`;
   const user = rows[0];
   const cookies = await setAuthCookies(user);

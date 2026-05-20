@@ -14,6 +14,9 @@ import AdminUsers from './pages/admin/AdminUsers';
 import AdminPredictions from './pages/admin/AdminPredictions';
 import AdminStats from './pages/admin/AdminStats';
 import { getAdminToken } from './api/admin';
+import Affiliate from './pages/Affiliate';
+import AffiliateDashboard from './pages/AffiliateDashboard';
+import RefCapture from './pages/RefCapture';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -113,6 +116,16 @@ export default function App() {
           element={
             <Protected>
               <Settings />
+            </Protected>
+          }
+        />
+        <Route path="/ref/:code" element={<RefCapture />} />
+        <Route path="/affiliate" element={<Affiliate />} />
+        <Route
+          path="/affiliate/dashboard"
+          element={
+            <Protected>
+              <AffiliateDashboard />
             </Protected>
           }
         />

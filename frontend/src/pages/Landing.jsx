@@ -95,6 +95,7 @@ export default function Landing() {
       <footer className="footer container">
         <div>© VantaEdge 2025</div>
         <div className="row" style={{ gap: 16 }}>
+          <Link to="/affiliate">Affiliates</Link>
           <Link to="/login">Login</Link>
           <Link to="/register">Register</Link>
         </div>

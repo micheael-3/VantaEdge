@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
+import { readReferralCode } from '../lib/referral';
 
 export default function Register() {
   const { register } = useAuth();
@@ -10,6 +11,11 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [referralCode, setReferralCode] = useState(null);
+
+  useEffect(() => {
+    setReferralCode(readReferralCode());
+  }, []);
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -38,6 +44,11 @@ export default function Register() {
           <p className="muted small" style={{ marginBottom: 20 }}>
             Start with the free tier — upgrade any time.
           </p>
+          {referralCode && (
+            <div className="badge accent mono" style={{ marginBottom: 16 }}>
+              Referred by {referralCode}
+            </div>
+          )}
           <div className="stack">
             <div>
               <label className="label">Email</label>

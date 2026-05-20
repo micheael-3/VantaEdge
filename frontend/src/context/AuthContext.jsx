@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { auth as authApi } from '../api/client';
+import api, { auth as authApi } from '../api/client';
+import { readReferralCode, clearReferralCode } from '../lib/referral';
 
 const AuthContext = createContext(null);
 
@@ -38,9 +39,15 @@ export function AuthProvider({ children }) {
   };
 
   const register = async (email, password) => {
-    const { user } = await authApi.register(email, password);
-    setUser(user);
-    return user;
+    const referralCode = readReferralCode();
+    const { data } = await api.post('/api/auth/register', {
+      email,
+      password,
+      ...(referralCode ? { referralCode } : {}),
+    });
+    if (referralCode) clearReferralCode();
+    setUser(data.user);
+    return data.user;
   };
 
   const logout = async () => {
