@@ -6,10 +6,10 @@ import { bestBet as bestBetApi } from '../api/blog';
 import { bankroll as bankrollApi } from '../api/bankroll';
 import { LEAGUES } from '../config/leagues';
 import { calculateEV, calculateKelly } from '../lib/ev';
-import LiveActivity from '../components/LiveActivity';
 import OnboardingOverlay from '../components/OnboardingOverlay';
-import ToolsModal from '../components/ToolsModal';
 import './Dashboard.css';
+// Tools live at /tools/ev and /tools/kelly. The old ToolsModal is kept on
+// disk in case we want to revive the modal UX, but we no longer mount it.
 
 const FILTER_KEY = 'vantaedge_dash_filters_v1';
 const DEFAULT_FILTERS = {
@@ -72,7 +72,7 @@ function isStrongValue(m) {
 }
 
 // ============ Sidebar ============
-function Sidebar({ user, onLogout, onOpenTool }) {
+function Sidebar({ user, onLogout }) {
   return (
     <aside className="dp-sidebar">
       <Link to="/" className="dp-brand">
@@ -107,29 +107,19 @@ function Sidebar({ user, onLogout, onOpenTool }) {
 
       <div className="dp-side-section">
         <div className="dp-side-label">Tools</div>
-        <button
-          type="button"
-          className="dp-side-link tool"
-          onClick={() => onOpenTool && onOpenTool('ev')}
-          title="EV Calculator"
-        >
+        <NavLink to="/tools/ev" className={({ isActive }) => `dp-side-link ${isActive ? 'active' : ''}`} title="EV Calculator">
           <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
             <rect x="4" y="4" width="16" height="16" rx="2" />
             <path d="M9 9h6M9 13h6M9 17h3" />
           </svg>
           EV Calculator
-        </button>
-        <button
-          type="button"
-          className="dp-side-link tool"
-          onClick={() => onOpenTool && onOpenTool('kelly')}
-          title="Kelly Sizer"
-        >
+        </NavLink>
+        <NavLink to="/tools/kelly" className={({ isActive }) => `dp-side-link ${isActive ? 'active' : ''}`} title="Kelly Sizer">
           <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
             <path d="M12 2v20M2 12h20" />
           </svg>
           Kelly Sizer
-        </button>
+        </NavLink>
         <NavLink
           to="/bankroll"
           className={({ isActive }) => `dp-side-link ${isActive ? 'active' : ''}`}
@@ -473,22 +463,21 @@ function CompareOdds({ oddsData, overLineFromAi }) {
 function MatchCard({ m, userTier, onLogBet }) {
   const [overOdds, setOverOdds] = useState('');
   const [bttsOdds, setBttsOdds] = useState('');
-  const [compareOpen, setCompareOpen] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false);
 
   const over = m.predictions && m.predictions.over;
   const btts = m.predictions && m.predictions.btts;
-  const headline = over || { confidence: 50, line: 2.5 };
-  const headlineConfidence = over && btts && btts.confidence > over.confidence ? btts.confidence : headline.confidence;
   const isStrong = isStrongValue(m);
 
-  // Live EV — primary market is OVER unless user has entered BTTS odds only.
+  // EV/Kelly are gated on user-entered odds. We only show the badges once
+  // an odds value is present — no placeholder "enter odds" UI.
   const overEV = useMemo(() => (overOdds && over ? calculateEV(over.confidence, overOdds) : null), [overOdds, over]);
   const bttsEV = useMemo(() => (bttsOdds && btts ? calculateEV(btts.confidence, bttsOdds) : null), [bttsOdds, btts]);
   const overKelly = useMemo(() => (overOdds && over ? calculateKelly(over.confidence, overOdds) : 0), [overOdds, over]);
+  const bttsKelly = useMemo(() => (bttsOdds && btts ? calculateKelly(btts.confidence, bttsOdds) : 0), [bttsOdds, btts]);
 
-  const primaryEV = overEV || bttsEV;
-  const hasOdds = !!primaryEV;
-  const positive = !!primaryEV && primaryEV.edge >= 1;
+  const canSeeEV = userTier === 'ANALYST' || userTier === 'EDGE';
+  const canLogBet = canSeeEV;
 
   if (m.error) {
     return (
@@ -541,6 +530,24 @@ function MatchCard({ m, userTier, onLogBet }) {
 
   const sharpMove = !!m.isSharpMove;
 
+  // Goals-per-game line (cheap, still useful). Shown inline below the form row.
+  const gpgLine = (() => {
+    const h = m.home && m.home.goalsPerGame;
+    const a = m.away && m.away.goalsPerGame;
+    if (!h && !a) return null;
+    return (
+      <div className="dp-metric" style={{ flex: '1 1 100%' }}>
+        <span className="lbl">Goals/game (for/against)</span>
+        <span className="val">{fmtGpg(h)} · {fmtGpg(a)}</span>
+      </div>
+    );
+  })();
+
+  // Decide which market the user is most likely interested in logging.
+  const overEdgeNum = overEV ? overEV.edge : null;
+  const bttsEdgeNum = bttsEV ? bttsEV.edge : null;
+  const useOverForLog = (overEdgeNum != null && (bttsEdgeNum == null || overEdgeNum >= bttsEdgeNum));
+
   return (
     <div className={`dp-match ${isStrong ? 'glow' : ''} ${pastBorderClass} ${sharpMove ? 'sharp-move' : ''}`}>
       <div className="dp-match-main">
@@ -591,15 +598,15 @@ function MatchCard({ m, userTier, onLogBet }) {
               {m.away && m.away.restDays != null ? `${m.away.restDays}d` : '—'}
             </span>
           </div>
+          {gpgLine}
         </div>
       </div>
 
       <div className="dp-conf-wrap">
-        <ConfBar value={headlineConfidence} />
         <div className="dp-bet-badges">
           {over && (
             <span className={`dp-bet-badge on mint`}>
-              OVER {over.line}
+              OVER {over.line} · {Math.round(over.confidence)}%
               {isPastCard && (
                 <span className={`dp-hit-icon ${ar.overHit ? 'hit' : 'miss'}`}>
                   {ar.overHit ? '✓' : '✗'}
@@ -609,7 +616,7 @@ function MatchCard({ m, userTier, onLogBet }) {
           )}
           {btts && (
             <span className={`dp-bet-badge on`}>
-              BTTS {btts.prediction}
+              BTTS {btts.prediction} · {Math.round(btts.confidence)}%
               {isPastCard && (
                 <span className={`dp-hit-icon ${ar.bttsHit ? 'hit' : 'miss'}`}>
                   {ar.bttsHit ? '✓' : '✗'}
@@ -624,171 +631,112 @@ function MatchCard({ m, userTier, onLogBet }) {
             <span>{ar.homeGoals} — {ar.awayGoals}</span>
           </div>
         )}
-      </div>
-
-      <div className="dp-right">
-        {m.oddsData ? (
-          <>
-            <div className="dp-liveodds">
-              <div className="dp-liveodds-head">
-                <span>📊 Live Odds</span>
-                <span>{m.oddsData.bookmakerCount || 0} bookies</span>
-              </div>
-              {m.oddsData.bestOverOdds != null && (
-                <div className="dp-liveodds-row">
-                  <span className="label">Over {m.oddsData.overLine}</span>
-                  <span>
-                    <span className="odds">{m.oddsData.bestOverOdds.toFixed(2)}</span>{' '}
-                    <span className="bookie">@ {m.oddsData.bestOverBookmaker}</span>
-                  </span>
-                </div>
-              )}
-              {m.oddsData.bestBttsOdds != null && (
-                <div className="dp-liveodds-row">
-                  <span className="label">BTTS {m.oddsData.bttsSide || 'YES'}</span>
-                  <span>
-                    <span className="odds">{m.oddsData.bestBttsOdds.toFixed(2)}</span>{' '}
-                    <span className="bookie">@ {m.oddsData.bestBttsBookmaker}</span>
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {(() => {
-              const auto = m.oddsData.autoEV || {};
-              const bestEdge = Math.max(
-                auto.overEdge != null ? auto.overEdge : -Infinity,
-                auto.bttsEdge != null ? auto.bttsEdge : -Infinity,
-              );
-              const has = Number.isFinite(bestEdge);
-              const pos = has && bestEdge >= 1;
-              return (
-                <div className={`dp-ev-pill ${!has ? 'empty' : pos ? 'positive' : ''}`}>
-                  <span className="l">Your Edge</span>
-                  <span className="v">
-                    {has ? `${bestEdge >= 0 ? '+' : ''}${bestEdge.toFixed(1)}%` : '—'}
-                  </span>
-                </div>
-              );
-            })()}
-
-            {(() => {
-              const auto = m.oddsData.autoEV || {};
-              const kOver = auto.kellyOver || 0;
-              const kBtts = auto.kellyBtts || 0;
-              const kBest = Math.max(kOver, kBtts);
-              if (kBest <= 0) return null;
-              const useOver = kOver >= kBtts;
-              const odds = useOver ? m.oddsData.bestOverOdds : m.oddsData.bestBttsOdds;
-              const market = useOver ? 'OVER' : 'BTTS';
-              const canLog = userTier === 'ANALYST' || userTier === 'EDGE';
-              const bet = useOver ? `OVER ${m.oddsData.overLine}` : `BTTS ${m.oddsData.bttsSide || 'YES'}`;
-              return (
-                <>
-                  <div className="dp-odds-row">
-                    <span className="l">Kelly stake</span>
-                    <span className="v">{(kBest * 100).toFixed(1)}% bankroll</span>
-                  </div>
-                  {canLog && onLogBet && odds && (
-                    <button
-                      className="dp-compare-toggle"
-                      style={{ marginTop: 6 }}
-                      onClick={() => onLogBet({
-                        predictionId: m.id,
-                        odds,
-                        market,
-                        kelly: kBest,
-                        bet,
-                        match: `${m.home && m.home.name} vs ${m.away && m.away.name}`,
-                      })}
-                    >
-                      → Log this bet
-                    </button>
-                  )}
-                </>
-              );
-            })()}
-
-            <div className="dp-liveodds-foot">odds via the-odds-api · refreshed every 5 min</div>
-          </>
-        ) : (
-          <>
-            <div className="dp-liveodds-foot" style={{ marginBottom: 2 }}>
-              Auto odds unavailable — enter manually
-            </div>
-            <div>
-              <label className="dp-odds-row" style={{ marginBottom: 4 }}>
-                <span className="l">Over odds</span>
-                <span />
-              </label>
-              <input
-                className="dp-odds-input"
-                type="number"
-                step="0.01"
-                min="1"
-                placeholder="1.85"
-                value={overOdds}
-                onChange={(e) => setOverOdds(e.target.value)}
-                inputMode="decimal"
-              />
-            </div>
-            <div>
-              <label className="dp-odds-row" style={{ marginBottom: 4 }}>
-                <span className="l">BTTS odds</span>
-                <span />
-              </label>
-              <input
-                className="dp-odds-input"
-                type="number"
-                step="0.01"
-                min="1"
-                placeholder="1.90"
-                value={bttsOdds}
-                onChange={(e) => setBttsOdds(e.target.value)}
-                inputMode="decimal"
-              />
-            </div>
-            <div className={`dp-ev-pill ${!hasOdds ? 'empty' : positive ? 'positive' : ''}`}>
-              <span className="l">Your Edge</span>
-              <span className="v">
-                {!hasOdds
-                  ? 'enter odds'
-                  : `${primaryEV.edge >= 0 ? '+' : ''}${primaryEV.edge.toFixed(1)}%`}
-              </span>
-            </div>
-            {overKelly > 0 && (
-              <div className="dp-odds-row">
-                <span className="l">Kelly stake</span>
-                <span className="v">{(overKelly * 100).toFixed(1)}% bankroll</span>
+        <button
+          type="button"
+          className="dp-compare-toggle"
+          style={{ marginTop: 10, width: '100%' }}
+          onClick={() => setShowAnalysis((v) => !v)}
+        >
+          {showAnalysis ? '▲ Hide analysis' : '▼ Show analysis'}
+        </button>
+        {showAnalysis && (
+          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--dp-text-dim)', lineHeight: 1.5 }}>
+            {over && over.reasoning && (
+              <div style={{ marginBottom: 6 }}>
+                <strong>Over:</strong> {over.reasoning}
               </div>
             )}
-          </>
+            {btts && btts.reasoning && (
+              <div>
+                <strong>BTTS:</strong> {btts.reasoning}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      {/* Match details — xG proxy / weather / referee / injuries */}
-      <MatchDetails m={m} />
+      <div className="dp-right">
+        <div>
+          <label className="dp-odds-row" style={{ marginBottom: 4 }}>
+            <span className="l">Over odds</span>
+            <span />
+          </label>
+          <input
+            className="dp-odds-input"
+            type="number"
+            step="0.01"
+            min="1"
+            placeholder="1.85"
+            value={overOdds}
+            onChange={(e) => setOverOdds(e.target.value)}
+            inputMode="decimal"
+          />
+        </div>
+        <div>
+          <label className="dp-odds-row" style={{ marginBottom: 4 }}>
+            <span className="l">BTTS odds</span>
+            <span />
+          </label>
+          <input
+            className="dp-odds-input"
+            type="number"
+            step="0.01"
+            min="1"
+            placeholder="1.90"
+            value={bttsOdds}
+            onChange={(e) => setBttsOdds(e.target.value)}
+            inputMode="decimal"
+          />
+        </div>
 
-      {/* Compare Odds — ANALYST/EDGE only, when auto-odds present */}
-      {m.oddsData && (userTier === 'ANALYST' || userTier === 'EDGE') && (
-        <div className="dp-compare">
+        {/* EV + Kelly only render once odds are typed, and only for paying tiers. */}
+        {canSeeEV && overEV && (
+          <div className={`dp-ev-pill ${overEV.edge >= 1 ? 'positive' : ''}`}>
+            <span className="l">Over edge</span>
+            <span className="v">{overEV.edge >= 0 ? '+' : ''}{overEV.edge.toFixed(1)}%</span>
+          </div>
+        )}
+        {canSeeEV && bttsEV && (
+          <div className={`dp-ev-pill ${bttsEV.edge >= 1 ? 'positive' : ''}`}>
+            <span className="l">BTTS edge</span>
+            <span className="v">{bttsEV.edge >= 0 ? '+' : ''}{bttsEV.edge.toFixed(1)}%</span>
+          </div>
+        )}
+        {canSeeEV && (overKelly > 0 || bttsKelly > 0) && (
+          <div className="dp-odds-row">
+            <span className="l">Kelly stake</span>
+            <span className="v">
+              {Math.max(overKelly, bttsKelly) > 0
+                ? `${(Math.max(overKelly, bttsKelly) * 100).toFixed(1)}% bankroll`
+                : '—'}
+            </span>
+          </div>
+        )}
+
+        {canLogBet && onLogBet && (overEV || bttsEV) && (
           <button
             className="dp-compare-toggle"
-            onClick={() => setCompareOpen((v) => !v)}
-            style={{ width: '100%' }}
+            style={{ marginTop: 6 }}
+            onClick={() => {
+              const useOver = useOverForLog;
+              const odds = useOver ? parseFloat(overOdds) : parseFloat(bttsOdds);
+              const market = useOver ? 'OVER' : 'BTTS';
+              const kelly = useOver ? overKelly : bttsKelly;
+              const bet = useOver ? `OVER ${over && over.line}` : `BTTS ${btts && btts.prediction}`;
+              onLogBet({
+                predictionId: m.id,
+                odds,
+                market,
+                kelly,
+                bet,
+                match: `${m.home && m.home.name} vs ${m.away && m.away.name}`,
+              });
+            }}
           >
-            {compareOpen ? '▲ Hide bookmaker comparison' : `▼ Compare ${m.oddsData.bookmakerCount || ''} bookmakers`}
+            → Log this bet
           </button>
-          {compareOpen && (
-            <div style={{ marginTop: 12 }}>
-              <CompareOdds
-                oddsData={m.oddsData}
-                overLineFromAi={(m.predictions && m.predictions.over && m.predictions.over.line) || 2.5}
-              />
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -912,33 +860,10 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  const [filter, setFilter] = useState('all');
-  // Tutorial: persist dismissal across reloads. The HOW TO READ A MATCH
-  // panel only needs to be seen once; coming back to it every day was
-  // contributing to the "NASA console" feeling.
-  const LEGEND_KEY = 'vantaedge_dash_legend_dismissed_v1';
-  const [showLegend, setShowLegend] = useState(() => {
-    try { return window.localStorage.getItem(LEGEND_KEY) !== '1'; }
-    catch { return true; }
-  });
-  const dismissLegend = () => {
-    setShowLegend(false);
-    try { window.localStorage.setItem(LEGEND_KEY, '1'); } catch { /* ignore */ }
-  };
-  // Seed adv filters from server prefs the first time the user lands here
-  // (no localStorage yet), otherwise honour their saved tweaks.
-  const [advFilters, setAdvFilters] = useState(() => {
-    try {
-      const ls = window.localStorage.getItem('vantaedge_dash_filters_v1');
-      if (ls) return loadFilters();
-    } catch { /* no-op */ }
-    return {
-      minConfidence: (user && Number.isFinite(user.minConfidence)) ? user.minConfidence : 65,
-      market: (user && user.defaultMarket) || 'all',
-      valueOnly: false,
-      sort: 'edge',
-    };
-  });
+  // Legend / chip filter / advanced filters are intentionally removed in
+  // the simplification pass. The filter helpers and DEFAULT_FILTERS values
+  // remain at module scope in case we want to revive them.
+  void loadFilters; void saveFilters; void DEFAULT_FILTERS; void FILTER_KEY;
 
   // Onboarding + toast state
   const [showOnboarding, setShowOnboarding] = useState(
@@ -955,16 +880,14 @@ export default function Dashboard() {
   const [dateLabel, setDateLabel] = useState('Today');
   const [matchDate, setMatchDate] = useState(null);     // YYYY-MM-DD or null (when 'recent')
   const [isPast, setIsPast] = useState(false);
-  const [activeDate, setActiveDate] = useState(null);   // null = auto cascade; else YYYY-MM-DD
-  const [upcomingDays, setUpcomingDays] = useState([]); // [{date, count, label, isToday}]
-
-  // Persist filters across sessions.
-  useEffect(() => {
-    saveFilters(advFilters);
-  }, [advFilters]);
+  // The date pills row was removed from the render; we keep the state and
+  // fetch around in case we re-enable it later.
+  const [activeDate, setActiveDate] = useState(null);
+  const [upcomingDays, setUpcomingDays] = useState([]);
+  void upcomingDays; // referenced only by the (currently disabled) pills row.
 
   // Bankroll metadata (for Kelly stake suggestion + Log This Bet flow).
-  // Only fetched for paid tiers; FREE/SCOUT don't have access to /api/bankroll.
+  // Only fetched for paid tiers; FREE doesn't have access to /api/bankroll.
   const isPaidPlus = user.tier === 'ANALYST' || user.tier === 'EDGE';
   const [bankrollMeta, setBankrollMeta] = useState(null);
   useEffect(() => {
@@ -980,9 +903,6 @@ export default function Dashboard() {
   // Log This Bet modal state.
   const [logBetCtx, setLogBetCtx] = useState(null);
   const closeLogBet = () => setLogBetCtx(null);
-
-  // Tools modal — driven by the sidebar Tools section. 'ev' or 'kelly'.
-  const [activeTool, setActiveTool] = useState(null);
 
   const fetchData = useCallback(async (leagueId, initial = false, dateOverride = null) => {
     setLoading(true);
@@ -1047,51 +967,10 @@ export default function Dashboard() {
     navigate('/');
   };
 
+  // Always sort by edge desc; chip filters / min confidence / sort dropdown were removed.
   const filtered = useMemo(() => {
-    let list = matches.slice();
-
-    // Chip filter (legacy, kept for the 'Strong Value' / market quick buttons)
-    if (filter === 'strong') list = list.filter(isStrongValue);
-    if (filter === 'value') list = list.filter((m) => {
-      const e = bestEv(m);
-      return e != null && e >= 5;
-    });
-    if (filter === 'over') list = list.filter((m) => m.predictions && m.predictions.over);
-    if (filter === 'btts') list = list.filter((m) => m.predictions && m.predictions.btts);
-
-    // Advanced filters
-    list = list.filter((m) => {
-      const overC = m.predictions && m.predictions.over ? m.predictions.over.confidence : 0;
-      const bttsC = m.predictions && m.predictions.btts ? m.predictions.btts.confidence : 0;
-      const maxC = Math.max(overC, bttsC);
-      if (maxC < advFilters.minConfidence) return false;
-      if (advFilters.market === 'over' && !(m.predictions && m.predictions.over)) return false;
-      if (advFilters.market === 'btts' && !(m.predictions && m.predictions.btts)) return false;
-      if (advFilters.valueOnly) {
-        const e = bestEv(m);
-        if (e == null || e <= 0) return false;
-      }
-      return true;
-    });
-
-    // Sort
-    const sortKey = advFilters.sort;
+    const list = matches.slice();
     return list.sort((a, b) => {
-      if (sortKey === 'kickoff') {
-        return new Date(a.kickoff || 0) - new Date(b.kickoff || 0);
-      }
-      if (sortKey === 'confidence') {
-        const ca = Math.max(
-          a.predictions && a.predictions.over ? a.predictions.over.confidence : 0,
-          a.predictions && a.predictions.btts ? a.predictions.btts.confidence : 0,
-        );
-        const cb = Math.max(
-          b.predictions && b.predictions.over ? b.predictions.over.confidence : 0,
-          b.predictions && b.predictions.btts ? b.predictions.btts.confidence : 0,
-        );
-        return cb - ca;
-      }
-      // 'edge' (default)
       const ea = bestEv(a);
       const eb = bestEv(b);
       if (ea == null && eb == null) {
@@ -1101,33 +980,14 @@ export default function Dashboard() {
       }
       return (eb ?? -Infinity) - (ea ?? -Infinity);
     });
-  }, [matches, filter, advFilters]);
-
-  const strongCount = matches.filter(isStrongValue).length;
-  const avgStrongConf = (() => {
-    const strong = matches.filter(isStrongValue);
-    if (strong.length === 0) return 0;
-    const sum = strong.reduce((acc, m) => {
-      const c = m.predictions && m.predictions.over ? m.predictions.over.confidence : 0;
-      return acc + c;
-    }, 0);
-    return Math.round(sum / strong.length);
-  })();
-  const bestEdge = (() => {
-    let max = null;
-    for (const m of matches) {
-      const e = bestEv(m);
-      if (e != null && (max == null || e > max)) max = e;
-    }
-    return max;
-  })();
+  }, [matches]);
 
   const activeLeagueObj = LEAGUES.find((l) => l.id === activeLeague) || LEAGUES[0];
 
   return (
     <div className="dashboard-page">
       <div className="dp-layout">
-        <Sidebar user={user} onLogout={handleLogout} onOpenTool={setActiveTool} />
+        <Sidebar user={user} onLogout={handleLogout} />
         <main className="dp-main">
           <MobileTop user={user} onLogout={handleLogout} />
 
@@ -1139,7 +999,7 @@ export default function Dashboard() {
                   <span>LIVE · MATCHDAY · {new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                 </div>
                 <h1>Today's Edge</h1>
-                <div className="dp-sub">AI-scored fixtures across 8 leagues. Strong Value picks first.</div>
+                <div className="dp-sub">AI-scored fixtures across MLS, Bundesliga, and Eredivisie.</div>
               </div>
               <span className="dp-tier-pill dp-mono">{user.tier}</span>
             </div>
@@ -1160,13 +1020,9 @@ export default function Dashboard() {
             </div>
           </header>
 
-          <BestBetCard user={user} />
-
-          {/* Agent live activity — inline panel on desktop (hidden on mobile),
-              plus a floating button + bottom sheet on mobile. Single render. */}
-          <div style={{ padding: '14px 36px 0' }}>
-            <LiveActivity hideWhenEmpty />
-          </div>
+          {/* BestBetCard + LiveActivity were removed from the dashboard render
+              in the simplification pass. The BestBetCard function definition
+              still lives below in case we want it back. */}
 
           <div className="dp-league-tabs-wrap" style={{ marginTop: 24 }}>
             <div className="dp-league-tabs">
@@ -1196,147 +1052,12 @@ export default function Dashboard() {
               )}
             </div>
           </div>
-          <div className="dp-date-pills">
-            {upcomingDays.length === 0 ? (
-              <span className="dp-mono" style={{ fontSize: 11, color: 'var(--dp-text-faint)' }}>
-                Scanning fixtures…
-              </span>
-            ) : (
-              upcomingDays.map((d) => {
-                const isActive = activeDate === d.date || (activeDate === null && matchDate === d.date);
-                const empty = !d.count || d.count === 0;
-                const shortLabel =
-                  d.isToday ? 'Today'
-                  : d.label === 'Tomorrow' ? 'Tomorrow'
-                  : d.label === 'Yesterday' ? 'Yesterday'
-                  : (() => {
-                      try {
-                        return new Date(`${d.date}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' });
-                      } catch { return d.date; }
-                    })();
-                return (
-                  <button
-                    key={d.date}
-                    type="button"
-                    className={`dp-date-pill ${isActive ? 'active' : ''} ${empty ? 'empty' : ''} ${d.isPast ? 'past' : ''} ${d.isToday ? 'today' : ''}`}
-                    onClick={() => setActiveDate(d.date)}
-                    title={`${d.count == null ? '?' : d.count} matches on ${d.label}`}
-                  >
-                    <span>{shortLabel}</span>
-                    {d.count != null && <span className="ct">{d.count}</span>}
-                  </button>
-                );
-              })
-            )}
-          </div>
-
-          <div className="dp-filter-bar">
-            <div className="dp-filter-group">
-              <span className="dp-filter-label">Min confidence</span>
-              <input
-                type="range"
-                min="0"
-                max="90"
-                step="1"
-                value={advFilters.minConfidence}
-                onChange={(e) => setAdvFilters((f) => ({ ...f, minConfidence: parseInt(e.target.value, 10) }))}
-                className="dp-slider"
-                aria-label="Minimum confidence"
-              />
-              <span className="dp-slider-val">{advFilters.minConfidence}%</span>
-            </div>
-            <div className="dp-filter-group">
-              <span className="dp-filter-label">Markets</span>
-              <button
-                className={`dp-toggle ${advFilters.market === 'all' ? 'on' : ''}`}
-                onClick={() => setAdvFilters((f) => ({ ...f, market: 'all' }))}
-              >
-                All
-              </button>
-              <button
-                className={`dp-toggle ${advFilters.market === 'over' ? 'on' : ''}`}
-                onClick={() => setAdvFilters((f) => ({ ...f, market: 'over' }))}
-              >
-                Over only
-              </button>
-              <button
-                className={`dp-toggle ${advFilters.market === 'btts' ? 'on' : ''}`}
-                onClick={() => setAdvFilters((f) => ({ ...f, market: 'btts' }))}
-              >
-                BTTS only
-              </button>
-            </div>
-            <div className="dp-filter-group">
-              <button
-                className={`dp-toggle ${advFilters.valueOnly ? 'on' : ''}`}
-                onClick={() => setAdvFilters((f) => ({ ...f, valueOnly: !f.valueOnly }))}
-                title="Hide cards with no positive EV (needs odds entered to be visible)"
-              >
-                {advFilters.valueOnly ? '✓ Value only' : 'Value only'}
-              </button>
-            </div>
-            <div className="dp-filter-group" style={{ marginLeft: 'auto' }}>
-              <span className="dp-filter-label">Sort</span>
-              <select
-                className="dp-select"
-                value={advFilters.sort}
-                onChange={(e) => setAdvFilters((f) => ({ ...f, sort: e.target.value }))}
-              >
-                <option value="edge">EV edge (high → low)</option>
-                <option value="confidence">Confidence (high → low)</option>
-                <option value="kickoff">Kickoff time</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="dp-filter-row">
-            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--dp-text-faint)', textTransform: 'uppercase', letterSpacing: '0.14em', marginRight: 4 }}>
-              Filter:
-            </span>
-            <button className={`dp-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>All picks</button>
-            <button className={`dp-chip ${filter === 'strong' ? 'mint-active' : ''}`} onClick={() => setFilter('strong')}>Strong Value</button>
-            <button className={`dp-chip ${filter === 'value' ? 'active' : ''}`} onClick={() => setFilter('value')}>+EV &gt; 5%</button>
-            <button className={`dp-chip ${filter === 'over' ? 'active' : ''}`} onClick={() => setFilter('over')}>Over / Under</button>
-            <button className={`dp-chip ${filter === 'btts' ? 'active' : ''}`} onClick={() => setFilter('btts')}>BTTS</button>
-            <div style={{ flex: 1 }} />
-            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--dp-text-dim)' }}>
-              Sorted by edge ↓
-            </span>
-          </div>
+          {/* Date pills, filter bar, chip filter row, and HOW TO READ legend
+              were all removed in the simplification pass. State + fetch for
+              upcomingDays / activeDate still live above in case we revive
+              the pills row. */}
 
           <div className="dp-matches">
-            {showLegend && (
-              <div className="dp-legend">
-                <div className="dp-legend-head">
-                  <span className="dp-mono" style={{ fontSize: 10, color: 'var(--dp-mint)', letterSpacing: '0.16em' }}>
-                    HOW TO READ A MATCH
-                  </span>
-                  <button className="dp-legend-close" onClick={dismissLegend} aria-label="Dismiss">
-                    ×
-                  </button>
-                </div>
-                <div className="dp-legend-cols">
-                  <div>
-                    <div className="dp-legend-num">1</div>
-                    <div className="dp-legend-title">Match &amp; stats</div>
-                    <div className="dp-legend-body">Form dots, rest days — the inputs feeding the model.</div>
-                  </div>
-                  <div>
-                    <div className="dp-legend-num">2</div>
-                    <div className="dp-legend-title">AI confidence + market</div>
-                    <div className="dp-legend-body">How sure the model is on Over/Under and BTTS for this match.</div>
-                  </div>
-                  <div>
-                    <div className="dp-legend-num">3</div>
-                    <div className="dp-legend-title">Your odds &amp; edge</div>
-                    <div className="dp-legend-body">
-                      Type the bookmaker's odds and we compute your edge live. Green = <strong style={{ color: 'var(--dp-mint)' }}>+EV</strong>.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {loading ? (
               // Skeleton cards keep the layout stable — never "empty" state
               <>
@@ -1423,8 +1144,6 @@ export default function Dashboard() {
         />
       )}
 
-      {activeTool && <ToolsModal tool={activeTool} onClose={() => setActiveTool(null)} />}
-
       {/* Mobile-only floating refresh button (replaces the header refresh below 769px) */}
       <button
         type="button"
@@ -1448,11 +1167,6 @@ export default function Dashboard() {
               ? updatedUser.preferredLeagues[0]
               : LEAGUES[0].id;
             switchLeague(firstLeague);
-            setAdvFilters((f) => ({
-              ...f,
-              minConfidence: Number.isFinite(updatedUser.minConfidence) ? updatedUser.minConfidence : f.minConfidence,
-              market: updatedUser.defaultMarket || f.market,
-            }));
             setShowOnboarding(false);
             setToast('Dashboard personalised. You can update preferences anytime in Settings.');
           }}

@@ -4,12 +4,14 @@ import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 import affiliateApi from '../api/affiliate';
 
-const COMMISSION = { SCOUT: 1.5, ANALYST: 5.2, EDGE: 10.0 };
-// 50/30/20 mix used as the default scenario for the calculator.
-const DEFAULT_MIX = { SCOUT: 0.5, ANALYST: 0.3, EDGE: 0.2 };
+// Per-plan monthly commission (USD) — Free has no commission since it's $0.
+const COMMISSION = { ANALYST: 5.2, EDGE: 10.0 };
+// 70/30 mix used as the default scenario for the calculator (Analyst is the
+// primary paid tier post-simplification).
+const DEFAULT_MIX = { ANALYST: 0.7, EDGE: 0.3 };
 
 function avgCommission(mix) {
-  return mix.SCOUT * COMMISSION.SCOUT + mix.ANALYST * COMMISSION.ANALYST + mix.EDGE * COMMISSION.EDGE;
+  return mix.ANALYST * COMMISSION.ANALYST + mix.EDGE * COMMISSION.EDGE;
 }
 
 function fmtMoney(n) {
@@ -107,12 +109,6 @@ export default function Affiliate() {
             </thead>
             <tbody>
               <tr>
-                <td>Scout</td>
-                <td>$4.99</td>
-                <td>30%</td>
-                <td>$1.50</td>
-              </tr>
-              <tr>
                 <td>Analyst</td>
                 <td>$12.99</td>
                 <td>40%</td>
@@ -150,7 +146,7 @@ export default function Affiliate() {
               style={{ width: '100%' }}
             />
             <div className="muted small mono">
-              Assumes a 50% Scout / 30% Analyst / 20% Edge mix · avg {fmtMoney(avg)} per referral / month
+              Assumes a 70% Analyst / 30% Edge mix · avg {fmtMoney(avg)} per referral / month
             </div>
             <div className="kpi-grid" style={{ marginTop: 16 }}>
               <div className="kpi">

@@ -4,7 +4,6 @@ const { json, error, notFound, parseRaw, subPath } = require('./_shared/response
 const { COMMISSION } = require('./_shared/affiliate');
 
 const PRODUCT_TO_TIER = {
-  vantaedge_scout_monthly: 'SCOUT',
   vantaedge_analyst_monthly: 'ANALYST',
   vantaedge_edge_monthly: 'EDGE',
 };

@@ -7,7 +7,16 @@ const football = require('./_shared/football');
 const { analyseMatch } = require('./_shared/claude');
 const { calculateEV, calculateKelly } = require('./_shared/ev');
 const oddsService = require('./_shared/odds');
-const weatherService = require('./_shared/weather');
+
+// Derive rest days from a team's recent fixtures list rather than making a
+// separate /fixtures call. Falls back to null when no past games are present.
+function restDaysFromForm(formFixtures) {
+  if (!Array.isArray(formFixtures) || formFixtures.length === 0) return null;
+  const sorted = formFixtures.slice().sort((a, b) => new Date(b.fixture.date) - new Date(a.fixture.date));
+  const lastPlayed = sorted.find((f) => new Date(f.fixture.date) < new Date());
+  if (!lastPlayed) return null;
+  return Math.max(0, Math.floor((Date.now() - new Date(lastPlayed.fixture.date).getTime()) / 86400000));
+}
 
 // ---------- Date helpers ----------
 function todayDateStr() {
@@ -240,34 +249,22 @@ async function handleLeague(event, leagueId) {
       const homeId = fx.teams.home.id;
       const awayId = fx.teams.away.id;
       try {
-        const [homeLast, awayLast, h2h, homeStats, awayStats, homeFx, awayFx] = await Promise.all([
+        // Simplified data pull: 4 API calls per fixture (last home, last away,
+        // stats home, stats away). Rest days are derived from the form
+        // fixtures we already have. H2H / referee / injuries / weather were
+        // dropped in the simplification pass.
+        const [homeLast, awayLast, homeStats, awayStats] = await Promise.all([
           football.getTeamLastHomeGames(homeId, leagueId),
           football.getTeamLastAwayGames(awayId, leagueId),
-          football.getH2H(homeId, awayId),
           football.getTeamStats(homeId, leagueId),
           football.getTeamStats(awayId, leagueId),
-          football.getTeamFixtures(homeId, leagueId),
-          football.getTeamFixtures(awayId, leagueId),
         ]);
         const homeForm = football.extractFormForTeam(homeLast, homeId);
         const awayForm = football.extractFormForTeam(awayLast, awayId);
-        const homeRest = football.calculateRestDays(homeFx);
-        const awayRest = football.calculateRestDays(awayFx);
+        const homeRest = restDaysFromForm(homeLast);
+        const awayRest = restDaysFromForm(awayLast);
 
-        // ---- Data enrichment (each independent; failures don't break the prediction) ----
-        const refereeName = fx.fixture && fx.fixture.referee ? fx.fixture.referee : null;
         const venueCity = fx.fixture && fx.fixture.venue && fx.fixture.venue.city;
-
-        const enrichmentResults = await Promise.allSettled([
-          refereeName ? football.getRefereeStats(refereeName) : Promise.resolve(null),
-          football.getTeamInjuries(homeId, fx.fixture.id),
-          football.getTeamInjuries(awayId, fx.fixture.id),
-          venueCity ? weatherService.getMatchWeather(venueCity, fx.fixture.date) : Promise.resolve(null),
-        ]);
-        const refereeStats = enrichmentResults[0].status === 'fulfilled' ? enrichmentResults[0].value : null;
-        const homeInjuries = enrichmentResults[1].status === 'fulfilled' ? enrichmentResults[1].value : [];
-        const awayInjuries = enrichmentResults[2].status === 'fulfilled' ? enrichmentResults[2].value : [];
-        const weather = enrichmentResults[3].status === 'fulfilled' ? enrichmentResults[3].value : null;
 
         // Goals-per-game proxy from teams/statistics — cheap, no extra API call.
         function gpgFromStats(stats) {
@@ -294,9 +291,6 @@ async function handleLeague(event, leagueId) {
             restDays: homeRest,
             stats: homeStats,
             goalsPerGame: homeGpg,
-            injuries: Array.isArray(homeInjuries)
-              ? homeInjuries.map((i) => ({ ...i, key: football.flagKeyPlayer(i) }))
-              : [],
           },
           away: {
             id: awayId,
@@ -305,20 +299,7 @@ async function handleLeague(event, leagueId) {
             restDays: awayRest,
             stats: awayStats,
             goalsPerGame: awayGpg,
-            injuries: Array.isArray(awayInjuries)
-              ? awayInjuries.map((i) => ({ ...i, key: football.flagKeyPlayer(i) }))
-              : [],
           },
-          h2h: Array.isArray(h2h)
-            ? h2h.slice(0, 5).map((g) => ({
-                date: g.fixture.date,
-                home: g.teams.home.name,
-                away: g.teams.away.name,
-                score: `${g.goals.home}-${g.goals.away}`,
-              }))
-            : [],
-          referee: refereeStats,
-          weather: weather,
         };
 
         const analysis = await analyseMatch(matchData, includeFirstHalf, includeAH);
@@ -425,7 +406,6 @@ async function handleLeague(event, leagueId) {
             form: homeForm,
             restDays: homeRest,
             goalsPerGame: homeGpg,
-            injuries: matchData.home.injuries,
           },
           away: {
             id: awayId,
@@ -433,10 +413,7 @@ async function handleLeague(event, leagueId) {
             form: awayForm,
             restDays: awayRest,
             goalsPerGame: awayGpg,
-            injuries: matchData.away.injuries,
           },
-          referee: refereeStats,
-          weather: weather,
           actualResult,
           isSharpMove: sharpFixtureSet.has(Number(fx.fixture.id)),
           predictions: {

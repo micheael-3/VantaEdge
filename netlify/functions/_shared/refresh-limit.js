@@ -3,7 +3,7 @@
 
 const { sql } = require('./db');
 
-const LIMITS = { FREE: Infinity, SCOUT: Infinity, ANALYST: Infinity, EDGE: Infinity };
+const LIMITS = { FREE: Infinity, ANALYST: Infinity, EDGE: Infinity };
 
 function todayStr() {
   const d = new Date();

@@ -38,7 +38,7 @@ async function createAgentAlert({ type, fixtureId = null, league = null, message
 //   ACCURACY_UPDATE → EDGE only (analytics-heavy)
 function tiersForAlert(alert) {
   if (alert.severity === 'HIGH' || alert.type === 'SHARP_MOVE' || alert.type === 'BEST_BET_SELECTED') {
-    return ['SCOUT', 'ANALYST', 'EDGE'];
+    return ['ANALYST', 'EDGE'];
   }
   if (alert.type === 'ACCURACY_UPDATE') return ['EDGE'];
   return ['ANALYST', 'EDGE'];

@@ -1,6 +1,6 @@
 // TESTING MODE: all tier gates disabled. Restore originals when re-enabling paid tiers.
 
-const RANK = { FREE: 0, SCOUT: 1, ANALYST: 2, EDGE: 3 };
+const RANK = { FREE: 0, ANALYST: 1, EDGE: 2 };
 
 function tierRank(t) {
   return RANK[t] ?? 0;
@@ -11,21 +11,19 @@ function requireTier(_user, _minTier) {
   return null;
 }
 
+// Three-league lineup post-simplification. Keep the SCOUT entries in any
+// legacy DB rows working by mapping SCOUT → same league list as FREE.
 const LEAGUES = {
-  253: { name: 'MLS', minTier: 'SCOUT' },
-  78:  { name: 'Bundesliga', minTier: 'SCOUT' },
-  88:  { name: 'Eredivisie', minTier: 'SCOUT' },
-  40:  { name: 'Championship', minTier: 'ANALYST' },
-  61:  { name: 'Ligue 1', minTier: 'ANALYST' },
-  179: { name: 'Scottish Prem', minTier: 'ANALYST' },
-  140: { name: 'La Liga', minTier: 'ANALYST' },
-  39:  { name: 'Premier League', minTier: 'EDGE' },
+  253: { name: 'MLS', minTier: 'FREE' },
+  78:  { name: 'Bundesliga', minTier: 'FREE' },
+  88:  { name: 'Eredivisie', minTier: 'FREE' },
 };
 
-// TESTING MODE: every tier (including FREE) can access every league.
+// Every tier can access every league in the current simplified setup.
 const ALL_LEAGUES = Object.keys(LEAGUES).map((k) => parseInt(k, 10));
 const TIER_LEAGUES = {
   FREE:    ALL_LEAGUES,
+  // SCOUT kept as a defensive alias so legacy DB rows still get league access.
   SCOUT:   ALL_LEAGUES,
   ANALYST: ALL_LEAGUES,
   EDGE:    ALL_LEAGUES,

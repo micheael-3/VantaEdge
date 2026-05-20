@@ -34,7 +34,7 @@ api.interceptors.response.use(
     }
 
     if (status === 403 && code === 'UPGRADE_REQUIRED') {
-      const requiredTier = error.response.data.requiredTier || 'SCOUT';
+      const requiredTier = error.response.data.requiredTier || 'ANALYST';
       window.dispatchEvent(new CustomEvent('upgrade-required', { detail: { requiredTier } }));
     }
 

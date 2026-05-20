@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 
-// Per-plan monthly commission, in dollars.
+// Per-plan monthly commission, in dollars. SCOUT is kept as a defensive
+// mapping for any legacy DB rows still referencing the retired tier so
+// commission lookups don't crash on `COMMISSION[plan]` access.
 const COMMISSION = {
   SCOUT:   1.5,
   ANALYST: 5.2,

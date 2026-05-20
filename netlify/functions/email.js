@@ -77,7 +77,7 @@ async function sendDailyDigest({ dryRun = false } = {}) {
     SELECT id, email, tier
     FROM users
     WHERE email_notifications = TRUE
-      AND tier IN ('SCOUT', 'ANALYST', 'EDGE')`;
+      AND tier IN ('ANALYST', 'EDGE')`;
 
   const report = { total: users.length, sent: 0, failed: 0, skipped: 0, results: [] };
   const date = todayDateString();

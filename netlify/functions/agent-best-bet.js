@@ -185,7 +185,7 @@ async function pickAndEmail() {
   if (emailConfigured()) {
     const recipients = await sql()`
       SELECT id, email FROM users
-      WHERE tier IN ('SCOUT', 'ANALYST', 'EDGE') AND email_notifications = TRUE`;
+      WHERE tier IN ('ANALYST', 'EDGE') AND email_notifications = TRUE`;
     const html = bestBetEmailHtml(bet, `${(process.env.URL || '').replace(/\/+$/, '')}/dashboard`);
     for (const u of recipients) {
       const r = await send({

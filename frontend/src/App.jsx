@@ -26,6 +26,8 @@ import Bankroll from './pages/Bankroll';
 import Alerts from './pages/Alerts';
 import Accuracy from './pages/Accuracy';
 import AdminAgent from './pages/admin/AdminAgent';
+import EVCalculator from './pages/EVCalculator';
+import KellySizer from './pages/KellySizer';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -104,7 +106,7 @@ export default function App() {
 
   useEffect(() => {
     const onUpgrade = (e) => {
-      setRequiredTier((e.detail && e.detail.requiredTier) || 'SCOUT');
+      setRequiredTier((e.detail && e.detail.requiredTier) || 'ANALYST');
       setUpgradeOpen(true);
     };
     const onLogout = () => navigate('/login');
@@ -198,6 +200,23 @@ export default function App() {
             </Protected>
           }
         />
+        <Route
+          path="/tools/ev"
+          element={
+            <Protected>
+              <EVCalculator />
+            </Protected>
+          }
+        />
+        <Route
+          path="/tools/kelly"
+          element={
+            <Protected>
+              <KellySizer />
+            </Protected>
+          }
+        />
+        <Route path="/tools/bets" element={<Navigate to="/bankroll" replace />} />
         <Route path="/ref/:code" element={<RefCapture />} />
         <Route path="/blog" element={<Blog />} />
         <Route path="/blog/:slug" element={<BlogPost />} />

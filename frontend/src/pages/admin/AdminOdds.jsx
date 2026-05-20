@@ -180,8 +180,8 @@ export default function AdminOdds() {
         <h3>Quota policy</h3>
         <ul className="muted small" style={{ paddingLeft: 18, lineHeight: 1.7 }}>
           <li>Each prediction fetch refreshes the cache per league after 5 minutes.</li>
-          <li>Maximum 8 calls per full refresh (one per league) when all are enabled.</li>
-          <li>When remaining drops below 50, only MLS, Bundesliga, and Premier League keep fetching — others auto-disable.</li>
+          <li>Maximum 3 calls per full refresh (one per league) when all are enabled.</li>
+          <li>When remaining drops below 50, only MLS keeps fetching — others auto-disable.</li>
           <li>When remaining hits zero, auto-odds are disabled until the monthly reset.</li>
         </ul>
       </div>

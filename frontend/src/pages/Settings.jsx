@@ -236,7 +236,7 @@ export default function Settings() {
             </>
           ) : (
             <p className="muted small" style={{ marginTop: -4 }}>
-              Daily digest emails are a paid-tier feature. Upgrade to Scout or higher to receive
+              Daily digest emails are a paid-tier feature. Upgrade to Analyst to receive
               today's top picks every morning.
             </p>
           )}
