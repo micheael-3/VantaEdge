@@ -1,0 +1,95 @@
+/* CalendarStrip — horizontal scrollable date strip for the dashboard.
+   Uses Dashboard.css custom props (--dp-mint, --dp-text-faint, etc.) so
+   it inherits the dark theme. Scoped under .dashboard-page so the styles
+   don't leak to other pages that happen to import the component.       */
+
+.dashboard-page .cs-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 8px 20px;
+  scroll-behavior: smooth;
+}
+.dashboard-page .cs-strip::-webkit-scrollbar { display: none; height: 0; }
+
+.dashboard-page .cs-day {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--dp-text);
+  transition: border-color 150ms ease-out, background 150ms ease-out, color 150ms ease-out;
+  position: relative;
+}
+.dashboard-page .cs-day:hover {
+  border-color: var(--dp-border-strong);
+  background: var(--dp-bg-hover);
+}
+
+.dashboard-page .cs-day .day-name {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+  line-height: 1;
+}
+.dashboard-page .cs-day .day-num {
+  font-family: 'Syne', 'Inter', system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+.dashboard-page .cs-day .day-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--dp-mint);
+  margin: 0 auto;
+}
+.dashboard-page .cs-day .day-count {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: var(--dp-mint);
+  background: rgba(110, 231, 183, 0.12);
+  border-radius: 999px;
+  padding: 1px 5px;
+  line-height: 1;
+}
+
+.dashboard-page .cs-day.today {
+  background: var(--dp-mint);
+  color: #052e1f;
+  border-color: var(--dp-mint);
+}
+.dashboard-page .cs-day.today .day-name { opacity: 0.85; color: #052e1f; }
+.dashboard-page .cs-day.today .day-dot { background: #052e1f; }
+.dashboard-page .cs-day.today .day-count {
+  color: #052e1f;
+  background: rgba(5, 46, 31, 0.18);
+}
+
+.dashboard-page .cs-day.active:not(.today) {
+  border-color: #fff;
+  color: #fff;
+}
+
+.dashboard-page .cs-day.empty { opacity: 0.4; }
+.dashboard-page .cs-day.empty .day-num { color: var(--dp-text-faint); }
+
+.dashboard-page .cs-day.past:not(.empty):not(.today) {
+  color: var(--dp-text);
+}

@@ -20,6 +20,11 @@
   status = 200
 
 [[redirects]]
+  from   = "/api/admin/clear-history"
+  to     = "/.netlify/functions/admin-clear-history"
+  status = 200
+
+[[redirects]]
   from   = "/api/auth/*"
   to     = "/.netlify/functions/auth/:splat"
   status = 200

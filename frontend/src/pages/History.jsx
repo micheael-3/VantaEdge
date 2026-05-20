@@ -114,146 +114,166 @@ export default function History() {
             <div className="card error-text">{error}</div>
           ) : !data ? (
             <div className="card">No data yet.</div>
-          ) : (
-            <>
-              <div className="kpi-grid">
-                <div className="kpi">
-                  <div className="label">Overall hit rate</div>
-                  <div className="value">{summary.overallAccuracy}%</div>
-                  <div className="muted small mono" style={{ marginTop: 4 }}>
-                    {summary.settledMarkets} settled markets
-                  </div>
-                </div>
-                <div className="kpi">
-                  <div className="label">Over / Under</div>
-                  <div className="value">{summary.overAccuracy}%</div>
-                  <div className="muted small mono" style={{ marginTop: 4 }}>
-                    {summary.overHits} / {summary.overSettled} hits
-                  </div>
-                </div>
-                <div className="kpi">
-                  <div className="label">BTTS</div>
-                  <div className="value">{summary.bttsAccuracy}%</div>
-                  <div className="muted small mono" style={{ marginTop: 4 }}>
-                    {summary.bttsHits} / {summary.bttsSettled} hits
-                  </div>
-                </div>
-                <div className="kpi">
-                  <div className="label">Best league</div>
-                  <div className="value" style={{ fontSize: 18 }}>
-                    {summary.bestLeague || '—'}
-                  </div>
-                </div>
-              </div>
+          ) : (() => {
+            // Settled-zero means the user has no resolved predictions for
+            // this window — kill the KPI percentages, the rolling chart,
+            // and the per-league table; show a single empty-state card.
+            const settledTotal = Number(summary.settledMarkets) || 0;
+            const hasSettled = settledTotal > 0;
+            const fmtPct = (v) => (hasSettled && v != null ? `${v}%` : '—');
 
-              <div className="card" style={{ marginBottom: 24 }}>
-                <h3>Rolling accuracy</h3>
-                {data.rolling && data.rolling.length > 0 ? (
-                  <div style={{ width: '100%', height: 280 }}>
-                    <ResponsiveContainer>
-                      <LineChart data={data.rolling}>
-                        <CartesianGrid stroke="#2a2a38" strokeDasharray="3 3" />
-                        <XAxis dataKey="date" stroke="#888899" fontSize={11} />
-                        <YAxis stroke="#888899" fontSize={11} domain={[0, 100]} />
-                        <Tooltip
-                          contentStyle={{ background: '#111118', border: '1px solid #2a2a38', borderRadius: 8 }}
-                          labelStyle={{ color: '#e8e8f0' }}
-                          formatter={(v, name, { payload }) =>
-                            payload && payload.settled != null ? [`${v}% (${payload.settled} settled)`, 'Accuracy'] : v
-                          }
-                        />
-                        <Line type="monotone" dataKey="accuracy" stroke="#6ee7b7" strokeWidth={2} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
+            return (
+              <>
+                <div className="kpi-grid">
+                  <div className="kpi">
+                    <div className="label">Overall hit rate</div>
+                    <div className="value">{fmtPct(summary.overallAccuracy)}</div>
+                    <div className="muted small mono" style={{ marginTop: 4 }}>
+                      {settledTotal} settled markets
+                    </div>
+                  </div>
+                  <div className="kpi">
+                    <div className="label">Over / Under</div>
+                    <div className="value">{fmtPct(summary.overAccuracy)}</div>
+                    <div className="muted small mono" style={{ marginTop: 4 }}>
+                      {summary.overHits || 0} / {summary.overSettled || 0} hits
+                    </div>
+                  </div>
+                  <div className="kpi">
+                    <div className="label">BTTS</div>
+                    <div className="value">{fmtPct(summary.bttsAccuracy)}</div>
+                    <div className="muted small mono" style={{ marginTop: 4 }}>
+                      {summary.bttsHits || 0} / {summary.bttsSettled || 0} hits
+                    </div>
+                  </div>
+                  <div className="kpi">
+                    <div className="label">Best league</div>
+                    <div className="value" style={{ fontSize: 18 }}>
+                      {hasSettled && summary.bestLeague ? summary.bestLeague : '—'}
+                    </div>
+                  </div>
+                </div>
+
+                {!hasSettled ? (
+                  <div className="card" style={{ marginBottom: 24 }}>
+                    <h3>No settled predictions yet</h3>
+                    <p className="muted small" style={{ marginBottom: 0 }}>
+                      No settled predictions yet. Predictions settle automatically after matches end.
+                    </p>
                   </div>
                 ) : (
-                  <p className="muted small">No settled predictions in this window yet.</p>
+                  <>
+                    <div className="card" style={{ marginBottom: 24 }}>
+                      <h3>Rolling accuracy</h3>
+                      {data.rolling && data.rolling.length > 0 ? (
+                        <div style={{ width: '100%', height: 280 }}>
+                          <ResponsiveContainer>
+                            <LineChart data={data.rolling}>
+                              <CartesianGrid stroke="#2a2a38" strokeDasharray="3 3" />
+                              <XAxis dataKey="date" stroke="#888899" fontSize={11} />
+                              <YAxis stroke="#888899" fontSize={11} domain={[0, 100]} />
+                              <Tooltip
+                                contentStyle={{ background: '#111118', border: '1px solid #2a2a38', borderRadius: 8 }}
+                                labelStyle={{ color: '#e8e8f0' }}
+                                formatter={(v, name, { payload }) =>
+                                  payload && payload.settled != null ? [`${v}% (${payload.settled} settled)`, 'Accuracy'] : v
+                                }
+                              />
+                              <Line type="monotone" dataKey="accuracy" stroke="#6ee7b7" strokeWidth={2} dot={false} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <p className="muted small">No settled predictions in this window yet.</p>
+                      )}
+                    </div>
+
+                    <div className="card" style={{ marginBottom: 24 }}>
+                      <h3>By league</h3>
+                      <table className="history-table">
+                        <thead>
+                          <tr>
+                            <th>League</th>
+                            <th>Predictions</th>
+                            <th>Settled markets</th>
+                            <th>Hits</th>
+                            <th>Accuracy</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.leagues.length === 0 ? (
+                            <tr>
+                              <td colSpan="5" className="muted">
+                                No data
+                              </td>
+                            </tr>
+                          ) : (
+                            data.leagues.map((row) => (
+                              <tr key={row.league}>
+                                <td>{row.league}</td>
+                                <td>{row.predictions}</td>
+                                <td>{row.settled}</td>
+                                <td>{row.hits}</td>
+                                <td>{row.accuracy}%</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 )}
-              </div>
 
-              <div className="card" style={{ marginBottom: 24 }}>
-                <h3>By league</h3>
-                <table className="history-table">
-                  <thead>
-                    <tr>
-                      <th>League</th>
-                      <th>Predictions</th>
-                      <th>Settled markets</th>
-                      <th>Hits</th>
-                      <th>Accuracy</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.leagues.length === 0 ? (
+                <div className="card">
+                  <h3>Recent predictions</h3>
+                  <table className="history-table">
+                    <thead>
                       <tr>
-                        <td colSpan="5" className="muted">
-                          No data
-                        </td>
+                        <th>Date</th>
+                        <th>League</th>
+                        <th>Match</th>
+                        <th>Over</th>
+                        <th>Result</th>
+                        <th>BTTS</th>
+                        <th>Result</th>
                       </tr>
-                    ) : (
-                      data.leagues.map((row) => (
-                        <tr key={row.league}>
-                          <td>{row.league}</td>
-                          <td>{row.predictions}</td>
-                          <td>{row.settled}</td>
-                          <td>{row.hits}</td>
-                          <td>{row.accuracy}%</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="card">
-                <h3>Recent predictions</h3>
-                <table className="history-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>League</th>
-                      <th>Match</th>
-                      <th>Over</th>
-                      <th>Result</th>
-                      <th>BTTS</th>
-                      <th>Result</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.recent.length === 0 ? (
-                      <tr>
-                        <td colSpan="7" className="muted">
-                          No predictions yet
-                        </td>
-                      </tr>
-                    ) : (
-                      data.recent.map((p) => (
-                        <tr key={p.id}>
-                          <td>{fmtDate(p.date)}</td>
-                          <td>{p.league}</td>
-                          <td>{p.match}</td>
-                          <td>
-                            O{p.overLine}{' '}
-                            <span className="muted">({p.overConfidence}%)</span>
-                          </td>
-                          <td>
-                            <ResultIcon hit={p.overHit} />
-                          </td>
-                          <td>
-                            {p.btts}{' '}
-                            <span className="muted">({p.bttsConfidence}%)</span>
-                          </td>
-                          <td>
-                            <ResultIcon hit={p.bttsHit} />
+                    </thead>
+                    <tbody>
+                      {data.recent.length === 0 ? (
+                        <tr>
+                          <td colSpan="7" className="muted">
+                            No settled predictions yet. Predictions settle automatically after matches end.
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+                      ) : (
+                        data.recent.map((p) => (
+                          <tr key={p.id}>
+                            <td>{fmtDate(p.date)}</td>
+                            <td>{p.league}</td>
+                            <td>{p.match}</td>
+                            <td>
+                              O{p.overLine}{' '}
+                              <span className="muted">({p.overConfidence}%)</span>
+                            </td>
+                            <td>
+                              <ResultIcon hit={p.overHit} />
+                            </td>
+                            <td>
+                              {p.btts}{' '}
+                              <span className="muted">({p.bttsConfidence}%)</span>
+                            </td>
+                            <td>
+                              <ResultIcon hit={p.bttsHit} />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            );
+          })()}
         </div>
       </div>
     </>

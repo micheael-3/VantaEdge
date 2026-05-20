@@ -7,6 +7,7 @@ import { bankroll as bankrollApi } from '../api/bankroll';
 import { LEAGUES } from '../config/leagues';
 import { calculateEV, calculateKelly } from '../lib/ev';
 import OnboardingOverlay from '../components/OnboardingOverlay';
+import CalendarStrip from '../components/CalendarStrip';
 import './Dashboard.css';
 // Tools live at /tools/ev and /tools/kelly. The old ToolsModal is kept on
 // disk in case we want to revive the modal UX, but we no longer mount it.
@@ -269,7 +270,7 @@ function MatchDetails({ m }) {
       <div className="dp-details-grid">
         {showXg && (
           <div className="dp-detail-block">
-            <div className="dp-detail-head">Goals per game (For / Against)</div>
+            <div className="dp-detail-head">Avg Goals: Scored / Conceded</div>
             <div className="dp-detail-row">
               <span className="lbl">{m.home && m.home.name}</span>
               <span>{fmtGpg(m.home && m.home.goalsPerGame)}</span>
@@ -832,6 +833,18 @@ export default function Dashboard() {
   // remain at module scope in case we want to revive them.
   void loadFilters; void saveFilters; void DEFAULT_FILTERS; void FILTER_KEY;
 
+  // "How to read a match" tutorial — session-scoped via sessionStorage so it
+  // shows once per tab. Closing the tab and reopening replays the tutorial.
+  const LEGEND_KEY = 'fastscore_legend_seen_session';
+  const [showLegend, setShowLegend] = useState(() => {
+    try { return window.sessionStorage.getItem(LEGEND_KEY) !== '1'; }
+    catch { return true; }
+  });
+  const dismissLegend = () => {
+    setShowLegend(false);
+    try { window.sessionStorage.setItem(LEGEND_KEY, '1'); } catch { /* ignore */ }
+  };
+
   // Onboarding + toast state
   const [showOnboarding, setShowOnboarding] = useState(
     !!user && user.onboardingCompleted === false,
@@ -851,7 +864,6 @@ export default function Dashboard() {
   // fetch around in case we re-enable it later.
   const [activeDate, setActiveDate] = useState(null);
   const [upcomingDays, setUpcomingDays] = useState([]);
-  void upcomingDays; // referenced only by the (currently disabled) pills row.
 
   // Bankroll metadata (for Kelly stake suggestion + Log This Bet flow).
   // Only fetched for paid tiers; FREE doesn't have access to /api/bankroll.
@@ -913,7 +925,7 @@ export default function Dashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const data = await predictionsApi.getUpcoming(activeLeague, { past: 1, future: 6 });
+        const data = await predictionsApi.getUpcoming(activeLeague, { past: 7, future: 7 });
         if (!cancelled) setUpcomingDays(Array.isArray(data.days) ? data.days : []);
       } catch {
         if (!cancelled) setUpcomingDays([]);
@@ -934,19 +946,21 @@ export default function Dashboard() {
     navigate('/');
   };
 
-  // Always sort by edge desc; chip filters / min confidence / sort dropdown were removed.
+  // Stable, kickoff-ascending order. Fixtures with errors sink to the
+  // bottom so the user can still scan the working cards first. No
+  // edge/confidence sort options anymore — the UI to switch sort was
+  // removed in the simplification pass.
   const filtered = useMemo(() => {
     const list = matches.slice();
-    return list.sort((a, b) => {
-      const ea = bestEv(a);
-      const eb = bestEv(b);
-      if (ea == null && eb == null) {
-        const ca = a.predictions && a.predictions.over ? a.predictions.over.confidence : 0;
-        const cb = b.predictions && b.predictions.over ? b.predictions.over.confidence : 0;
-        return cb - ca;
-      }
-      return (eb ?? -Infinity) - (ea ?? -Infinity);
+    list.sort((a, b) => {
+      const aErr = a.error ? 1 : 0;
+      const bErr = b.error ? 1 : 0;
+      if (aErr !== bErr) return aErr - bErr;
+      const aKo = a.kickoff ? new Date(a.kickoff).getTime() : Number.POSITIVE_INFINITY;
+      const bKo = b.kickoff ? new Date(b.kickoff).getTime() : Number.POSITIVE_INFINITY;
+      return aKo - bKo;
     });
+    return list;
   }, [matches]);
 
   const activeLeagueObj = LEAGUES.find((l) => l.id === activeLeague) || LEAGUES[0];
@@ -1006,50 +1020,73 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Date label — bare, no "Recent Results" prefix. */}
+          {/* New scrolling calendar strip — 15 days centred on today. */}
+          <CalendarStrip
+            days={upcomingDays}
+            activeDate={activeDate || matchDate}
+            onSelect={setActiveDate}
+            loading={loading}
+          />
+
+          {/* Date context label — e.g. "Today · Tuesday May 20" or
+              "Upcoming · Saturday May 23". Replaces the older
+              "Recent Results" / bare date label. */}
           <div className="dp-date-row">
-            <div className={`dp-date-label ${isPast ? 'past' : ''}`}>
-              {dateLabel || 'Today'}
-              {matchDate && (
-                <span style={{ color: 'var(--dp-text-faint)', marginLeft: 8 }}>· {(() => {
-                  try { return new Date(`${matchDate}T12:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); }
-                  catch { return matchDate; }
-                })()}</span>
-              )}
+            <div className={`dp-date-label dp-mono ${isPast ? 'past' : ''}`}>
+              {(() => {
+                const ctx = isPast ? 'Past' : ((matchDate && (() => {
+                  const today = new Date(); today.setHours(0, 0, 0, 0);
+                  try {
+                    const d = new Date(`${matchDate}T12:00:00Z`);
+                    const day = new Date(d); day.setHours(0, 0, 0, 0);
+                    if (day.getTime() === today.getTime()) return 'Today';
+                    return day.getTime() > today.getTime() ? 'Upcoming' : 'Past';
+                  } catch { return 'Today'; }
+                })()) || 'Today');
+                let dateStr = '';
+                if (matchDate) {
+                  try {
+                    dateStr = new Date(`${matchDate}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+                  } catch { dateStr = matchDate; }
+                }
+                return `${ctx}${dateStr ? ` · ${dateStr}` : ''}`;
+              })()}
             </div>
           </div>
 
-          {/* Minimal date pills — Yesterday, Today, Tomorrow + 4 more.
-              Backend /upcoming is fetched with past=1&future=6 (7 pills max). */}
-          <div className="dp-date-pills">
-            {upcomingDays.slice(0, 7).map((d) => {
-              const isActive = activeDate === d.date || (activeDate === null && matchDate === d.date);
-              const empty = !d.count || d.count === 0;
-              const shortLabel =
-                d.isToday ? 'Today'
-                : d.label === 'Tomorrow' ? 'Tomorrow'
-                : d.label === 'Yesterday' ? 'Yesterday'
-                : (() => {
-                    try {
-                      return new Date(`${d.date}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' });
-                    } catch { return d.date; }
-                  })();
-              return (
-                <button
-                  key={d.date}
-                  type="button"
-                  className={`dp-date-pill ${isActive ? 'active' : ''} ${empty ? 'empty' : ''} ${d.isPast ? 'past' : ''} ${d.isToday ? 'today' : ''}`}
-                  onClick={() => setActiveDate(d.date)}
-                  title={`${d.count == null ? '?' : d.count} matches on ${d.label}`}
-                >
-                  <span>{shortLabel}</span>
-                  {d.count != null && <span className="ct">{d.count}</span>}
-                </button>
-              );
-            })}
-          </div>
-
           <div className="dp-matches">
+            {showLegend && (
+              <div className="dp-legend">
+                <div className="dp-legend-head">
+                  <span className="dp-mono" style={{ fontSize: 10, color: 'var(--dp-mint)', letterSpacing: '0.16em' }}>
+                    HOW TO READ A MATCH
+                  </span>
+                  <button className="dp-legend-close" onClick={dismissLegend} aria-label="Dismiss tutorial">
+                    ×
+                  </button>
+                </div>
+                <div className="dp-legend-cols">
+                  <div>
+                    <div className="dp-legend-num">1</div>
+                    <div className="dp-legend-title">Match &amp; stats</div>
+                    <div className="dp-legend-body">Form dots, rest days — the inputs feeding the model.</div>
+                  </div>
+                  <div>
+                    <div className="dp-legend-num">2</div>
+                    <div className="dp-legend-title">AI confidence + market</div>
+                    <div className="dp-legend-body">How sure the model is on Over/Under and BTTS for this match.</div>
+                  </div>
+                  <div>
+                    <div className="dp-legend-num">3</div>
+                    <div className="dp-legend-title">Your odds &amp; edge</div>
+                    <div className="dp-legend-body">
+                      Type the bookmaker's odds and we compute your edge live. Green = <strong style={{ color: 'var(--dp-mint)' }}>+EV</strong>.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {loading ? (
               // Skeleton cards keep the layout stable — never "empty" state
               <>

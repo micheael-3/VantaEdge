@@ -473,18 +473,28 @@ async function handleLeague(event, leagueId) {
     error: 'Analysis timed out — try refreshing in a moment',
   });
 
-  // Rate-limit-safe sequential batching. Process at most 3 fixtures in
+  // Rate-limit-safe sequential batching. Process at most 2 fixtures in
   // parallel, then sleep 1 second before the next batch. This bounds
-  // simultaneous API-Football calls to 3 × 4 = 12 (well below the
+  // simultaneous API-Football calls to 2 × 4 = 8 (well below the
   // per-minute Pro cap) and gives the rolling window time to drain
-  // between bursts. Hard cap at 9 fixtures so 3 batches × ~7s + 2 ×
+  // between bursts. Hard cap at 6 fixtures so 3 batches × ~7s + 2 ×
   // 1s = ~23s stays under the 26s function timeout. Anything beyond
-  // the 9th fixture is dropped for this load — refresh to see the rest
-  // (or, if it becomes a frequent issue, raise the OpenRouter plan).
-  const BATCH_SIZE = 3;
+  // the 6th fixture is dropped for this load — refresh to see the rest.
+  //
+  // Retry-once-on-rate-limit: after each batch we scan results for
+  // "Too many requests" / "rateLimit" error markers, sleep 2s, and
+  // re-run processOne for those fixtures a single time before keeping
+  // the error.
+  const BATCH_SIZE = 2;
   const BATCH_PAUSE_MS = 1000;
-  const MAX_FIXTURES = 9;
+  const MAX_FIXTURES = 6;
+  const RATE_LIMIT_RETRY_PAUSE_MS = 2000;
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const isRateLimitError = (r) => {
+    if (!r || !r.error) return false;
+    const e = String(r.error).toLowerCase();
+    return e.includes('too many requests') || e.includes('ratelimit') || e.includes('rate limit') || e.includes('429');
+  };
 
   const limited = fixtures.slice(0, MAX_FIXTURES);
   if (fixtures.length > MAX_FIXTURES) {
@@ -497,6 +507,25 @@ async function handleLeague(event, leagueId) {
     const batchResults = await Promise.all(
       batch.map((fx) => withTimeout(processOne(fx), PER_FIXTURE_TIMEOUT_MS, timeoutFallbackFor(fx))),
     );
+
+    // Retry any rate-limit-flagged results ONCE, after a 2s cool-down.
+    const retryIndexes = [];
+    for (let k = 0; k < batchResults.length; k++) {
+      if (isRateLimitError(batchResults[k])) retryIndexes.push(k);
+    }
+    if (retryIndexes.length) {
+      console.log(`[predictions] rate-limit retry for ${retryIndexes.length} fixture(s) after ${RATE_LIMIT_RETRY_PAUSE_MS}ms`);
+      await delay(RATE_LIMIT_RETRY_PAUSE_MS);
+      const retried = await Promise.all(
+        retryIndexes.map((k) =>
+          withTimeout(processOne(batch[k]), PER_FIXTURE_TIMEOUT_MS, timeoutFallbackFor(batch[k])),
+        ),
+      );
+      for (let r = 0; r < retryIndexes.length; r++) {
+        batchResults[retryIndexes[r]] = retried[r];
+      }
+    }
+
     results.push(...batchResults);
     if (i + BATCH_SIZE < limited.length) {
       await delay(BATCH_PAUSE_MS);

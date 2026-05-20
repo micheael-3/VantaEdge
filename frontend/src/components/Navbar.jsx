@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import AgentStatus from './AgentStatus';
 import agentApi from '../api/agent';
 
 export default function Navbar() {
@@ -93,7 +92,6 @@ export default function Navbar() {
                   )}
                 </NavLink>
               </div>
-              <AgentStatus />
               <span className="badge accent mono">{user.tier}</span>
               <button className="btn btn-ghost nav-mobile-hidden" onClick={handleLogout}>
                 Logout
