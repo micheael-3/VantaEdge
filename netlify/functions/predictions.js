@@ -435,6 +435,8 @@ async function handleLeague(event, leagueId) {
             firstHalf: analysis.firstHalf,
             asianHandicap: analysis.asianHandicap,
           },
+          aiStatus: analysis.aiStatus || 'ok',
+          aiReason: analysis.aiReason || null,
           ev: { over: evOver, btts: evBtts, kellyOver, kellyBtts },
           oddsData: oddsData
             ? {
@@ -669,6 +671,83 @@ async function handleTest(event) {
   });
 }
 
+// GET /api/predictions/ai-test — UNAUTHENTICATED OpenRouter probe.
+// Calls OpenRouter with the same model + headers analyseMatch uses and
+// returns the raw response (or the full error body). Use to diagnose
+// why every fixture is falling back to 50% confidence: env var missing,
+// wrong key prefix, model not available, rate limit, etc.
+async function handleAITest(_event) {
+  const axios = require('axios');
+  const key = process.env.OPENROUTER_API_KEY || '';
+  const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+  const MODEL = 'anthropic/claude-3.5-haiku';
+
+  const meta = {
+    now: new Date().toISOString(),
+    model: MODEL,
+    keyConfigured: !!key,
+    keyLength: key.length,
+    keyPrefix: key ? key.slice(0, 8) : null,
+    keyLooksValid: /^sk-or-v1-/.test(key),
+    referer: process.env.URL || null,
+  };
+
+  if (!key) {
+    return json(200, {
+      ...meta,
+      verdict: 'OPENROUTER_API_KEY is not set in Netlify env vars. The prediction pipeline falls back to 50% confidence for every match. Add the key and redeploy.',
+    });
+  }
+
+  const body = {
+    model: MODEL,
+    messages: [
+      { role: 'system', content: 'You return ONLY valid JSON with shape {"ping":"pong","model":"<model name>"}.' },
+      { role: 'user', content: 'ping' },
+    ],
+    max_tokens: 50,
+  };
+
+  const headers = {
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json',
+    'X-Title': 'VantaEdge',
+  };
+  if (process.env.URL) headers['HTTP-Referer'] = process.env.URL;
+
+  const started = Date.now();
+  try {
+    const res = await axios.post(OPENROUTER_URL, body, { headers, timeout: 20000, validateStatus: () => true });
+    const ms = Date.now() - started;
+    const content = res.data && res.data.choices && res.data.choices[0] && res.data.choices[0].message
+      ? res.data.choices[0].message.content
+      : null;
+    let verdict;
+    if (res.status === 200 && content) verdict = `✅ OpenRouter is reachable, model ${MODEL} replied. AI should be running on the dashboard.`;
+    else if (res.status === 401) verdict = '❌ 401 from OpenRouter — your OPENROUTER_API_KEY is invalid or revoked.';
+    else if (res.status === 402) verdict = '❌ 402 from OpenRouter — out of credits. Top up your OpenRouter account.';
+    else if (res.status === 404) verdict = `❌ 404 — model "${MODEL}" not found on OpenRouter. Try a different model id.`;
+    else if (res.status === 429) verdict = '❌ 429 — rate limited by OpenRouter.';
+    else verdict = `❌ HTTP ${res.status} from OpenRouter. See body below.`;
+    return json(200, {
+      ...meta,
+      durationMs: ms,
+      httpStatus: res.status,
+      verdict,
+      content,
+      rawBody: res.data,
+    });
+  } catch (err) {
+    return json(200, {
+      ...meta,
+      durationMs: Date.now() - started,
+      verdict: `❌ Request failed before a response came back: ${err.message}`,
+      errorCode: err.code || null,
+      errorMessage: err.message,
+    });
+  }
+}
+
 exports.handler = async (event) => {
   try {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, body: '' };
@@ -680,6 +759,11 @@ exports.handler = async (event) => {
     // responses for league=253 (MLS) across today, tomorrow, and last=10
     // for BOTH seasons 2024 and 2025, plus a verdict on which works.
     if (path === '/test' || path === '/test/') return await handleTest(event);
+
+    // /ai-test — UNAUTHENTICATED probe that calls OpenRouter directly and
+    // returns the raw response or HTTP error body. Use to diagnose why
+    // every prediction is falling back to 50% confidence.
+    if (path === '/ai-test' || path === '/ai-test/') return await handleAITest(event);
 
     // /upcoming/:leagueId — date-pill helper
     const upcomingMatch = path.match(/^\/upcoming\/(\d+)\/?$/);

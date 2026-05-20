@@ -555,6 +555,14 @@ function MatchCard({ m, userTier, onLogBet }) {
               ⚡ Sharp money
             </span>
           )}
+          {m.aiStatus === 'fallback' && (
+            <span
+              className="dp-ai-warn-badge"
+              title={`AI model unavailable: ${m.aiReason || 'unknown reason'}. Confidence values are placeholder 50% until OpenRouter responds.`}
+            >
+              ⚠ AI unavailable
+            </span>
+          )}
         </div>
         <div className="dp-match-teams">
           <span className="dp-team">

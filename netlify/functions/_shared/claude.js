@@ -50,12 +50,14 @@ Return ONLY valid JSON, no markdown, no text outside JSON:
   "asianHandicap": { "line": string, "team": string, "confidence": number, "reasoning": string } | null
 }`;
 
-function fallback() {
+function fallback(reason) {
   return {
     over: { line: 2.5, confidence: 50, reasoning: 'Analysis unavailable.' },
     btts: { prediction: 'YES', confidence: 50, reasoning: 'Analysis unavailable.' },
     firstHalf: null,
     asianHandicap: null,
+    aiStatus: 'fallback',
+    aiReason: reason || 'unknown',
   };
 }
 
@@ -104,7 +106,7 @@ async function callOpenRouter(userMessage) {
 }
 
 async function analyseMatch(matchData, includeFirstHalf = false, includeAsianHandicap = false) {
-  if (!process.env.OPENROUTER_API_KEY) return fallback();
+  if (!process.env.OPENROUTER_API_KEY) return fallback('OPENROUTER_API_KEY env var not set');
 
   const userMessage = `Analyse this match and return predictions per the system instructions.
 
@@ -124,17 +126,25 @@ ${JSON.stringify(matchData, null, 2)}`;
       );
       parsed = safeParseJSON(retryText);
     }
-    if (!parsed) return fallback();
+    if (!parsed) return fallback('OpenRouter returned non-JSON twice');
 
     if (!parsed.over || typeof parsed.over.line !== 'number') parsed.over = fallback().over;
     if (!parsed.btts || !parsed.btts.prediction) parsed.btts = fallback().btts;
     if (!includeFirstHalf) parsed.firstHalf = null;
     if (!includeAsianHandicap) parsed.asianHandicap = null;
+    parsed.aiStatus = 'ok';
     return parsed;
   } catch (err) {
-    const detail = err.response && err.response.data ? JSON.stringify(err.response.data) : err.message;
-    console.error('OpenRouter API error:', detail);
-    return fallback();
+    const status = err.response && err.response.status;
+    const detail = err.response && err.response.data ? JSON.stringify(err.response.data).slice(0, 400) : err.message;
+    console.error(`OpenRouter API error: status=${status} detail=${detail}`);
+    let reason;
+    if (status === 401) reason = 'OpenRouter 401 — invalid/revoked OPENROUTER_API_KEY';
+    else if (status === 402) reason = 'OpenRouter 402 — out of credits';
+    else if (status === 404) reason = 'OpenRouter 404 — model not found';
+    else if (status === 429) reason = 'OpenRouter 429 — rate limited';
+    else reason = `OpenRouter error (status ${status || 'n/a'}): ${detail.slice(0, 200)}`;
+    return fallback(reason);
   }
 }
 

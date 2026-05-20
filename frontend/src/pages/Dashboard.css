@@ -1419,6 +1419,22 @@
   border-radius: 8px;
 }
 
+/* AI status warning chip shown when OpenRouter returned a fallback. */
+.dashboard-page .dp-ai-warn-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  margin-left: 8px;
+  border: 1px solid rgba(248, 191, 113, 0.4);
+  background: rgba(248, 191, 113, 0.08);
+  color: #fbbf24;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: 'DM Mono', monospace;
+  letter-spacing: 0.04em;
+  cursor: help;
+}
+
 /* Make the Dashboard "Tools" sidebar links clickable instead of disabled. */
 .dashboard-page .dp-side-link.tool {
   cursor: pointer;
