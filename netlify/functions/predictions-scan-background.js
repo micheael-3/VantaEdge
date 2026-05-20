@@ -62,29 +62,53 @@ function scanIdFor(leagueId, weekStart) {
   return `league-${leagueId}-week-${weekStart}`;
 }
 
+// Scan-status writes are best-effort. If the scan_status table doesn't
+// exist yet (migration not run), the scan still completes and writes to
+// the predictions table — we just lose progress tracking for that run.
+function isMissingTableErr(err) {
+  return err && (err.code === '42P01' || /relation "?scan_status"? does not exist/i.test(err.message || ''));
+}
+
 async function upsertScanStatus(id, leagueId, weekStart, fields) {
-  // Insert if missing, otherwise update changed fields. Done in one trip.
   const status = fields.status || 'scanning';
   const total = fields.total != null ? fields.total : 0;
   const done = fields.done != null ? fields.done : 0;
   const errorMsg = fields.error != null ? fields.error : null;
-  await sql()`
-    INSERT INTO scan_status (id, league_id, week_start, status, total, done, error, started_at, updated_at)
-    VALUES (${id}, ${leagueId}, ${weekStart}, ${status}, ${total}, ${done}, ${errorMsg}, NOW(), NOW())
-    ON CONFLICT (id) DO UPDATE
-      SET status     = EXCLUDED.status,
-          total      = EXCLUDED.total,
-          done       = EXCLUDED.done,
-          error      = EXCLUDED.error,
-          updated_at = NOW()`;
+  try {
+    await sql()`
+      INSERT INTO scan_status (id, league_id, week_start, status, total, done, error, started_at, updated_at)
+      VALUES (${id}, ${leagueId}, ${weekStart}, ${status}, ${total}, ${done}, ${errorMsg}, NOW(), NOW())
+      ON CONFLICT (id) DO UPDATE
+        SET status     = EXCLUDED.status,
+            total      = EXCLUDED.total,
+            done       = EXCLUDED.done,
+            error      = EXCLUDED.error,
+            updated_at = NOW()`;
+  } catch (err) {
+    if (isMissingTableErr(err)) {
+      console.warn('[scan-bg] scan_status table missing — progress tracking disabled for this run.');
+      return;
+    }
+    throw err;
+  }
 }
 
 async function bumpProgress(id, done) {
-  await sql()`UPDATE scan_status SET done = ${done}, updated_at = NOW() WHERE id = ${id}`;
+  try {
+    await sql()`UPDATE scan_status SET done = ${done}, updated_at = NOW() WHERE id = ${id}`;
+  } catch (err) {
+    if (isMissingTableErr(err)) return;
+    throw err;
+  }
 }
 
 async function setFinalStatus(id, status, errorMsg) {
-  await sql()`UPDATE scan_status SET status = ${status}, error = ${errorMsg || null}, updated_at = NOW() WHERE id = ${id}`;
+  try {
+    await sql()`UPDATE scan_status SET status = ${status}, error = ${errorMsg || null}, updated_at = NOW() WHERE id = ${id}`;
+  } catch (err) {
+    if (isMissingTableErr(err)) return;
+    throw err;
+  }
 }
 
 // Fetch the 4 per-fixture detail calls in parallel.

@@ -388,13 +388,26 @@ async function handleWeek(event) {
     dates[dateKey].push(shapeForFrontend(r));
   }
 
-  // 3. scan_status for this week.
-  const statusRows = await sql()`
-    SELECT status, total, done, error, updated_at
-    FROM scan_status
-    WHERE id = ${`league-${leagueId}-week-${weekStart}`}
-    LIMIT 1`;
-  const status = statusRows[0] || { status: 'idle', total: 0, done: 0, error: null, updated_at: null };
+  // 3. scan_status for this week. Resilient to the table not existing yet —
+  //    if the migration hasn't been run, we treat status as 'idle' so the
+  //    /week endpoint still works and the dashboard renders. The background
+  //    scan itself ALSO catches the missing-table case so it can complete
+  //    even before the migration.
+  let status = { status: 'idle', total: 0, done: 0, error: null, updated_at: null };
+  try {
+    const statusRows = await sql()`
+      SELECT status, total, done, error, updated_at
+      FROM scan_status
+      WHERE id = ${`league-${leagueId}-week-${weekStart}`}
+      LIMIT 1`;
+    if (statusRows[0]) status = statusRows[0];
+  } catch (err) {
+    if (err && (err.code === '42P01' || /relation "?scan_status"? does not exist/i.test(err.message || ''))) {
+      console.warn('[predictions/week] scan_status table missing — falling back to idle. Run /api/migrate or paste schema.sql in Neon.');
+    } else {
+      throw err;
+    }
+  }
 
   // 4. If no rows yet and not currently scanning, fire the background scan.
   let scanning = status.status === 'scanning';
