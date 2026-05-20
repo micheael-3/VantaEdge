@@ -32,6 +32,8 @@ async function ensureUnsubscribeToken(userId) {
 
 // ---- Build picks: top global picks from today's predictions table ----
 async function getTopPicksForLeagues(allowedLeagueNames, limit = 3) {
+  // High-confidence picks across EITHER market. Previously this only filtered
+  // on over_confidence, so BTTS-only strong picks were silently dropped.
   const rows = await sql()`
     SELECT id, league, home_team, away_team, kickoff,
            over_line, over_confidence, btts, btts_confidence,
@@ -39,17 +41,20 @@ async function getTopPicksForLeagues(allowedLeagueNames, limit = 3) {
     FROM predictions
     WHERE created_at >= ${startOfTodayIso()}
       AND league = ANY(${allowedLeagueNames})
-      AND over_confidence >= 65
+      AND (over_confidence >= 65 OR btts_confidence >= 65)
     ORDER BY GREATEST(COALESCE(auto_ev_over, ev_edge_over, 0),
                       COALESCE(auto_ev_btts, ev_edge_btts, 0)) DESC NULLS LAST,
-             over_confidence DESC
+             GREATEST(over_confidence, btts_confidence) DESC
     LIMIT ${limit}`;
 
   return rows.map((r) => {
     const overEdge = r.auto_ev_over ?? r.ev_edge_over ?? null;
     const bttsEdge = r.auto_ev_btts ?? r.ev_edge_btts ?? null;
-    // Choose Over if it has the better edge or no BTTS edge; otherwise pick BTTS.
-    const useOver = overEdge != null && (bttsEdge == null || overEdge >= bttsEdge);
+    // Score = 50% edge (when known) + 50% confidence. Falls back to pure
+    // confidence comparison when neither side has an edge yet.
+    const overScore = (overEdge != null ? overEdge * 0.5 : 0) + r.over_confidence * 0.5;
+    const bttsScore = (bttsEdge != null ? bttsEdge * 0.5 : 0) + r.btts_confidence * 0.5;
+    const useOver = overScore >= bttsScore;
     return {
       id: r.id,
       league: r.league,

@@ -118,29 +118,27 @@ async function addManualEntry(event) {
   const [bk] = await sql()`SELECT * FROM bankrolls WHERE user_id = ${user.id}`;
   if (!bk) return error(400, 'Set up your bankroll first');
 
-  const balanceBefore = Number(bk.current_amount);
-  let balanceAfter = balanceBefore;
   let profitLoss = 0;
   let result = 'PENDING';
-
   let stake = null;
   let odds = null;
   let market = null;
+  let delta = 0; // signed change applied to current_amount atomically
 
   if (type === 'ADJUSTMENT') {
     // body.amount can be positive (deposit) or negative (withdraw).
     const amount = Number(body.amount);
     if (!amount || Number.isNaN(amount)) return error(400, 'amount required');
     profitLoss = amount;
-    balanceAfter = balanceBefore + amount;
-    result = 'WIN'; // not really a bet; we just use this to mark it settled. Frontend filters by type.
+    delta = amount;
+    result = 'WIN'; // marks the entry settled; the frontend filters by type.
   } else {
     // BET
     stake = Number(body.stake);
     odds = Number(body.odds);
     if (!stake || stake <= 0) return error(400, 'stake must be > 0');
     if (!odds || odds <= 1) return error(400, 'odds must be > 1');
-    if (stake > balanceBefore) return error(400, 'stake exceeds current bankroll');
+    if (stake > Number(bk.current_amount)) return error(400, 'stake exceeds current bankroll');
 
     market = String(body.market || 'OTHER').toUpperCase();
     if (!VALID_MARKETS.has(market)) market = 'OTHER';
@@ -148,16 +146,25 @@ async function addManualEntry(event) {
     result = String(body.result || 'PENDING').toUpperCase();
     if (!VALID_RESULTS.has(result)) result = 'PENDING';
 
-    // Stake leaves the bankroll right away.
-    balanceAfter = balanceBefore - stake;
-    if (result === 'WIN' || result === 'PUSH') {
-      const refund = result === 'WIN' ? stake + (stake * (odds - 1)) : stake;
-      balanceAfter += refund;
-    }
     profitLoss = computeBetProfit(stake, odds, result);
+    // Stake leaves the bankroll right away; WIN/PUSH return stake (+ profit on WIN).
+    delta = -stake;
+    if (result === 'WIN') delta += stake + (stake * (odds - 1));
+    else if (result === 'PUSH') delta += stake;
   }
 
   const notes = typeof body.notes === 'string' ? body.notes.slice(0, 500) : null;
+
+  // Atomic balance update first so balance_before/after on the entry reflect
+  // the true serialised state, not a stale pre-read.
+  const updated = await sql()`
+    UPDATE bankrolls
+    SET current_amount = current_amount + ${delta}, updated_at = NOW()
+    WHERE user_id = ${user.id}
+    RETURNING current_amount`;
+  if (updated.length === 0) return error(500, 'bankroll update failed');
+  const balanceAfter = Number(updated[0].current_amount);
+  const balanceBefore = balanceAfter - delta;
 
   const [inserted] = await sql()`
     INSERT INTO bankroll_entries
@@ -167,10 +174,6 @@ async function addManualEntry(event) {
       (${user.id}, ${null}, ${type}, ${market}, ${stake}, ${odds}, ${result}, ${profitLoss},
        ${balanceBefore}, ${balanceAfter}, ${notes})
     RETURNING *`;
-
-  await sql()`
-    UPDATE bankrolls SET current_amount = ${balanceAfter}, updated_at = NOW()
-    WHERE user_id = ${user.id}`;
 
   return json(201, { entry: shapeEntry(inserted), newBalance: balanceAfter });
 }
@@ -202,8 +205,15 @@ async function logBet(event) {
     SELECT id, user_id, over_hit, btts_hit FROM predictions WHERE id = ${predictionId}`;
   if (!pred) return error(404, 'Prediction not found');
 
-  const balanceBefore = Number(bk.current_amount);
-  const balanceAfter = balanceBefore - stake;
+  // Atomic debit — avoids losing concurrent log-this-bet clicks.
+  const debited = await sql()`
+    UPDATE bankrolls
+    SET current_amount = current_amount - ${stake}, updated_at = NOW()
+    WHERE user_id = ${user.id} AND current_amount >= ${stake}
+    RETURNING current_amount`;
+  if (debited.length === 0) return error(400, 'stake exceeds current bankroll');
+  const balanceAfter = Number(debited[0].current_amount);
+  const balanceBefore = balanceAfter + Number(stake);
 
   const [inserted] = await sql()`
     INSERT INTO bankroll_entries
@@ -213,10 +223,6 @@ async function logBet(event) {
       (${user.id}, ${predictionId}, 'BET', ${market}, ${stake}, ${odds}, 'PENDING', 0,
        ${balanceBefore}, ${balanceAfter}, ${typeof body.notes === 'string' ? body.notes.slice(0, 500) : null})
     RETURNING *`;
-
-  await sql()`
-    UPDATE bankrolls SET current_amount = ${balanceAfter}, updated_at = NOW()
-    WHERE user_id = ${user.id}`;
 
   // If the linked prediction has already settled, settle this entry now.
   let settledNow = null;

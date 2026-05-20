@@ -79,9 +79,16 @@ async function settlePendingEntry(entry, prediction) {
   // On WIN, add stake + profit back. On LOSS, nothing more.
   const refund = won ? Number(entry.stake) + profit : 0;
 
-  const [bk] = await sql()`SELECT current_amount FROM bankrolls WHERE user_id = ${entry.user_id}`;
-  if (!bk) return null;
-  const newBalance = Number(bk.current_amount) + refund;
+  // Atomic balance update — avoids the read-modify-write race that loses
+  // updates when multiple entries settle concurrently. We rely on the
+  // RETURNING value to compute balance_after on the entry row.
+  const updated = await sql()`
+    UPDATE bankrolls
+    SET current_amount = current_amount + ${refund}, updated_at = NOW()
+    WHERE user_id = ${entry.user_id}
+    RETURNING current_amount`;
+  if (updated.length === 0) return null;
+  const newBalance = Number(updated[0].current_amount);
 
   await sql()`
     UPDATE bankroll_entries
@@ -89,10 +96,6 @@ async function settlePendingEntry(entry, prediction) {
         profit_loss = ${profit},
         balance_after = ${newBalance}
     WHERE id = ${entry.id}`;
-  await sql()`
-    UPDATE bankrolls
-    SET current_amount = ${newBalance}, updated_at = NOW()
-    WHERE user_id = ${entry.user_id}`;
 
   return { entryId: entry.id, result, profit, newBalance };
 }

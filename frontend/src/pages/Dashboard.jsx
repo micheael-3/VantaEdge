@@ -941,6 +941,18 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Unified league switch: clear the pinned date and switch the league in a
+  // single render so we don't briefly fetch the new league with the previous
+  // league's date. React 18 batches both setStates → single re-render → single fetch.
+  const switchLeague = useCallback((id) => {
+    setActiveLeague((prev) => {
+      if (prev === id) return prev;
+      // Only clear the date pin when we're actually changing leagues.
+      setActiveDate(null);
+      return id;
+    });
+  }, []);
+
   // Fetch the 7-day scan for the date pills whenever the league changes.
   useEffect(() => {
     let cancelled = false;
@@ -955,16 +967,12 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, [activeLeague]);
 
-  // Fetch predictions on league change or active-date change.
+  // Single fetch effect. Both league and date are watched; React 18 batches
+  // the switchLeague state updates so this fires exactly once per switch.
   useEffect(() => {
     fetchData(activeLeague, !hasLoadedOnce, activeDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLeague, activeDate]);
-
-  // Reset date pin when switching leagues — let the backend cascade re-pick.
-  useEffect(() => {
-    setActiveDate(null);
-  }, [activeLeague]);
 
   const handleLogout = async () => {
     await logout();
@@ -1104,7 +1112,7 @@ export default function Dashboard() {
                 <button
                   key={l.id}
                   className={`dp-league-tab ${activeLeague === l.id ? 'active' : ''}`}
-                  onClick={() => setActiveLeague(l.id)}
+                  onClick={() => switchLeague(l.id)}
                 >
                   <span className="flag">{l.flag}</span>
                   <span>{l.name}</span>
@@ -1315,7 +1323,7 @@ export default function Dashboard() {
                   <button className="dp-btn dp-btn-sm" onClick={() => setActiveDate(null)}>
                     Auto-pick nearest date
                   </button>
-                  <button className="dp-btn dp-btn-sm" onClick={() => setActiveLeague(LEAGUES[0].id)}>
+                  <button className="dp-btn dp-btn-sm" onClick={() => switchLeague(LEAGUES[0].id)}>
                     Try {LEAGUES[0].name}
                   </button>
                 </div>
