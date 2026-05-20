@@ -283,13 +283,15 @@ export default function Dashboard() {
     return Object.keys(weekData.dates).filter((d) => d >= today).sort();
   }, [weekData, today]);
 
-  // Default selection: today if today has matches, else nearest future date.
+  // Default selection: ALWAYS today, even if today has no matches.
+  // Per user preference, don't auto-jump to the next future date —
+  // they want to see "No matches today" explicitly when today is empty.
+  // Users can click a future date pill to navigate forward themselves.
   useEffect(() => {
     if (selectedDate) return;
-    if (futureDates.length === 0) return;
-    const todayHasMatches = futureDates.includes(today);
-    setSelectedDate(todayHasMatches ? today : futureDates[0]);
-  }, [futureDates, selectedDate, today]);
+    if (!weekData) return;
+    setSelectedDate(today);
+  }, [weekData, selectedDate, today]);
 
   // Build day pill list for the CalendarStrip — Monday-Sunday, today first
   // dot, past dates hidden.

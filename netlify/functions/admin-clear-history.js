@@ -12,11 +12,13 @@ const TARGETS = [
   'predictions',
   'prediction_history',
   'accuracy_model',
+  'best_bet',
   'agent_alerts',
   'user_alerts',
   'odds_snapshots',
   'odds_movements',
   'bankroll_entries',
+  'scan_status',
 ];
 
 // Execute a single raw SQL statement against Neon. The serverless driver's
@@ -61,8 +63,47 @@ exports.handler = async (event) => {
     }
   }
 
+  // After clearing, fire a fresh background scan so the dashboard
+  // doesn't sit empty waiting for the cron tick. Same pattern as the
+  // admin rescan endpoint: POST to predictions-scan-background with
+  // the JWT_SECRET as the internal-call shared secret.
+  let scanTriggered = false;
+  try {
+    const base = process.env.URL || process.env.DEPLOY_URL || '';
+    const secret = process.env.JWT_SECRET || '';
+    if (base && secret) {
+      // Monday of current week (UTC).
+      const now = new Date();
+      const day = now.getUTCDay();
+      const mondayOffset = day === 0 ? -6 : 1 - day; // Sunday → -6, Mon → 0, Tue → -1...
+      const monday = new Date(now);
+      monday.setUTCDate(now.getUTCDate() + mondayOffset);
+      const weekStart = monday.toISOString().slice(0, 10);
+
+      const url = `${base}/.netlify/functions/predictions-scan-background`;
+      // Fire and forget — don't await. Background functions return 202.
+      // We use a synthetic AbortController to bail after 2s so the caller
+      // doesn't hang if Netlify is slow to ack.
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 2000);
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-internal-scan-secret': secret,
+        },
+        body: JSON.stringify({ leagueId: 253, weekStart }),
+        signal: ctrl.signal,
+      }).catch(() => {}).finally(() => clearTimeout(to));
+      scanTriggered = true;
+    }
+  } catch (err) {
+    console.warn('[clear-history] failed to trigger background scan:', err.message);
+  }
+
   return jsonResp(200, {
     summary: { total: TARGETS.length, ok: okCount, failed: failCount, totalDeleted },
+    scanTriggered,
     results,
   });
 };
