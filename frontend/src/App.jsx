@@ -1,258 +1,66 @@
-import { useEffect, useState } from 'react';
-import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import Landing from './pages/Landing';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import History from './pages/History';
-import Settings from './pages/Settings';
-import UpgradeModal from './components/UpgradeModal';
-import BottomNav from './components/BottomNav';
-import { useAuth } from './context/AuthContext';
-import AdminLogin from './pages/admin/AdminLogin';
-import AdminLayout from './pages/admin/AdminLayout';
-import AdminUsers from './pages/admin/AdminUsers';
-import AdminPredictions from './pages/admin/AdminPredictions';
-import AdminStats from './pages/admin/AdminStats';
-import { getAdminToken } from './api/admin';
-import Affiliate from './pages/Affiliate';
-import AffiliateDashboard from './pages/AffiliateDashboard';
-import RefCapture from './pages/RefCapture';
-import Blog from './pages/Blog';
-import BlogPost from './pages/BlogPost';
-import Odds from './pages/Odds';
-import AdminOdds from './pages/admin/AdminOdds';
-import Bankroll from './pages/Bankroll';
-import Alerts from './pages/Alerts';
-import Accuracy from './pages/Accuracy';
-import AdminAgent from './pages/admin/AdminAgent';
-import EVCalculator from './pages/EVCalculator';
-import KellySizer from './pages/KellySizer';
-
-function Protected({ children }) {
-  const { user, loading } = useAuth();
-  const location = useLocation();
-  if (loading) {
-    return (
-      <div className="container" style={{ paddingTop: 60 }}>
-        <div className="card">Loading…</div>
-      </div>
-    );
-  }
-  if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
-  return children;
-}
-
-function PublicOnly({ children }) {
-  const { user, loading } = useAuth();
-  if (loading) return null;
-  if (user) return <Navigate to="/dashboard" replace />;
-  return children;
-}
-
-// TESTING MODE: history page open to all tiers.
-function HistoryGuard({ children }) {
-  const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
-  return children;
-}
-
-function AdminProtected({ children }) {
-  const location = useLocation();
-  if (!getAdminToken()) {
-    return <Navigate to="/admin/login" replace state={{ from: location.pathname }} />;
-  }
-  return children;
-}
-
-// TESTING MODE: tier gates disabled. Originally ANALYST/EDGE only —
-// while we're iterating on the dashboard / tools / bankroll flow, every
-// logged-in user can reach /odds and /bankroll regardless of tier.
-// Re-enable the tier checks before going to production.
-function OddsGuard({ children }) {
-  const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
-  return children;
-}
-
-function BankrollGuard({ children }) {
-  const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
-  return children;
-}
-
-function AuthedShellBottomNav() {
-  const { user } = useAuth();
-  const location = useLocation();
-  if (!user) return null;
-  // Hide on routes that have their own layout (admin, landing, auth, blog).
-  const path = location.pathname || '';
-  const hide =
-    path === '/' ||
-    path.startsWith('/login') ||
-    path.startsWith('/register') ||
-    path.startsWith('/admin') ||
-    path.startsWith('/blog') ||
-    path.startsWith('/affiliate') && !path.startsWith('/affiliate/dashboard') ||
-    path.startsWith('/ref/');
-  if (hide) return null;
-  return <BottomNav tier={user.tier} />;
-}
+import { Routes, Route, Navigate } from 'react-router-dom';
+import Protected from './components/Protected.jsx';
+import PublicOnly from './components/PublicOnly.jsx';
+import Login from './pages/Login.jsx';
+import Register from './pages/Register.jsx';
+import Dashboard from './pages/Dashboard.jsx';
+import History from './pages/History.jsx';
+import Settings from './pages/Settings.jsx';
+import Affiliate from './pages/Affiliate.jsx';
 
 export default function App() {
-  const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const [requiredTier, setRequiredTier] = useState(null);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const onUpgrade = (e) => {
-      setRequiredTier((e.detail && e.detail.requiredTier) || 'ANALYST');
-      setUpgradeOpen(true);
-    };
-    const onLogout = () => navigate('/login');
-    window.addEventListener('upgrade-required', onUpgrade);
-    window.addEventListener('auth-logout', onLogout);
-    return () => {
-      window.removeEventListener('upgrade-required', onUpgrade);
-      window.removeEventListener('auth-logout', onLogout);
-    };
-  }, [navigate]);
-
   return (
-    <>
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route
-          path="/login"
-          element={
-            <PublicOnly>
-              <Login />
-            </PublicOnly>
-          }
-        />
-        <Route
-          path="/register"
-          element={
-            <PublicOnly>
-              <Register />
-            </PublicOnly>
-          }
-        />
-        <Route
-          path="/dashboard"
-          element={
-            <Protected>
-              <Dashboard />
-            </Protected>
-          }
-        />
-        <Route
-          path="/history"
-          element={
-            <Protected>
-              <HistoryGuard>
-                <History />
-              </HistoryGuard>
-            </Protected>
-          }
-        />
-        <Route
-          path="/odds"
-          element={
-            <Protected>
-              <OddsGuard>
-                <Odds />
-              </OddsGuard>
-            </Protected>
-          }
-        />
-        <Route
-          path="/bankroll"
-          element={
-            <Protected>
-              <BankrollGuard>
-                <Bankroll />
-              </BankrollGuard>
-            </Protected>
-          }
-        />
-        <Route
-          path="/alerts"
-          element={
-            <Protected>
-              <Alerts />
-            </Protected>
-          }
-        />
-        <Route
-          path="/accuracy"
-          element={
-            <Protected>
-              <Accuracy />
-            </Protected>
-          }
-        />
-        <Route
-          path="/settings"
-          element={
-            <Protected>
-              <Settings />
-            </Protected>
-          }
-        />
-        <Route
-          path="/tools/ev"
-          element={
-            <Protected>
-              <EVCalculator />
-            </Protected>
-          }
-        />
-        <Route
-          path="/tools/kelly"
-          element={
-            <Protected>
-              <KellySizer />
-            </Protected>
-          }
-        />
-        <Route path="/tools/bets" element={<Navigate to="/bankroll" replace />} />
-        <Route path="/ref/:code" element={<RefCapture />} />
-        <Route path="/blog" element={<Blog />} />
-        <Route path="/blog/:slug" element={<BlogPost />} />
-        <Route path="/affiliate" element={<Affiliate />} />
-        <Route
-          path="/affiliate/dashboard"
-          element={
-            <Protected>
-              <AffiliateDashboard />
-            </Protected>
-          }
-        />
-        <Route path="/admin/login" element={<AdminLogin />} />
-        <Route
-          path="/admin"
-          element={
-            <AdminProtected>
-              <AdminLayout />
-            </AdminProtected>
-          }
-        >
-          <Route index element={<Navigate to="/admin/users" replace />} />
-          <Route path="users" element={<AdminUsers />} />
-          <Route path="predictions" element={<AdminPredictions />} />
-          <Route path="stats" element={<AdminStats />} />
-          <Route path="odds" element={<AdminOdds />} />
-          <Route path="agent" element={<AdminAgent />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-      <UpgradeModal
-        open={upgradeOpen}
-        requiredTier={requiredTier}
-        onClose={() => setUpgradeOpen(false)}
+    <Routes>
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route
+        path="/login"
+        element={
+          <PublicOnly>
+            <Login />
+          </PublicOnly>
+        }
       />
-      <AuthedShellBottomNav />
-    </>
+      <Route
+        path="/register"
+        element={
+          <PublicOnly>
+            <Register />
+          </PublicOnly>
+        }
+      />
+      <Route
+        path="/dashboard"
+        element={
+          <Protected>
+            <Dashboard />
+          </Protected>
+        }
+      />
+      <Route
+        path="/history"
+        element={
+          <Protected>
+            <History />
+          </Protected>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <Protected>
+            <Settings />
+          </Protected>
+        }
+      />
+      <Route
+        path="/affiliate"
+        element={
+          <Protected>
+            <Affiliate />
+          </Protected>
+        }
+      />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
   );
 }

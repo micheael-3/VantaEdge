@@ -1,7 +1,6 @@
-// NOTE: localStorage key intentionally kept as 'vantaedge_' prefix for state
-// migration — renaming would drop existing referral cookies on the rebrand.
+// localStorage key is intentionally 'vantaedge_ref' — live affiliate links in
+// the wild already set this key, so renaming would drop existing referrals.
 const KEY = 'vantaedge_ref';
-const TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function safeStorage() {
   try {
@@ -11,31 +10,26 @@ function safeStorage() {
   }
 }
 
-export function storeReferralCode(code) {
-  const ls = safeStorage();
-  if (!ls || !code) return;
-  const normalised = String(code).trim().toUpperCase();
-  if (!/^[A-Z0-9]{4,12}$/.test(normalised)) return;
-  ls.setItem(KEY, JSON.stringify({ code: normalised, expires: Date.now() + TTL_MS }));
-}
-
 export function readReferralCode() {
   const ls = safeStorage();
   if (!ls) return null;
   const raw = ls.getItem(KEY);
   if (!raw) return null;
+  // Stored value may be a plain string or a JSON envelope { code, expires }.
   try {
     const parsed = JSON.parse(raw);
-    if (!parsed || !parsed.code || !parsed.expires) return null;
-    if (Date.now() > parsed.expires) {
-      ls.removeItem(KEY);
-      return null;
+    if (parsed && parsed.code) {
+      if (parsed.expires && Date.now() > parsed.expires) {
+        ls.removeItem(KEY);
+        return null;
+      }
+      return String(parsed.code).toUpperCase();
     }
-    return parsed.code;
   } catch {
-    ls.removeItem(KEY);
-    return null;
+    // Not JSON — treat as raw code.
+    return String(raw).toUpperCase();
   }
+  return null;
 }
 
 export function clearReferralCode() {

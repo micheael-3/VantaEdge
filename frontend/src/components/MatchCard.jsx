@@ -1,258 +1,105 @@
-import { useMemo, useState } from 'react';
-import FormDots from './FormDots';
-import ConfidenceBar from './ConfidenceBar';
-import EVBadge from './EVBadge';
-import KellyStake from './KellyStake';
-import TierGate from './TierGate';
-import { exportToCSV } from './CSVExport';
-import { canSeeEV, canSeeExtras } from '../config/leagues';
-import { calculateEV, calculateKelly } from '../lib/ev';
+import { useState } from 'react';
+import ConfidenceBadge from './ConfidenceBadge.jsx';
+import EVInput from './EVInput.jsx';
+import FormDots from './FormDots.jsx';
+import { formatKickoff } from '../lib/dateLabel.js';
 
-function kickoffStr(iso) {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
-  } catch {
-    return iso;
-  }
-}
-
-function overConfidenceClass(c) {
-  if (c >= 70) return 'green';
-  if (c >= 50) return 'yellow';
-  return 'red';
-}
-
-export default function MatchCard({ match, userTier, onUpgrade }) {
-  const [overOdds, setOverOdds] = useState('');
-  const [bttsOdds, setBttsOdds] = useState('');
+export default function MatchCard({ fixture }) {
   const [showAnalysis, setShowAnalysis] = useState(false);
 
-  const hasEV = canSeeEV(userTier);
-  const hasExtras = canSeeExtras(userTier);
-  const isEdge = userTier === 'EDGE';
+  if (!fixture) return null;
 
-  const over = match.predictions && match.predictions.over;
-  const btts = match.predictions && match.predictions.btts;
-  const firstHalf = match.predictions && match.predictions.firstHalf;
-  const ah = match.predictions && match.predictions.asianHandicap;
-
-  const evOver = useMemo(
-    () => (overOdds && over ? calculateEV(over.confidence, overOdds) : null),
-    [overOdds, over],
-  );
-  const evBtts = useMemo(
-    () => (bttsOdds && btts ? calculateEV(btts.confidence, bttsOdds) : null),
-    [bttsOdds, btts],
-  );
-  const kellyOver = useMemo(
-    () => (overOdds && over ? calculateKelly(over.confidence, overOdds) : 0),
-    [overOdds, over],
-  );
-  const kellyBtts = useMemo(
-    () => (bttsOdds && btts ? calculateKelly(btts.confidence, bttsOdds) : 0),
-    [bttsOdds, btts],
-  );
-
-  if (match.error) {
+  // Per-fixture error path: backend pipeline failed for just this match.
+  if (fixture.error) {
     return (
-      <div className="card match-card">
-        <div className="teams">
-          <div className="team-block">
-            <div className="team-name">{match.home && match.home.name}</div>
-          </div>
-          <div className="vs">vs</div>
-          <div className="team-block right">
-            <div className="team-name">{match.away && match.away.name}</div>
-          </div>
+      <div className="error-card">
+        <div className="match-meta">{formatKickoff(fixture.kickoff, fixture.league)}</div>
+        <div className="match-teams">
+          {fixture.home && fixture.home.name}
+          <span className="vs">vs</span>
+          {fixture.away && fixture.away.name}
         </div>
-        <div className="muted small">{match.error}</div>
+        <div className="error-text">Analysis failed: {fixture.error}</div>
       </div>
     );
   }
 
+  const home = fixture.home || {};
+  const away = fixture.away || {};
+  const over = (fixture.predictions && fixture.predictions.over) || {};
+  const btts = (fixture.predictions && fixture.predictions.btts) || {};
+  const result = fixture.actualResult;
+  const isPast = !!result;
+
+  const overHit = isPast ? result.overHit : null;
+  const bttsHit = isPast ? result.bttsHit : null;
+
+  let cardKlass = 'match-card';
+  if (isPast) {
+    const oneHit = overHit === true || bttsHit === true;
+    const allMiss = overHit === false && bttsHit === false;
+    if (oneHit) cardKlass += ' past-hit';
+    else if (allMiss) cardKlass += ' past-miss';
+  }
+
   return (
-    <div className="card match-card">
-      <div className="spread">
-        <div className="kickoff mono">{kickoffStr(match.kickoff)}</div>
-        {isEdge && (
-          <button
-            className="btn btn-ghost small"
-            style={{ padding: '4px 10px' }}
-            onClick={() => exportToCSV([match])}
-            title="Export this match"
-          >
-            ⬇ CSV
-          </button>
-        )}
+    <div className={cardKlass}>
+      <div className="match-meta">{formatKickoff(fixture.kickoff, fixture.league || 'MLS')}</div>
+      <div className="match-teams">
+        {home.name || 'Home'}
+        <span className="vs">vs</span>
+        {away.name || 'Away'}
       </div>
 
-      <div className="teams">
-        <div className="team-block">
-          <div className="team-name">{match.home && match.home.name}</div>
-          {match.home && match.home.restDays != null && (
-            <span className="mono small muted">{match.home.restDays}d rest</span>
-          )}
-          <FormDots form={match.home && match.home.form} />
+      <div className="match-form">
+        <div className="team-form">
+          <span className="tf-label">{home.name || 'Home'}</span>
+          <FormDots form={home.form} />
         </div>
-        <div className="vs">vs</div>
-        <div className="team-block right">
-          <div className="team-name">{match.away && match.away.name}</div>
-          {match.away && match.away.restDays != null && (
-            <span className="mono small muted">{match.away.restDays}d rest</span>
-          )}
-          <FormDots form={match.away && match.away.form} />
+        <div className="team-form">
+          <span className="tf-label">{away.name || 'Away'}</span>
+          <FormDots form={away.form} />
         </div>
       </div>
 
-      {over && (
-        <div className="stack" style={{ gap: 8 }}>
-          <div className="spread">
-            <span className={`badge ${overConfidenceClass(over.confidence)} mono`}>
-              OVER {over.line} ✓
-            </span>
-            <span className="mono small muted">{over.confidence}%</span>
-          </div>
-          <ConfidenceBar value={over.confidence} />
+      {isPast && (
+        <div className="score-line">
+          FT {result.homeGoals}–{result.awayGoals}
         </div>
       )}
 
-      {btts && (
-        <div className="stack" style={{ gap: 8 }}>
-          <div className="spread">
-            <span className={`badge ${btts.prediction === 'YES' ? 'green' : 'red'} mono`}>
-              BTTS {btts.prediction}
-            </span>
-            <span className="mono small muted">{btts.confidence}%</span>
-          </div>
-          <ConfidenceBar value={btts.confidence} />
-        </div>
-      )}
-
-      {/* EV section (Analyst+) */}
-      {hasEV ? (
-        <div className="stack" style={{ gap: 10, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-          <div className="spread">
-            <div style={{ flex: 1 }}>
-              <label className="label">Over odds</label>
-              <input
-                type="number"
-                step="0.01"
-                min="1"
-                className="input"
-                value={overOdds}
-                onChange={(e) => setOverOdds(e.target.value)}
-                placeholder="e.g. 1.85"
-              />
-              <div className="row" style={{ marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
-                <EVBadge ev={evOver} />
-                <KellyStake kelly={kellyOver} />
-              </div>
-            </div>
-          </div>
-          <div className="spread">
-            <div style={{ flex: 1 }}>
-              <label className="label">BTTS odds</label>
-              <input
-                type="number"
-                step="0.01"
-                min="1"
-                className="input"
-                value={bttsOdds}
-                onChange={(e) => setBttsOdds(e.target.value)}
-                placeholder="e.g. 1.90"
-              />
-              <div className="row" style={{ marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
-                <EVBadge ev={evBtts} />
-                <KellyStake kelly={kellyBtts} />
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <TierGate requiredTier="ANALYST" onUpgrade={onUpgrade}>
-          <div className="stack" style={{ gap: 10 }}>
-            <div>
-              <label className="label">Over odds</label>
-              <input className="input" placeholder="1.85" readOnly />
-            </div>
-            <div>
-              <label className="label">BTTS odds</label>
-              <input className="input" placeholder="1.90" readOnly />
-            </div>
-          </div>
-        </TierGate>
-      )}
-
-      {/* First half + Asian handicap (Edge) */}
-      {hasExtras ? (
-        (firstHalf || ah) && (
-          <div className="stack" style={{ gap: 10, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-            {firstHalf && (
-              <div className="spread">
-                <span className={`badge ${overConfidenceClass(firstHalf.confidence)} mono`}>
-                  1H OVER {firstHalf.line}
-                </span>
-                <span className="mono small muted">{firstHalf.confidence}%</span>
-              </div>
-            )}
-            {ah && (
-              <div className="spread">
-                <span className="badge accent mono">
-                  AH {ah.line} ({ah.team})
-                </span>
-                <span className="mono small muted">{ah.confidence}%</span>
-              </div>
-            )}
-          </div>
-        )
-      ) : (
-        <TierGate requiredTier="EDGE" onUpgrade={onUpgrade}>
-          <div className="stack" style={{ gap: 10 }}>
-            <span className="badge mono">1H OVER 1.5</span>
-            <span className="badge mono">AH -0.5</span>
-          </div>
-        </TierGate>
-      )}
-
-      {/* Reasoning section */}
-      <div>
-        <button
-          className="btn btn-ghost small"
-          onClick={() => (hasEV ? setShowAnalysis((s) => !s) : onUpgrade('ANALYST'))}
-        >
-          {showAnalysis ? 'Hide Analysis ▲' : 'Show Analysis ▼'}
-        </button>
-        {hasEV && showAnalysis && (
-          <div className="stack" style={{ gap: 10, marginTop: 12 }}>
-            {over && over.reasoning && (
-              <div>
-                <div className="label">Over reasoning</div>
-                <div className="small">{over.reasoning}</div>
-              </div>
-            )}
-            {btts && btts.reasoning && (
-              <div>
-                <div className="label">BTTS reasoning</div>
-                <div className="small">{btts.reasoning}</div>
-              </div>
-            )}
-            {firstHalf && firstHalf.reasoning && (
-              <div>
-                <div className="label">First half reasoning</div>
-                <div className="small">{firstHalf.reasoning}</div>
-              </div>
-            )}
-            {ah && ah.reasoning && (
-              <div>
-                <div className="label">Asian handicap reasoning</div>
-                <div className="small">{ah.reasoning}</div>
-              </div>
-            )}
-          </div>
-        )}
+      <div className="predictions-row">
+        <ConfidenceBadge
+          label={`OVER ${over.line != null ? over.line : '2.5'}`}
+          confidence={over.confidence}
+          result={overHit}
+        />
+        <ConfidenceBadge
+          label={`BTTS ${btts.prediction || '—'}`}
+          confidence={btts.confidence}
+          result={bttsHit}
+        />
       </div>
+
+      <EVInput overConfidence={over.confidence} bttsConfidence={btts.confidence} />
+
+      <button
+        type="button"
+        className="analysis-toggle"
+        onClick={() => setShowAnalysis((v) => !v)}
+        aria-expanded={showAnalysis}
+      >
+        {showAnalysis ? 'Hide analysis ▲' : 'Show analysis ▼'}
+      </button>
+
+      {showAnalysis && (
+        <div className="analysis-body">
+          <h4>Over {over.line != null ? over.line : '2.5'}</h4>
+          <p>{over.reasoning || 'No reasoning available.'}</p>
+          <h4>BTTS</h4>
+          <p>{btts.reasoning || 'No reasoning available.'}</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,19 +1,12 @@
 import { useEffect, useRef } from 'react';
-import './CalendarStrip.css';
 
-// Horizontal scrollable date strip — replaces the older dp-date-pills row.
-// Props:
-//   days       — array of { date, count, isToday, isPast, label }
-//   activeDate — currently selected YYYY-MM-DD (null = no explicit pin)
-//   onSelect   — (date) => void
-//   loading    — boolean (reserved for future skeleton variant)
-export default function CalendarStrip({ days, activeDate, onSelect, loading }) {
+// Horizontal scrollable calendar. `days` items look like:
+// { date: 'YYYY-MM-DD', count, label, isToday, isPast }
+export default function CalendarStrip({ days, activeDate, onSelect }) {
   const stripRef = useRef(null);
   const todayRef = useRef(null);
-  void loading; // reserved — we keep the prop in the signature for future use.
 
-  // On mount (and whenever `days` changes shape) centre the today pill in
-  // the viewport. Past pills end up on the left, future pills on the right.
+  // Centre today on mount (and whenever the days array shape changes).
   useEffect(() => {
     const strip = stripRef.current;
     const today = todayRef.current;
@@ -30,21 +23,22 @@ export default function CalendarStrip({ days, activeDate, onSelect, loading }) {
     <div className="cs-strip" ref={stripRef} role="tablist" aria-label="Match calendar">
       {days.slice(0, 15).map((d) => {
         const isActive = activeDate === d.date;
-        const empty = !d.count || d.count === 0;
+        const empty = !d.count;
         const klass = [
           'cs-day',
           d.isToday ? 'today' : '',
           isActive && !d.isToday ? 'active' : '',
           empty ? 'empty' : '',
-          d.isPast && !d.isToday ? 'past' : '',
-        ].filter(Boolean).join(' ');
+        ]
+          .filter(Boolean)
+          .join(' ');
 
-        // Parse weekday + day-of-month off the YYYY-MM-DD without timezone surprises.
+        // Build weekday + day-of-month without timezone surprises.
         let weekday = '';
         let dayNum = '';
         try {
           const dt = new Date(`${d.date}T12:00:00Z`);
-          weekday = dt.toLocaleDateString(undefined, { weekday: 'short' });
+          weekday = dt.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
           dayNum = String(dt.getUTCDate());
         } catch {
           dayNum = d.date.slice(-2);
@@ -59,17 +53,17 @@ export default function CalendarStrip({ days, activeDate, onSelect, loading }) {
             onClick={() => onSelect && onSelect(d.date)}
             role="tab"
             aria-selected={isActive || d.isToday}
-            title={`${d.count == null ? '?' : d.count} matches on ${d.label || d.date}`}
+            title={`${d.count || 0} matches on ${d.label || d.date}`}
           >
-            {d.count != null && d.count > 0 && (
-              <span className="day-count">{d.count}</span>
-            )}
             <span className="day-name">{weekday}</span>
             <span className="day-num">{dayNum}</span>
-            {!empty ? (
-              <span className="day-dot" aria-hidden="true" />
+            {d.count > 0 ? (
+              <>
+                <span className="day-count">{d.count}</span>
+                <span className="day-dot" aria-hidden="true" />
+              </>
             ) : (
-              <span style={{ width: 5, height: 5 }} aria-hidden="true" />
+              <span className="day-dot-placeholder" aria-hidden="true" />
             )}
           </button>
         );

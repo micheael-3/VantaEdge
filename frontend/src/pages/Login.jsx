@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext.jsx';
 
 export default function Login() {
   const { login } = useAuth();
@@ -9,64 +8,63 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
+    setBusy(true);
     try {
       await login(email, password);
       navigate('/dashboard');
     } catch (err) {
-      setError((err.response && err.response.data && err.response.data.error) || 'Login failed');
+      const msg =
+        (err.response && err.response.data && err.response.data.message) ||
+        (err.response && err.response.data && err.response.data.error) ||
+        'Login failed';
+      setError(msg);
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
   return (
-    <>
-      <Navbar />
-      <div className="container">
-        <form className="card auth-card" onSubmit={onSubmit}>
-          <h2>Welcome back</h2>
-          <p className="muted small" style={{ marginBottom: 20 }}>
-            Log in to access your predictions.
-          </p>
-          <div className="stack">
-            <div>
-              <label className="label">Email</label>
-              <input
-                className="input"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-              />
-            </div>
-            <div>
-              <label className="label">Password</label>
-              <input
-                className="input"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-              />
-            </div>
-            {error && <div className="error-text">{error}</div>}
-            <button className="btn btn-primary" type="submit" disabled={loading}>
-              {loading ? 'Logging in…' : 'Login'}
-            </button>
-            <div className="muted small">
-              No account? <Link to="/register">Register</Link>
-            </div>
+    <div className="auth-wrap">
+      <div className="auth-card">
+        <h1>Welcome back</h1>
+        <p className="auth-sub">Log in to see today’s edge.</p>
+        <form className="auth-form" onSubmit={onSubmit}>
+          <div className="field">
+            <label htmlFor="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
           </div>
+          <div className="field">
+            <label htmlFor="password">Password</label>
+            <input
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          {error && <div className="error-text" role="alert">{error}</div>}
+          <button type="submit" className="btn btn-primary btn-block" disabled={busy} style={{ marginTop: 10 }}>
+            {busy ? 'Logging in…' : 'Log in'}
+          </button>
         </form>
+        <div className="auth-footer">
+          Don’t have an account? <Link to="/register">Sign up</Link>
+        </div>
       </div>
-    </>
+    </div>
   );
 }
