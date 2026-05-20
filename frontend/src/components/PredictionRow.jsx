@@ -6,6 +6,8 @@ import LockedOverlay from './LockedOverlay.jsx';
 // One prediction (e.g. OVER 2.5) — badge + confidence bar +
 // odds input + computed EV/Kelly + tier pill.
 // For FREE users, the odds/EV row is locked behind an overlay.
+// When `pending` is true, renders a shimmering skeleton row instead so the
+// card can sit there waiting for /api/predictions/analyze to resolve.
 export default function PredictionRow({
   label,
   conf,
@@ -14,7 +16,54 @@ export default function PredictionRow({
   onOdds,
   onUpgrade,
   delay = 0,
+  pending = false,
 }) {
+  if (pending) {
+    return (
+      <div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 6,
+          }}
+        >
+          <span
+            className="shimmer"
+            style={{ height: 22, width: 130, borderRadius: 4 }}
+          />
+          <span
+            className="mono"
+            style={{ fontSize: 11, color: 'var(--text-3)' }}
+          >
+            AI conf
+          </span>
+        </div>
+        <div
+          className="shimmer"
+          style={{ height: 8, borderRadius: 4, marginBottom: 10 }}
+        />
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 8,
+          }}
+        >
+          <div
+            className="shimmer"
+            style={{ height: 36, borderRadius: 8 }}
+          />
+          <div
+            className="shimmer"
+            style={{ height: 36, borderRadius: 8 }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   const confFrac = (conf || 0) / 100;
 
   const ev = useMemo(() => {

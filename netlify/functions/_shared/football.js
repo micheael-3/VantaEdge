@@ -152,14 +152,16 @@ async function getFixtureCountByDateAuto(leagueId, dateStr, ttlSeconds) {
 // fixture lookups (which already use date-aware TTLs above).
 async function getTeamLastHomeGames(teamId, leagueId) {
   const params = { team: teamId, league: leagueId, season: SEASON, last: 10 };
-  const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 3600);
+  // 2h TTL — last-N results don't change between fixture refreshes, and the
+  // progressive-load path hits this on every dashboard mount.
+  const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 7200);
   if (!Array.isArray(all)) return [];
   return all.filter((f) => f.teams && f.teams.home && f.teams.home.id === teamId).slice(0, 5);
 }
 
 async function getTeamLastAwayGames(teamId, leagueId) {
   const params = { team: teamId, league: leagueId, season: SEASON, last: 10 };
-  const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 3600);
+  const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 7200);
   if (!Array.isArray(all)) return [];
   return all.filter((f) => f.teams && f.teams.away && f.teams.away.id === teamId).slice(0, 5);
 }
@@ -171,15 +173,19 @@ async function getH2H(homeId, awayId) {
 
 async function getTeamStats(teamId, leagueId) {
   const params = { team: teamId, league: leagueId, season: SEASON };
+  // 2h TTL — season-aggregate stats move slowly enough that an hour is
+  // overkill on the dashboard hot path.
   return getOrFetch('/teams/statistics', params, async () => {
     const res = await client().get('/teams/statistics', { params });
     return res.data && res.data.response ? res.data.response : null;
-  }, 3600);
+  }, 7200);
 }
 
 async function getTeamFixtures(teamId, leagueId) {
   const params = { team: teamId, league: leagueId, season: SEASON, last: 2 };
-  return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 3600);
+  // 2h TTL — kept defined for the rest-days fallback in the lean
+  // /quick path even though the spec'd 4-call minimum doesn't use it.
+  return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 7200);
 }
 
 // Fetch a single fixture by its API-Football ID. Bypasses the general cache

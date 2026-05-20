@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Layout from '../components/Layout.jsx';
 import CalendarStrip from '../components/CalendarStrip.jsx';
 import MatchCard from '../components/MatchCard.jsx';
@@ -10,7 +10,12 @@ import { predictions } from '../api/client.js';
 import { agentScore } from '../lib/fixture.js';
 
 // Today's Edge — the dashboard root.
-// Header → CalendarStrip → BestBetBanner → grid of MatchCards.
+//
+// Progressive loading flow (was a single 22s blocking fetch):
+//   1. predictions.quick()       → fixtures + form + stats, NO Claude (~2-3s)
+//   2. predictions.analyze(id)   → fires N times in parallel, one per fixture
+//      Each .then() splices the prediction into that one card. Other cards
+//      stay live throughout — no Promise.all gate.
 export default function Dashboard() {
   const { user } = useAuth();
   const sharp = isSharp(user);
@@ -20,6 +25,10 @@ export default function Dashboard() {
   const [switching, setSwitching] = useState(false);
   const [pinnedDate, setPinnedDate] = useState(null);
   const [error, setError] = useState('');
+  // Token to invalidate in-flight /analyze responses when the user switches
+  // days mid-fetch (otherwise a slow Claude call could splice into the
+  // wrong day's fixtures after the user moved on).
+  const fetchTokenRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,27 +45,90 @@ export default function Dashboard() {
     };
   }, []);
 
-  const fetchDay = useCallback(async (date, isInitial) => {
-    if (isInitial) setLoading(true);
-    else setSwitching(true);
-    setError('');
-    try {
-      const params = {};
-      if (date) params.date = date;
-      if (isInitial) params.initial = 1;
-      const res = await predictions.get(params);
-      setData(res);
-    } catch (err) {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        'Failed to load predictions';
-      setError(msg);
-    } finally {
-      setLoading(false);
-      setSwitching(false);
-    }
+  // Splice one analyzed fixture's prediction into `data.fixtures` by fixtureId.
+  // Guarded by fetchToken so a stale analyze response from a previous day
+  // doesn't corrupt the current view.
+  const applyAnalysis = useCallback((fixtureId, partial, token) => {
+    setData((prev) => {
+      if (!prev || token !== fetchTokenRef.current) return prev;
+      const list = prev.fixtures || [];
+      const idx = list.findIndex((f) => Number(f.fixtureId) === Number(fixtureId));
+      if (idx === -1) return prev;
+      const updated = list.slice();
+      updated[idx] = { ...updated[idx], ...partial };
+      return { ...prev, fixtures: updated };
+    });
   }, []);
+
+  const fetchDay = useCallback(
+    async (date, isInitial) => {
+      const myToken = ++fetchTokenRef.current;
+      if (isInitial) setLoading(true);
+      else setSwitching(true);
+      setError('');
+      try {
+        const params = {};
+        if (date) params.date = date;
+        if (isInitial) params.initial = 1;
+        const res = await predictions.quick(params);
+        if (myToken !== fetchTokenRef.current) return; // user moved on
+        setData(res);
+
+        // Fan-out one analyze() per fixture in parallel. We don't await
+        // Promise.all — each promise settles independently and splices
+        // its result into the matching card so cards turn live one-by-one.
+        const list = (res.fixtures || []).filter(
+          (f) => f && f.fixtureId && f.aiStatus === 'pending',
+        );
+        for (const fx of list) {
+          const fid = fx.fixtureId;
+          predictions
+            .analyze(fid)
+            .then((row) => {
+              applyAnalysis(
+                fid,
+                {
+                  id: row.id || null,
+                  predictions: row.predictions || null,
+                  aiStatus: row.aiStatus || 'ok',
+                  aiReason: row.aiReason || null,
+                  ev: row.ev || null,
+                  oddsData: row.oddsData || null,
+                  actualResult: row.actualResult ?? fx.actualResult ?? null,
+                },
+                myToken,
+              );
+            })
+            .catch((err) => {
+              applyAnalysis(
+                fid,
+                {
+                  aiStatus: 'error',
+                  aiReason:
+                    err?.response?.data?.error || err?.message || 'analysis failed',
+                  error:
+                    err?.response?.data?.error || err?.message || 'analysis failed',
+                },
+                myToken,
+              );
+            });
+        }
+      } catch (err) {
+        if (myToken !== fetchTokenRef.current) return;
+        const msg =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          'Failed to load predictions';
+        setError(msg);
+      } finally {
+        if (myToken === fetchTokenRef.current) {
+          setLoading(false);
+          setSwitching(false);
+        }
+      }
+    },
+    [applyAnalysis],
+  );
 
   useEffect(() => {
     fetchDay(null, true);
@@ -89,10 +161,25 @@ export default function Dashboard() {
   };
 
   // Sort fixtures by agent score desc so the best ones surface first.
+  // Pending fixtures get a score of 0; once /analyze splices in the real
+  // confidence the list re-sorts on the next render.
   const sortedFixtures = useMemo(() => {
     const list = (data?.fixtures || []).slice();
     list.sort((a, b) => agentScore(b) - agentScore(a));
     return list;
+  }, [data]);
+
+  // Loading progress for the per-fixture analyze() fan-out. Counts any
+  // fixture whose aiStatus has resolved (ok / fallback / error) — anything
+  // non-pending is "done".
+  const loadingProgress = useMemo(() => {
+    const list = data?.fixtures || [];
+    const total = list.length;
+    let done = 0;
+    for (const fx of list) {
+      if (fx && fx.aiStatus && fx.aiStatus !== 'pending') done += 1;
+    }
+    return { total, done, pending: total - done };
   }, [data]);
 
   const bestBet = sortedFixtures[0];
@@ -231,6 +318,22 @@ export default function Dashboard() {
                 ))}
                 {switching && <MatchCardSkeleton />}
               </div>
+
+              {loadingProgress.pending > 0 && (
+                <div
+                  className="mono"
+                  style={{
+                    marginTop: 16,
+                    textAlign: 'center',
+                    color: 'var(--text-3)',
+                    fontSize: 12,
+                    letterSpacing: '0.06em',
+                  }}
+                >
+                  ANALYSING MATCH {loadingProgress.done + 1} OF{' '}
+                  {loadingProgress.total}…
+                </div>
+              )}
             </>
           )}
         </div>

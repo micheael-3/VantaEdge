@@ -1,6 +1,10 @@
 const axios = require('axios');
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+// NOTE: spec used `claude-haiku-3-5`, but that's not a valid OpenRouter id.
+// `anthropic/claude-3.5-haiku` is the actual fastest Haiku route on OpenRouter
+// and is what we use throughout this codebase (also see predictions.js
+// /ai-test probe). Documented substitution.
 const MODEL = 'anthropic/claude-3.5-haiku';
 
 const SYSTEM_PROMPT = `You are an expert MLS football analyst. Analyse team form and goals data to predict Over/Under line and BTTS. Be specific and reference the actual numbers provided. Return only valid JSON with this exact shape:
@@ -10,7 +14,8 @@ const SYSTEM_PROMPT = `You are an expert MLS football analyst. Analyse team form
   "firstHalf":     { "line": number, "confidence": number, "reasoning": string } | null,
   "asianHandicap": { "line": string, "team": string, "confidence": number, "reasoning": string } | null
 }
-Lines available: 0.5, 1.5, 2.5, 3.5, 4.5. Do not default to 2.5 — pick the most defensible line for the matchup.`;
+Lines available: 0.5, 1.5, 2.5, 3.5, 4.5. Do not default to 2.5 — pick the most defensible line for the matchup.
+Be concise. Return JSON only. Maximum 2 sentences per reasoning field.`;
 
 function fallback(reason) {
   return {
@@ -56,7 +61,7 @@ async function callOpenRouter(userMessage) {
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userMessage },
     ],
-    max_tokens: 500,
+    max_tokens: 400,
   };
 
   // 15s timeout — anything slower would lose the Netlify 26s function

@@ -59,7 +59,9 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
 
   const home = fixture.home || {};
   const away = fixture.away || {};
-  const strongValue = isStrongValue(fixture);
+  const aiPending = fixture.aiStatus === 'pending';
+  const aiErrored = fixture.aiStatus === 'error';
+  const strongValue = !aiPending && isStrongValue(fixture);
   const ouConf = overConf(fixture);
   const btsConf = bttsConf(fixture);
   const overLine = fixture?.predictions?.over?.line ?? 2.5;
@@ -205,23 +207,44 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
 
       <div style={{ display: 'grid', gap: 14, marginBottom: 14 }}>
         <PredictionRow
-          label={`OVER ${overLine}`}
+          label={aiPending ? 'OVER —' : `OVER ${overLine}`}
           conf={ouConf}
           isSharp={isSharp}
           odds={oddsOU}
           onOdds={setOddsOU}
           onUpgrade={onUpgrade}
+          pending={aiPending}
         />
         <PredictionRow
-          label={bttsLabel(fixture)}
+          label={aiPending ? 'BTTS —' : bttsLabel(fixture)}
           conf={btsConf}
           isSharp={isSharp}
           odds={oddsBTTS}
           onOdds={setOddsBTTS}
           onUpgrade={onUpgrade}
           delay={200}
+          pending={aiPending}
         />
       </div>
+
+      {aiErrored && (
+        <div
+          className="mono"
+          style={{
+            marginTop: -4,
+            marginBottom: 12,
+            padding: '8px 10px',
+            borderRadius: 6,
+            background: 'rgba(239,68,68,0.08)',
+            border: '1px solid rgba(239,68,68,0.25)',
+            fontSize: 11,
+            color: 'var(--red)',
+            letterSpacing: '0.04em',
+          }}
+        >
+          AI ANALYSIS FAILED · {fixture.error || fixture.aiReason || 'try refresh'}
+        </div>
+      )}
 
       <div
         style={{

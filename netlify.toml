@@ -54,6 +54,19 @@
   to     = "/.netlify/functions/auth/:splat"
   status = 200
 
+# Progressive-load endpoints — match BEFORE the wildcard below so the
+# specific paths win the route lookup. /quick returns fixtures+form+stats
+# (no Claude); /analyze runs Claude for a single fixtureId.
+[[redirects]]
+  from   = "/api/predictions/quick"
+  to     = "/.netlify/functions/predictions/quick"
+  status = 200
+
+[[redirects]]
+  from   = "/api/predictions/analyze"
+  to     = "/.netlify/functions/predictions/analyze"
+  status = 200
+
 [[redirects]]
   from   = "/api/predictions/*"
   to     = "/.netlify/functions/predictions/:splat"

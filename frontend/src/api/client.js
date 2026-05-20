@@ -50,8 +50,20 @@ export const auth = {
 
 export const predictions = {
   // MLS only (league id 253).
+  // `get` (legacy) — bundles fixtures + Claude analysis in one slow round-trip.
+  // Kept for callers that still need the all-in-one shape, but the dashboard
+  // now uses `quick` + per-fixture `analyze` for progressive rendering.
   get: (opts = {}) =>
     api.get('/api/predictions/253', { params: opts }).then((r) => r.data),
+  // Step 1 of the progressive flow: fixtures + form + stats + actualResult.
+  // Returns ~2-3s warm, ~5-7s cold. Predictions are null at this point.
+  quick: (opts = {}) =>
+    api.get('/api/predictions/quick', { params: opts }).then((r) => r.data),
+  // Step 2 of the progressive flow: Claude analysis for one fixture.
+  // ~5-10s per call, Claude-bound. The frontend fires 4 of these in parallel
+  // after `quick` resolves and splices each result into its matching card.
+  analyze: (fixtureId) =>
+    api.get('/api/predictions/analyze', { params: { fixtureId } }).then((r) => r.data),
   upcoming: (opts = { past: 7, future: 7 }) =>
     api.get('/api/predictions/upcoming/253', { params: opts }).then((r) => r.data),
 };
