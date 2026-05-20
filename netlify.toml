@@ -9,6 +9,28 @@
   included_files        = ["netlify/functions/_shared/**", "schema.sql"]
   external_node_modules = ["@neondatabase/serverless"]
 
+# Scheduled (cron) functions. Each block binds a function name to a cron
+# expression. Netlify also picks up `exports.config = { schedule }` inline
+# in the function file, but declaring it here is the canonical location
+# the build picks up first — keeps schedules visible in one place.
+[functions."agent-scanner"]
+  schedule = "*/30 * * * *"
+
+[functions."agent-odds-monitor"]
+  schedule = "*/10 * * * *"
+
+[functions."agent-results"]
+  schedule = "0 */2 * * *"
+
+[functions."agent-accuracy"]
+  schedule = "0 3 * * *"
+
+[functions."agent-alerts"]
+  schedule = "*/15 * * * *"
+
+[functions."agent-best-bet"]
+  schedule = "0 7 * * *"
+
 [build.environment]
   NODE_VERSION           = "20"
   SECRETS_SCAN_OMIT_KEYS = "NODE_ENV,FOOTBALL_DEFAULT_SEASON"
