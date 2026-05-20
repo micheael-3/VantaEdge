@@ -1,3 +1,5 @@
+// NOTE: localStorage key intentionally kept as 'vantaedge_' prefix for state
+// migration — renaming would drop existing referral cookies on the rebrand.
 const KEY = 'vantaedge_ref';
 const TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 

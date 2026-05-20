@@ -47,7 +47,7 @@ function buildSharpMoveHtml(alert, dashboardUrl) {
     <table role="presentation" width="600" style="max-width:600px;">
       <tr><td style="padding:0 0 18px;">
         <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:20px;">
-          Vanta<span style="color:#6ee7b7;">·</span>Edge
+          FastScore
         </div>
       </td></tr>
       <tr><td>

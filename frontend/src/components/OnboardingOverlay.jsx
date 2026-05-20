@@ -97,7 +97,7 @@ export default function OnboardingOverlay({ onComplete }) {
       className={`ob-overlay ${closing ? 'closing' : ''}`}
       role="dialog"
       aria-modal="true"
-      aria-label="Welcome to VantaEdge"
+      aria-label="Welcome to FastScore"
     >
       <div className="ob-top">
         <button
@@ -124,9 +124,9 @@ export default function OnboardingOverlay({ onComplete }) {
         {step === 1 && (
           <>
             <div className="ob-logo">
-              Vanta<span className="dot">·</span>Edge
+              FastScore
             </div>
-            <h2 className="ob-headline">Welcome to VantaEdge</h2>
+            <h2 className="ob-headline">Welcome to FastScore</h2>
             <p className="ob-sub">
               You now have access to the same statistical tools professional bettors use.
               Here's how to get the most out of them in 60 seconds.

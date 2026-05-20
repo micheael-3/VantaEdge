@@ -19,8 +19,8 @@ function Nav({ openAppHref }) {
     <>
       <nav className="lp-nav">
         <div className="lp-nav-inner">
-          <Link to="/" className="lp-brand" aria-label="VantaEdge home">
-            Vanta<span className="accent-dot">·</span>Edge
+          <Link to="/" className="lp-brand" aria-label="FastScore home">
+            FastScore
           </Link>
 
           <div className="lp-nav-links">
@@ -52,7 +52,7 @@ function Nav({ openAppHref }) {
         <div className="lp-menu" role="dialog" aria-modal="true">
           <div className="lp-menu-top">
             <Link to="/" className="lp-brand" onClick={() => setOpen(false)}>
-              Vanta<span className="accent-dot">·</span>Edge
+              FastScore
             </Link>
             <button
               type="button"
@@ -87,11 +87,11 @@ function Hero() {
   return (
     <section className="lp-hero lp-container" id="top">
       <h1>
-        Find Your <span className="accent">Edge</span> on Every Matchday
+        Score the <span className="accent">edge</span>. Faster.
       </h1>
       <p className="lede">
-        AI scores fixtures across MLS, Bundesliga, and Eredivisie — then helps you
-        spot bets where the bookmaker has it wrong.
+        AI-scored football predictions for MLS, Bundesliga and Eredivisie.
+        Real bookmaker odds, real EV — calculated live.
       </p>
       <div className="lp-hero-ctas">
         <Link to="/register" className="lp-btn lp-btn-primary lp-btn-block">Start Free</Link>
@@ -216,9 +216,9 @@ function Footer({ openAppHref }) {
         <div className="lp-footer-grid">
           <div className="lp-footer-brand">
             <Link to="/" className="lp-brand">
-              Vanta<span className="accent-dot">·</span>Edge
+              FastScore
             </Link>
-            <p className="tagline">Statistical edge. Every matchday.</p>
+            <p className="tagline">Score the edge. Faster.</p>
           </div>
           <div className="lp-footer-col">
             <h5>Product</h5>
@@ -238,7 +238,7 @@ function Footer({ openAppHref }) {
           <div className="disclaimer">
             Statistical analysis only. Not financial advice. 18+ Bet responsibly.
           </div>
-          <div>© 2026 VantaEdge</div>
+          <div>© FastScore 2025</div>
         </div>
       </div>
     </footer>

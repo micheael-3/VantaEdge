@@ -32,7 +32,7 @@ export default function Navbar() {
     <nav className="navbar">
       <div className="navbar-inner">
         <Link to="/" className="brand">
-          Vanta<span className="brand-mark">·</span>Edge
+          FastScore
         </Link>
         <div className="row" style={{ gap: 14 }}>
           {user ? (

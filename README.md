@@ -1,4 +1,4 @@
-# VantaEdge
+# FastScore
 
 AI-powered football goals prediction platform. Covers MLS, Bundesliga, Eredivisie, Championship, Ligue 1, Scottish Premiership, La Liga, and Premier League.
 
@@ -19,7 +19,7 @@ AI-powered football goals prediction platform. Covers MLS, Bundesliga, Eredivisi
 ## Repo layout
 
 ```
-VantaEdge/
+FastScore/
 ├── netlify.toml             # build config + /api/* → functions redirects
 ├── schema.sql               # one-time paste into Neon SQL editor
 ├── package.json             # function deps (pg / bcrypt / jwt / cookie / axios)

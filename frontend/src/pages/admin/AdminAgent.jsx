@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 
+// NOTE: localStorage key intentionally kept as 'vantaedge_' prefix for state
+// migration — renaming would log out existing admin sessions on the rebrand.
 const TOKEN_KEY = 'vantaedge_admin_token';
 
 function authHeaders() {

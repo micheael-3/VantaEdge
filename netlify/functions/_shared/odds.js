@@ -1,4 +1,4 @@
-// VantaEdge — The Odds API integration.
+// FastScore — The Odds API integration.
 //
 // Free tier = 500 requests/month. We cache aggressively (5 min in-memory)
 // and fetch per league (max 8 calls per refresh cycle), so 500 req/month

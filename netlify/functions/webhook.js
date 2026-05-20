@@ -3,6 +3,8 @@ const { sql } = require('./_shared/db');
 const { json, error, notFound, parseRaw, subPath } = require('./_shared/response');
 const { COMMISSION } = require('./_shared/affiliate');
 
+// NOTE: product identifiers intentionally kept as `vantaedge_*` because they
+// are external RevenueCat SKU keys — renaming would break active subscriptions.
 const PRODUCT_TO_TIER = {
   vantaedge_analyst_monthly: 'ANALYST',
   vantaedge_edge_monthly: 'EDGE',

@@ -53,7 +53,7 @@ export default function Affiliate() {
       <section className="hero container">
         <h1>Earn Up To 40% Recurring Commission</h1>
         <p>
-          Refer bettors to VantaEdge and earn every single month they stay subscribed. No cap.
+          Refer bettors to FastScore and earn every single month they stay subscribed. No cap.
           No expiry. Real recurring income.
         </p>
         <div className="hero-actions">
@@ -211,7 +211,7 @@ export default function Affiliate() {
       </section>
 
       <footer className="footer container">
-        <div>© VantaEdge 2025</div>
+        <div>© FastScore 2025</div>
         <div className="row" style={{ gap: 16 }}>
           <Link to="/affiliate">Affiliates</Link>
           <Link to="/login">Login</Link>

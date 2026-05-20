@@ -20,7 +20,7 @@ export default function AdminLayout() {
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <div className="brand" style={{ padding: '0 8px 16px' }}>
-          Vanta<span className="brand-mark">Edge</span>
+          FastScore
           <div className="muted small mono" style={{ marginTop: 4 }}>admin</div>
         </div>
         <nav className="admin-nav">

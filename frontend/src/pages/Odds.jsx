@@ -58,7 +58,7 @@ function exportCsv(rows) {
   const a = document.createElement('a');
   const date = new Date().toISOString().slice(0, 10);
   a.href = url;
-  a.download = `vantaedge-odds-${date}.csv`;
+  a.download = `fastscore-odds-${date}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -166,7 +166,7 @@ export default function Odds() {
       <Navbar />
       <div className="op-head">
         <h1>Odds & Value</h1>
-        <p>Every match VantaEdge has analysed today, sorted by EV edge. Best available bookmaker odds with the matching auto-EV.</p>
+        <p>Every match FastScore has analysed today, sorted by EV edge. Best available bookmaker odds with the matching auto-EV.</p>
       </div>
 
       <div className="op-filter-bar">

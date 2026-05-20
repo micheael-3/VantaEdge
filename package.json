@@ -1,8 +1,8 @@
 {
-  "name": "vantaedge",
+  "name": "fastscore",
   "version": "2.0.0",
   "private": true,
-  "description": "VantaEdge — Netlify monorepo (Vite frontend + Netlify Functions on Neon Postgres)",
+  "description": "FastScore — Netlify monorepo (Vite frontend + Netlify Functions on Neon Postgres)",
   "scripts": {
     "build": "npm install --prefix frontend && npm run build --prefix frontend",
     "postinstall": "echo Root deps installed for Netlify Functions"

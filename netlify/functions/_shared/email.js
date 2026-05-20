@@ -1,4 +1,4 @@
-// VantaEdge — email delivery via Resend (resend.com).
+// FastScore — email delivery via Resend (resend.com).
 //
 // Returns { skipped: true } cleanly when RESEND_API_KEY is missing so the
 // rest of the app keeps working. Uses the REST API directly (no extra dep).
@@ -6,7 +6,7 @@
 const axios = require('axios');
 
 const RESEND_URL = 'https://api.resend.com/emails';
-const FROM_DEFAULT = 'VantaEdge <onboarding@resend.dev>';
+const FROM_DEFAULT = 'FastScore <onboarding@resend.dev>';
 
 function isConfigured() {
   return !!process.env.RESEND_API_KEY;
@@ -145,7 +145,7 @@ function renderDigestHtml({ date, picks, unsubscribeUrl, dashboardUrl }) {
           <tr>
             <td style="padding: 0 0 24px;">
               <div style="font-family: 'Syne', system-ui, sans-serif; font-weight: 700; font-size: 22px; letter-spacing: -0.015em; color: ${COLORS.text};">
-                Vanta<span style="color: ${COLORS.mint};">&middot;</span>Edge
+                FastScore
               </div>
             </td>
           </tr>
@@ -158,7 +158,7 @@ function renderDigestHtml({ date, picks, unsubscribeUrl, dashboardUrl }) {
                 Your Daily Edge
               </h1>
               <p style="color: ${COLORS.dim}; font-size: 15px; line-height: 1.55; margin: 8px 0 24px;">
-                Today's top value bets identified by VantaEdge across your accessible leagues. Confidence-scored, sorted by EV edge.
+                Today's top value bets identified by FastScore across your accessible leagues. Confidence-scored, sorted by EV edge.
               </p>
             </td>
           </tr>
@@ -177,7 +177,7 @@ function renderDigestHtml({ date, picks, unsubscribeUrl, dashboardUrl }) {
           <tr>
             <td style="padding: 36px 0 0; border-top: 1px solid ${COLORS.border}; margin-top: 32px;">
               <p style="color: ${COLORS.faint}; font-size: 12px; line-height: 1.6; font-family: 'DM Mono', ui-monospace, monospace; padding-top: 24px; margin: 0;">
-                You're receiving this because you're a VantaEdge subscriber. Manage preferences in
+                You're receiving this because you're a FastScore subscriber. Manage preferences in
                 <a href="${esc(dashboardUrl)}/settings" style="color: ${COLORS.mint};">Settings</a>
                 or
                 <a href="${esc(unsubscribeUrl)}" style="color: ${COLORS.mint};">unsubscribe with one click</a>.

@@ -76,7 +76,7 @@ async function callOpenRouter(userMessage) {
   const headers = {
     Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
     'Content-Type': 'application/json',
-    'X-Title': 'VantaEdge',
+    'X-Title': 'FastScore',
   };
   if (process.env.URL) headers['HTTP-Referer'] = process.env.URL;
 

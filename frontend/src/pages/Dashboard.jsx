@@ -11,6 +11,8 @@ import './Dashboard.css';
 // Tools live at /tools/ev and /tools/kelly. The old ToolsModal is kept on
 // disk in case we want to revive the modal UX, but we no longer mount it.
 
+// NOTE: localStorage key intentionally kept as 'vantaedge_' prefix for state
+// migration — renaming would reset existing user dashboards on the rebrand.
 const FILTER_KEY = 'vantaedge_dash_filters_v1';
 const DEFAULT_FILTERS = {
   minConfidence: 60,
@@ -76,7 +78,7 @@ function Sidebar({ user, onLogout }) {
   return (
     <aside className="dp-sidebar">
       <Link to="/" className="dp-brand">
-        Vanta<span className="accent-dot">·</span>Edge
+        FastScore
       </Link>
 
       <div className="dp-side-section">
@@ -171,7 +173,7 @@ function MobileTop({ user, onLogout }) {
   return (
     <div className="dp-mobile-top">
       <Link to="/" className="dp-brand">
-        Vanta<span className="accent-dot">·</span>Edge
+        FastScore
       </Link>
       <nav className="dp-mobile-nav">
         <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'active' : '')} end>

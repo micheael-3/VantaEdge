@@ -708,7 +708,7 @@ async function handleAITest(_event) {
   const headers = {
     Authorization: `Bearer ${key}`,
     'Content-Type': 'application/json',
-    'X-Title': 'VantaEdge',
+    'X-Title': 'FastScore',
   };
   if (process.env.URL) headers['HTTP-Referer'] = process.env.URL;
 

@@ -40,7 +40,7 @@ function Nav({ user }) {
     <nav className="bp-nav">
       <div className="bp-nav-inner">
         <Link to="/" className="bp-brand">
-          Vanta<span className="accent-dot">·</span>Edge
+          FastScore
         </Link>
         <div className="bp-nav-links">
           <Link to="/blog" className="bp-btn">Blog</Link>
@@ -66,12 +66,12 @@ export default function Blog() {
   const [category, setCategory] = useState('All');
 
   useEffect(() => {
-    document.title = 'Football Betting Strategy & Analysis | VantaEdge';
+    document.title = 'Football Betting Strategy & Analysis | FastScore';
     setMeta(
       'description',
-      'Long-form guides on +EV betting, the Kelly criterion, expected goals, and the leagues where the value lives. Plain-English football data analysis from VantaEdge.',
+      'Long-form guides on +EV betting, the Kelly criterion, expected goals, and the leagues where the value lives. Plain-English football data analysis from FastScore.',
     );
-    setOg('og:title', 'VantaEdge Blog — Strategy, Data, Leagues');
+    setOg('og:title', 'FastScore Blog — Strategy, Data, Leagues');
     setOg('og:description', 'AI-driven football betting analysis and strategy guides.');
     setOg('og:type', 'website');
   }, []);
@@ -102,7 +102,7 @@ export default function Blog() {
       <Nav user={user} />
       <div className="bp-container">
         <header className="bp-hero">
-          <h1>The VantaEdge Blog</h1>
+          <h1>The FastScore Blog</h1>
           <p>
             Long-form guides on +EV betting, the Kelly criterion, expected goals, league-specific
             structural edges, and how bookmakers actually price odds. Read these, then come back to

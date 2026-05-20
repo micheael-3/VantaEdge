@@ -38,7 +38,7 @@ function Nav({ user }) {
     <nav className="bp-nav">
       <div className="bp-nav-inner">
         <Link to="/" className="bp-brand">
-          Vanta<span className="accent-dot">·</span>Edge
+          FastScore
         </Link>
         <div className="bp-nav-links">
           <Link to="/blog" className="bp-btn">All posts</Link>
@@ -71,7 +71,7 @@ export default function BlogPost() {
         if (cancelled) return;
         setData(res);
         if (res.post) {
-          document.title = `${res.post.title} | VantaEdge Blog`;
+          document.title = `${res.post.title} | FastScore Blog`;
           setMeta('description', res.post.excerpt);
           setOg('og:title', res.post.title);
           setOg('og:description', res.post.excerpt);
@@ -107,7 +107,7 @@ export default function BlogPost() {
   const handleTwitter = () => {
     if (!data || !data.post) return;
     const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`${data.post.title} via @vantaedge`);
+    const text = encodeURIComponent(`${data.post.title} via @fastscore`);
     window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank', 'noopener,noreferrer');
   };
 

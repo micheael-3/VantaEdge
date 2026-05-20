@@ -1,4 +1,4 @@
-# VantaEdge — Netlify Deployment
+# FastScore — Netlify Deployment
 
 Two providers, no CLI, no terminal beyond `npm install`:
 
@@ -13,7 +13,7 @@ Two providers, no CLI, no terminal beyond `npm install`:
 
 1. Go to <https://neon.tech> → **Sign up** (GitHub / Google login).
 2. After login you land on **Create Project**. Defaults are fine:
-   - **Project name**: `vantaedge`
+   - **Project name**: `fastscore`
    - **Region**: pick the one closest to you
    - **Postgres version**: latest
    - Click **Create Project**.
@@ -56,7 +56,7 @@ Run that command **twice** — save one value as `JWT_SECRET`, the other as `JWT
 
 1. Go to <https://app.netlify.com> → **Sign in with GitHub**.
 2. On the dashboard click **Add new site → Import an existing project**.
-3. Choose **GitHub**. Authorize Netlify for the `VantaEdge` repo if prompted.
+3. Choose **GitHub**. Authorize Netlify for the `VantaEdge` repo if prompted. (Repo URL is unchanged.)
 4. Pick the repo. Netlify auto-detects the build settings from `netlify.toml`:
    - **Base directory**: (empty / root)
    - **Build command**: `npm install && npm install --prefix frontend && npm run build --prefix frontend`
@@ -126,7 +126,7 @@ This is why cookies just work — frontend and functions share an origin, so the
 ## What lives where
 
 ```
-VantaEdge/
+FastScore/
 ├── netlify.toml             # build config + redirect rules
 ├── schema.sql               # paste into Neon SQL editor (one time)
 ├── package.json             # root — declares deps used by Netlify Functions

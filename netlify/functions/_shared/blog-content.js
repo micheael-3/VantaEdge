@@ -1,4 +1,4 @@
-// VantaEdge — canonical blog post content.
+// FastScore — canonical blog post content.
 // The blog function lazy-seeds these into Postgres the first time it runs
 // against an empty blog_posts table. Edit content here; trigger a redeploy
 // to make new posts available (existing slugs are skipped on re-seed).
@@ -33,7 +33,7 @@ When the bookmaker prices Over 2.5 goals at 1.85, they're effectively saying "we
 
 ## The worked example
 
-Here's the canonical VantaEdge case study. Brighton vs Aston Villa, Saturday 15:00 kick-off:
+Here's the canonical FastScore case study. Brighton vs Aston Villa, Saturday 15:00 kick-off:
 
 - **AI confidence**: 74% (Over 2.5 goals)
 - **Bookmaker odds**: 1.85
@@ -74,7 +74,7 @@ The math doesn't care about any of that. Bet -EV consistently and you'll lose. B
 
 To find +EV bets you need exactly two things:
 
-1. **A reliable estimate of the true probability**. This is what model-based tools like VantaEdge do — analyse form, expected goals, rest days, head-to-head data, weather, refereeing tendencies, and run the full picture through statistical reasoning to produce a confidence number.
+1. **A reliable estimate of the true probability**. This is what model-based tools like FastScore do — analyse form, expected goals, rest days, head-to-head data, weather, refereeing tendencies, and run the full picture through statistical reasoning to produce a confidence number.
 2. **The bookmaker's odds for the same market**. Pull the implied probability from those odds.
 
 Subtract one from the other. If your confidence beats the implied probability by a meaningful margin (we use 8%+ for the VALUE band, 15%+ for STRONG VALUE), you've got a bet worth placing.
@@ -101,7 +101,7 @@ If you're going to bet at all, bet +EV. Anything else is just paying the bookmak
 
 Both Teams To Score (BTTS) is one of the most popular goals markets in football betting, and for good reason: it's a single binary outcome that doesn't depend on who wins, just that the match isn't a clean sheet at either end. But BTTS hit rates vary massively between leagues. Pick the wrong league and you're betting against a structural disadvantage. Pick the right one and the math is quietly in your favour every single matchday.
 
-We've crunched the numbers across all eight leagues VantaEdge analyses. These are the four where BTTS bettors get the strongest baseline edge — and the reasons go beyond "they score lots of goals."
+We've crunched the numbers across all eight leagues FastScore analyses. These are the four where BTTS bettors get the strongest baseline edge — and the reasons go beyond "they score lots of goals."
 
 ## 1. Eredivisie (Netherlands) — the BTTS gold standard
 
@@ -161,7 +161,7 @@ The opposite is also useful — leagues like Ligue 1 outside PSG, or La Liga's m
 
 ## Using this in practice
 
-VantaEdge will surface BTTS predictions across all 8 leagues, but the baseline strength of the market is highest in these four. When the AI flags a STRONG VALUE BTTS pick in the Eredivisie or Bundesliga, the edge is structurally reinforced. When it flags one in Ligue 1, treat it with slightly more caution — you're fighting the league average.
+FastScore will surface BTTS predictions across all 8 leagues, but the baseline strength of the market is highest in these four. When the AI flags a STRONG VALUE BTTS pick in the Eredivisie or Bundesliga, the edge is structurally reinforced. When it flags one in Ligue 1, treat it with slightly more caution — you're fighting the league average.
 
 Combine the league context with the AI's match-specific confidence and you'll find the picks that compound your bankroll fastest.`,
   },
@@ -239,13 +239,13 @@ For our Brighton example at full Kelly 43.4%:
 - Quarter Kelly: stake **10.9%** of bankroll (£109)
 - Tenth Kelly: stake **4.3%** of bankroll (£43)
 
-Quarter Kelly is what we'd recommend as a starting point for most bettors using VantaEdge. It captures meaningful edge without exposing you to ruinous downswings.
+Quarter Kelly is what we'd recommend as a starting point for most bettors using FastScore. It captures meaningful edge without exposing you to ruinous downswings.
 
 ## When Kelly tells you to stake zero
 
 If your edge is zero or negative, the formula produces a number ≤ 0. Don't stake anything. Sounds obvious but the discipline is critical — you'll be tempted to "have something on" matches with no edge. Don't. Skip them. The next +EV bet will come around.
 
-We cap Kelly stakes at 10% of bankroll in VantaEdge regardless of what the formula spits out, because anything above that is a sign your probability estimate is too aggressive.
+We cap Kelly stakes at 10% of bankroll in FastScore regardless of what the formula spits out, because anything above that is a sign your probability estimate is too aggressive.
 
 ## A second example at smaller edge
 
@@ -268,7 +268,7 @@ Here's the awkward zone: confidence 55%, odds 1.85, implied 54.1%, edge just 0.9
 
 The deepest advantage of Kelly isn't the optimal growth rate — it's that it forces you to think in terms of edge per pound staked, not raw upside. A casual bettor sees odds of 5.00 and thinks "big payout." A Kelly bettor sees the same odds and asks "what's my edge here?" If the edge isn't there, the stake doesn't go in. That alone separates +EV bettors from everyone else.
 
-## In VantaEdge
+## In FastScore
 
 Every prediction with EV calculated includes a Kelly stake suggestion. We display it as a percentage of bankroll (capped at 10%). If you want to use fractional Kelly, just multiply that number by 0.25 or 0.5 in your head — or set it as a default in the Bankroll tracker when that's enabled.
 
@@ -338,7 +338,7 @@ Not every MLS pattern is profitable.
 
 MLS rewards bettors who treat it as its own ecosystem rather than a worse version of Europe. Altitude, travel, keeper pools, expansion — these structural factors create a high-goals, high-variance environment that bookmakers consistently under-model. The edge isn't always there, but it's there often enough that MLS deserves a permanent spot on your weekly card.
 
-VantaEdge analyses MLS every matchday. Filter your dashboard to MLS only on a weekend slate and you'll typically find one or two STRONG VALUE picks where the structural factors stack with the match-specific data. Those are the ones to act on.`,
+FastScore analyses MLS every matchday. Filter your dashboard to MLS only on a weekend slate and you'll typically find one or two STRONG VALUE picks where the structural factors stack with the match-specific data. Those are the ones to act on.`,
   },
 
   {
@@ -408,7 +408,7 @@ Bookmakers know the public over-bets on favourites, popular teams (Liverpool, PS
 
 ## Step 4: How an AI-data approach finds the gaps
 
-This is where tools like VantaEdge come in. The structural advantages aren't magic — they're systematic:
+This is where tools like FastScore come in. The structural advantages aren't magic — they're systematic:
 
 - **Consistency.** A model runs the same analysis on a Scottish Premiership Tuesday match as it does on a Saturday Premier League fixture. Bookmakers don't.
 - **Multi-factor weighting.** Form, expected goals, rest days, head-to-head, weather, referee tendencies, injuries — a model can weight all of these simultaneously and consistently. A trading desk under time pressure picks two or three.
@@ -437,7 +437,7 @@ A Premier League equivalent of the same match would probably be priced at 1.75 (
 3. **Look for value, not value-disguised-as-favourites.** Big-name favourite at 1.40 is probably fairly priced because the trading desk paid attention. The underdog draw at 6.50 on a low-profile fixture is where mispricing hides.
 4. **Trust the AI confidence when it diverges from the market.** If your model says 71% and the market says 47.6%, the gap is the edge — provided your model is reliable.
 
-VantaEdge is built around this exact insight: bookmakers can't price everything sharply, and the structural advantages of a consistent AI-driven approach show up most clearly in the places they're not looking. Filter for STRONG VALUE picks, focus on the leagues and markets we've highlighted, and bet the edge.`,
+FastScore is built around this exact insight: bookmakers can't price everything sharply, and the structural advantages of a consistent AI-driven approach show up most clearly in the places they're not looking. Filter for STRONG VALUE picks, focus on the leagues and markets we've highlighted, and bet the edge.`,
   },
 
   {
@@ -517,9 +517,9 @@ xG isn't perfect. Three caveats matter:
 
 The fix is to use xG as one input among several — alongside form, rest, head-to-head, weather, and tactical context — rather than treating it as the only number that matters.
 
-## How VantaEdge uses xG
+## How FastScore uses xG
 
-When xG data is available from API-Football, VantaEdge factors it into every prediction. The AI weights xG-implied team quality against actual results, identifies overperforming and underperforming sides, and adjusts confidence accordingly.
+When xG data is available from API-Football, FastScore factors it into every prediction. The AI weights xG-implied team quality against actual results, identifies overperforming and underperforming sides, and adjusts confidence accordingly.
 
 In practical terms, this means a team that's "winning ugly" — collecting points despite poor xG — will receive a more sceptical assessment than the league table suggests. Conversely, a side that's "playing well but losing" is more likely to be flagged as a value bet going forward.
 

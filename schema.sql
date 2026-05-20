@@ -1,4 +1,4 @@
--- VantaEdge — paste this entire file into the Neon SQL editor and click "Run".
+-- FastScore — paste this entire file into the Neon SQL editor and click "Run".
 -- Safe to re-run: every CREATE uses IF NOT EXISTS, every ALTER uses IF NOT EXISTS,
 -- every INSERT uses ON CONFLICT DO NOTHING.
 

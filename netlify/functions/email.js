@@ -165,7 +165,7 @@ async function handleUnsubscribe(event) {
     return {
       statusCode: 404,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      body: `<!doctype html><meta charset="utf-8"><title>VantaEdge — Unsubscribe</title>
+      body: `<!doctype html><meta charset="utf-8"><title>FastScore — Unsubscribe</title>
 <body style="background:#0a0a0f;color:#e8e8ec;font-family:system-ui,sans-serif;padding:60px 24px;text-align:center">
 <h1 style="font-weight:700">Link expired or invalid</h1>
 <p style="color:#9696a3">If you wanted to unsubscribe, sign in and toggle email notifications off in Settings.</p>
@@ -176,7 +176,7 @@ async function handleUnsubscribe(event) {
   return {
     statusCode: 200,
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    body: `<!doctype html><meta charset="utf-8"><title>VantaEdge — Unsubscribed</title>
+    body: `<!doctype html><meta charset="utf-8"><title>FastScore — Unsubscribed</title>
 <body style="background:#0a0a0f;color:#e8e8ec;font-family:system-ui,sans-serif;padding:60px 24px;text-align:center">
 <h1 style="font-weight:700;letter-spacing:-0.02em">You're unsubscribed</h1>
 <p style="color:#9696a3">No more daily digests for ${row.email}. Re-enable any time from Settings.</p>
