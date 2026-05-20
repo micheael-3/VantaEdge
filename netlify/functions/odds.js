@@ -80,6 +80,48 @@ async function quotaOnly(event) {
   return json(200, { oddsConfigured: isConfigured(), quota: getQuotaSnapshot() });
 }
 
+// GET /api/odds/movement/:fixtureId — odds snapshots for the Odds Movement
+// chart on the dashboard match card.
+async function movement(event, fixtureId) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+  const gate = requireTier(user, 'ANALYST');
+  if (gate) return gate;
+
+  const rows = await sql()`
+    SELECT bookmaker, market, line, odds, snapshot_at
+    FROM odds_snapshots
+    WHERE fixture_id = ${fixtureId}
+      AND snapshot_at >= NOW() - INTERVAL '36 hours'
+    ORDER BY snapshot_at ASC`;
+  const moves = await sql()`
+    SELECT market, line, opening_odds, current_odds, movement_pct, significance, is_sharp_move, detected_at
+    FROM odds_movements
+    WHERE fixture_id = ${fixtureId}
+      AND detected_at >= NOW() - INTERVAL '36 hours'
+    ORDER BY detected_at ASC`;
+  return json(200, {
+    fixtureId,
+    snapshots: rows.map((r) => ({
+      ts: r.snapshot_at,
+      bookmaker: r.bookmaker,
+      market: r.market,
+      line: r.line,
+      odds: Number(r.odds),
+    })),
+    movements: moves.map((m) => ({
+      ts: m.detected_at,
+      market: m.market,
+      line: m.line,
+      openingOdds: m.opening_odds,
+      currentOdds: m.current_odds,
+      movementPct: m.movement_pct,
+      significance: m.significance,
+      isSharpMove: m.is_sharp_move,
+    })),
+  });
+}
+
 exports.handler = async (event) => {
   try {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, body: '' };
@@ -87,6 +129,8 @@ exports.handler = async (event) => {
     const path = subPath(event, 'odds');
     if (path === '/' || path === '') return await listOdds(event);
     if (path === '/quota') return await quotaOnly(event);
+    const moveMatch = path.match(/^\/movement\/(\d+)\/?$/);
+    if (moveMatch) return await movement(event, parseInt(moveMatch[1], 10));
     return notFound();
   } catch (err) {
     console.error('odds handler error:', err);

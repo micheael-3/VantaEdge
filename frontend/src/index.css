@@ -829,3 +829,164 @@ button {
 @media (min-width: 769px) {
   .dp-refresh-fab { display: none !important; }
 }
+
+/* ============================================================
+   Agent system — status dot, sharp-move badge, live activity
+   ============================================================ */
+.agent-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text2);
+  letter-spacing: 0.04em;
+}
+.agent-dot .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text2);
+  box-shadow: 0 0 0 0 rgba(0,0,0,0);
+}
+.agent-dot.active .dot {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: agent-pulse 2s ease-in-out infinite;
+}
+.agent-dot.active { color: var(--accent); }
+.agent-dot.late .dot { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+.agent-dot.late { color: var(--yellow); }
+@keyframes agent-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.85); }
+}
+
+.sharp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  color: var(--yellow);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Live activity feed */
+.live-activity {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.live-activity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.live-activity-head h3 {
+  font-family: 'Syne', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.005em;
+  margin: 0;
+}
+.live-activity-empty {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text2);
+  padding: 12px 0;
+  text-align: center;
+}
+.live-activity-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.live-activity-item:first-of-type { border-top: none; padding-top: 0; }
+.live-activity-icon {
+  width: 24px;
+  text-align: center;
+  font-size: 14px;
+  margin-top: 1px;
+}
+.live-activity-body { flex: 1; min-width: 0; }
+.live-activity-msg { color: var(--text); }
+.live-activity-meta {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text2);
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+/* Mobile bottom sheet for Live Activity */
+@media (max-width: 768px) {
+  .live-activity-toggle {
+    position: fixed;
+    right: 16px;
+    bottom: calc(140px + env(safe-area-inset-bottom));
+    width: 52px;
+    height: 52px;
+    border-radius: 999px;
+    background: var(--bg2);
+    color: var(--accent);
+    border: 1px solid rgba(110, 231, 183, 0.4);
+    z-index: 80;
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .live-activity-toggle .live-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    background: var(--red);
+    color: white;
+    border-radius: 999px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .live-activity-sheet {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    max-height: 70vh;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    padding: 16px 16px calc(80px + env(safe-area-inset-bottom));
+    z-index: 95;
+    overflow-y: auto;
+  }
+  .live-activity-sheet-close {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    width: 44px;
+    height: 36px;
+    cursor: pointer;
+  }
+}
+@media (min-width: 769px) {
+  .live-activity-toggle { display: none; }
+}

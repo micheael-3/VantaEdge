@@ -170,6 +170,24 @@ async function handleLeague(event, leagueId) {
     console.error('odds fetch failed:', err.message);
   }
 
+  // One batched lookup for sharp-move flags so the cards render with the
+  // agent's latest verdict — newly inserted rows won't have is_sharp_move
+  // set yet, but the canonical odds_movements table does.
+  const fixtureIds = fixtures.map((f) => f.fixture && f.fixture.id).filter(Boolean);
+  let sharpFixtureSet = new Set();
+  if (fixtureIds.length) {
+    try {
+      const sharpRows = await sql()`
+        SELECT DISTINCT fixture_id FROM odds_movements
+        WHERE fixture_id = ANY(${fixtureIds})
+          AND is_sharp_move = TRUE
+          AND detected_at > NOW() - INTERVAL '12 hours'`;
+      sharpFixtureSet = new Set(sharpRows.map((r) => Number(r.fixture_id)));
+    } catch (e) {
+      // odds_movements may not exist yet — non-fatal.
+    }
+  }
+
   const results = await Promise.all(
     fixtures.map(async (fx) => {
       const homeId = fx.teams.home.id;
@@ -373,6 +391,7 @@ async function handleLeague(event, leagueId) {
           referee: refereeStats,
           weather: weather,
           actualResult,
+          isSharpMove: sharpFixtureSet.has(Number(fx.fixture.id)),
           predictions: {
             over: analysis.over,
             btts: analysis.btts,

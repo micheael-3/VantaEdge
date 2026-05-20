@@ -47,6 +47,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by         TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notifications BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_time   TEXT    NOT NULL DEFAULT '08:00';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS unsubscribe_token   TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sharp_move_alerts   BOOLEAN NOT NULL DEFAULT TRUE;
 CREATE INDEX IF NOT EXISTS users_referred_by_idx ON users(referred_by);
 CREATE INDEX IF NOT EXISTS users_unsubscribe_token_idx ON users(unsubscribe_token);
 
@@ -81,6 +82,12 @@ ALTER TABLE predictions ADD COLUMN IF NOT EXISTS best_btts_odds        REAL;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS best_btts_bookmaker   TEXT;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS auto_ev_over          REAL;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS auto_ev_btts          REAL;
+
+-- Agent-system columns
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS is_sharp_move                BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS sharp_move_data              JSONB;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS accuracy_adjusted_confidence REAL;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS agent_score                  REAL;
 
 CREATE INDEX IF NOT EXISTS predictions_user_kickoff_idx ON predictions(user_id, kickoff DESC);
 CREATE INDEX IF NOT EXISTS predictions_user_created_idx ON predictions(user_id, created_at DESC);
@@ -240,3 +247,99 @@ CREATE TABLE IF NOT EXISTS odds_config (
 -- sees an empty blog_posts table. Canonical content lives in
 -- netlify/functions/_shared/blog-content.js — edit there, restart, the
 -- next request fills any new posts.
+
+-- =====================================================================
+-- AUTONOMOUS AGENT SYSTEM
+-- =====================================================================
+
+-- Single-row key/value state — round-robin offsets, last-run timestamps, etc.
+CREATE TABLE IF NOT EXISTS agent_state (
+  key        TEXT         PRIMARY KEY,
+  value      JSONB        NOT NULL,
+  updated_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- Every odds reading we take. ~2 per fixture per cycle, growing fast.
+CREATE TABLE IF NOT EXISTS odds_snapshots (
+  id          BIGSERIAL    PRIMARY KEY,
+  fixture_id  INTEGER      NOT NULL,
+  league      TEXT         NOT NULL,
+  bookmaker   TEXT,
+  market      TEXT         NOT NULL,           -- 'OVER' / 'BTTS'
+  line        REAL,
+  odds        REAL         NOT NULL,
+  snapshot_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS odds_snapshots_fixture_idx
+  ON odds_snapshots(fixture_id, market, snapshot_at DESC);
+
+-- Derived row when a meaningful movement is detected.
+CREATE TABLE IF NOT EXISTS odds_movements (
+  id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  fixture_id      INTEGER      NOT NULL,
+  league          TEXT         NOT NULL,
+  home_team       TEXT         NOT NULL,
+  away_team       TEXT         NOT NULL,
+  market          TEXT         NOT NULL,       -- 'OVER' / 'BTTS'
+  line            REAL,
+  opening_odds    REAL,
+  current_odds    REAL,
+  movement_pct    REAL         NOT NULL,
+  bookmaker       TEXT,
+  significance    TEXT         NOT NULL,       -- 'LOW' / 'MEDIUM' / 'HIGH' / 'SHARP'
+  is_sharp_move   BOOLEAN      NOT NULL DEFAULT FALSE,
+  detected_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS odds_movements_fixture_idx
+  ON odds_movements(fixture_id, detected_at DESC);
+CREATE INDEX IF NOT EXISTS odds_movements_sharp_idx
+  ON odds_movements(is_sharp_move, detected_at DESC) WHERE is_sharp_move = TRUE;
+
+-- Agent-generated events. Fanout to users happens in agent-alerts.
+CREATE TABLE IF NOT EXISTS agent_alerts (
+  id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  type         TEXT         NOT NULL,         -- SHARP_MOVE / VALUE_APPEARED / VALUE_DISAPPEARED /
+                                              -- LINE_CHANGE / RESULT_SETTLED / ACCURACY_UPDATE /
+                                              -- BEST_BET_SELECTED
+  fixture_id   INTEGER,
+  league       TEXT,
+  message      TEXT         NOT NULL,
+  data         JSONB,
+  severity     TEXT         NOT NULL DEFAULT 'INFO',  -- INFO / MEDIUM / HIGH
+  processed    BOOLEAN      NOT NULL DEFAULT FALSE,
+  created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS agent_alerts_unprocessed_idx
+  ON agent_alerts(processed, created_at) WHERE processed = FALSE;
+CREATE INDEX IF NOT EXISTS agent_alerts_recent_idx
+  ON agent_alerts(created_at DESC);
+
+-- Per-user delivery records (read state, in-app feed).
+CREATE TABLE IF NOT EXISTS user_alerts (
+  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  alert_id    UUID         NOT NULL REFERENCES agent_alerts(id) ON DELETE CASCADE,
+  read        BOOLEAN      NOT NULL DEFAULT FALSE,
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, alert_id)
+);
+CREATE INDEX IF NOT EXISTS user_alerts_user_idx
+  ON user_alerts(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS user_alerts_unread_idx
+  ON user_alerts(user_id) WHERE read = FALSE;
+
+-- Self-learning accuracy buckets. Rebuilt nightly by agent-accuracy.
+CREATE TABLE IF NOT EXISTS accuracy_model (
+  id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  dimension           TEXT         NOT NULL,  -- LEAGUE / REFEREE / WEATHER / MARKET /
+                                              -- CONFIDENCE_BUCKET / SHARP_MOVE
+  dimension_value     TEXT         NOT NULL,
+  total_predictions   INTEGER      NOT NULL,
+  hits                INTEGER      NOT NULL,
+  accuracy            REAL         NOT NULL,
+  weight_adjustment   REAL         NOT NULL DEFAULT 0,
+  last_updated        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  UNIQUE (dimension, dimension_value)
+);
+CREATE INDEX IF NOT EXISTS accuracy_model_dim_idx
+  ON accuracy_model(dimension);

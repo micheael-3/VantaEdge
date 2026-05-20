@@ -6,6 +6,7 @@ import { bestBet as bestBetApi } from '../api/blog';
 import { bankroll as bankrollApi } from '../api/bankroll';
 import { LEAGUES } from '../config/leagues';
 import { calculateEV, calculateKelly } from '../lib/ev';
+import LiveActivity from '../components/LiveActivity';
 import './Dashboard.css';
 
 const FILTER_KEY = 'vantaedge_dash_filters_v1';
@@ -522,8 +523,10 @@ function MatchCard({ m, userTier, onLogBet }) {
     return null;
   })();
 
+  const sharpMove = !!m.isSharpMove;
+
   return (
-    <div className={`dp-match ${isStrong ? 'glow' : ''} ${pastBorderClass}`}>
+    <div className={`dp-match ${isStrong ? 'glow' : ''} ${pastBorderClass} ${sharpMove ? 'sharp-move' : ''}`}>
       <div className="dp-match-main">
         {isPastCard && <div className="dp-past-label">Final Result</div>}
         <div className="dp-match-league">
@@ -531,6 +534,11 @@ function MatchCard({ m, userTier, onLogBet }) {
           <span className="sep">·</span>
           <span>{kickoffStr(m.kickoff)}</span>
           {whenPill && <span className="dp-when-pill">{whenPill}</span>}
+          {sharpMove && (
+            <span className="dp-sharp-badge" title="Professional money has moved this line significantly.">
+              ⚡ Sharp money
+            </span>
+          )}
         </div>
         <div className="dp-match-teams">
           <span className="dp-team">
@@ -1105,6 +1113,12 @@ export default function Dashboard() {
           </header>
 
           <BestBetCard user={user} />
+
+          {/* Agent live activity — inline panel on desktop (hidden on mobile),
+              plus a floating button + bottom sheet on mobile. Single render. */}
+          <div style={{ padding: '14px 36px 0' }}>
+            <LiveActivity />
+          </div>
 
           <div className="dp-league-tabs-wrap" style={{ marginTop: 24 }}>
             <div className="dp-league-tabs">

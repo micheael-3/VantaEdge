@@ -23,6 +23,9 @@ import BlogPost from './pages/BlogPost';
 import Odds from './pages/Odds';
 import AdminOdds from './pages/admin/AdminOdds';
 import Bankroll from './pages/Bankroll';
+import Alerts from './pages/Alerts';
+import Accuracy from './pages/Accuracy';
+import AdminAgent from './pages/admin/AdminAgent';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -174,6 +177,22 @@ export default function App() {
           }
         />
         <Route
+          path="/alerts"
+          element={
+            <Protected>
+              <Alerts />
+            </Protected>
+          }
+        />
+        <Route
+          path="/accuracy"
+          element={
+            <Protected>
+              <Accuracy />
+            </Protected>
+          }
+        />
+        <Route
           path="/settings"
           element={
             <Protected>
@@ -207,6 +226,7 @@ export default function App() {
           <Route path="predictions" element={<AdminPredictions />} />
           <Route path="stats" element={<AdminStats />} />
           <Route path="odds" element={<AdminOdds />} />
+          <Route path="agent" element={<AdminAgent />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

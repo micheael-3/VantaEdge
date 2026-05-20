@@ -3,6 +3,7 @@ const { json, error, notFound, subPath, parseBody } = require('./_shared/respons
 const { requireAdmin } = require('./_shared/admin-mw');
 const { getQuotaSnapshot, isConfigured, listLeagueConfig, setLeagueEnabled } = require('./_shared/odds');
 const { LEAGUES } = require('./_shared/tier');
+const { getState, buildAgentStatus } = require('./_shared/agent');
 
 function startOfTodayUtc() {
   const d = new Date();
@@ -109,6 +110,47 @@ exports.handler = async (event) => {
       const enabled = !!body.enabled;
       await setLeagueEnabled(leagueId, enabled);
       return json(200, { leagueId, enabled });
+    }
+    if (method === 'GET' && path === '/agent') {
+      const status = await buildAgentStatus();
+      const reportKeys = [
+        'scanner_last_report',
+        'odds_monitor_last_report',
+        'results_last_report',
+        'accuracy_last_report',
+        'alerts_last_report',
+        'best_bet_last_report',
+      ];
+      const reports = {};
+      for (const k of reportKeys) reports[k] = await getState(k);
+
+      const sharp = await sql()`
+        SELECT fixture_id, league, home_team, away_team, market, line, opening_odds, current_odds,
+               movement_pct, bookmaker, significance, detected_at
+        FROM odds_movements
+        WHERE is_sharp_move = TRUE AND detected_at >= NOW() - INTERVAL '24 hours'
+        ORDER BY detected_at DESC
+        LIMIT 50`;
+      const recentAlerts = await sql()`
+        SELECT id, type, severity, message, processed, created_at
+        FROM agent_alerts
+        ORDER BY created_at DESC
+        LIMIT 50`;
+      return json(200, { status, reports, sharp, recentAlerts });
+    }
+    if (method === 'POST' && path === '/agent/trigger') {
+      const body = parseBody(event);
+      const name = String(body.name || '');
+      const validNames = new Set(['agent-scanner', 'agent-odds-monitor', 'agent-results', 'agent-accuracy', 'agent-alerts', 'agent-best-bet']);
+      if (!validNames.has(name)) return error(400, 'Unknown agent name');
+      // Manual triggers re-use the admin password for upstream auth.
+      const fn = require(`./${name}`);
+      const inv = await fn.handler({
+        httpMethod: 'POST',
+        headers: { authorization: `Bearer ${process.env.ADMIN_PASSWORD || ''}` },
+        queryStringParameters: {},
+      });
+      return json(200, { triggered: name, response: inv && JSON.parse(inv.body || '{}') });
     }
     if (method === 'POST' && path === '/login') return await loginPing(event);
 

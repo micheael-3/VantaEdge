@@ -109,6 +109,57 @@
   to     = "/.netlify/functions/bankroll/:splat"
   status = 200
 
+[[redirects]]
+  from   = "/api/alerts"
+  to     = "/.netlify/functions/alerts"
+  status = 200
+
+[[redirects]]
+  from   = "/api/alerts/*"
+  to     = "/.netlify/functions/alerts/:splat"
+  status = 200
+
+[[redirects]]
+  from   = "/api/agent/status"
+  to     = "/.netlify/functions/agent-status"
+  status = 200
+
+[[redirects]]
+  from   = "/api/accuracy"
+  to     = "/.netlify/functions/accuracy"
+  status = 200
+
+# Agent admin trigger paths (used by the Admin → Agent tab).
+[[redirects]]
+  from   = "/api/agent/scanner"
+  to     = "/.netlify/functions/agent-scanner"
+  status = 200
+
+[[redirects]]
+  from   = "/api/agent/odds-monitor"
+  to     = "/.netlify/functions/agent-odds-monitor"
+  status = 200
+
+[[redirects]]
+  from   = "/api/agent/results"
+  to     = "/.netlify/functions/agent-results"
+  status = 200
+
+[[redirects]]
+  from   = "/api/agent/accuracy"
+  to     = "/.netlify/functions/agent-accuracy"
+  status = 200
+
+[[redirects]]
+  from   = "/api/agent/alerts"
+  to     = "/.netlify/functions/agent-alerts"
+  status = 200
+
+[[redirects]]
+  from   = "/api/agent/best-bet"
+  to     = "/.netlify/functions/agent-best-bet"
+  status = 200
+
 # SPA fallback — every non-API, non-asset path serves index.html.
 [[redirects]]
   from   = "/*"

@@ -932,6 +932,27 @@
 .dashboard-page .dp-hit-icon.miss { color: var(--dp-red); }
 
 /* "in 2 days" pill on upcoming non-today cards */
+/* Sharp move highlight on cards */
+.dashboard-page .dp-match.sharp-move {
+  border-left: 3px solid #fbbf24;
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.2), 0 0 28px -10px rgba(251, 191, 36, 0.35);
+}
+.dashboard-page .dp-sharp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  color: #fbbf24;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-left: 8px;
+}
+
 .dashboard-page .dp-when-pill {
   display: inline-flex;
   align-items: center;
