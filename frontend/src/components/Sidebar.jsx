@@ -14,6 +14,7 @@ const ITEMS = [
   { to: '/tools/ev', label: 'EV Calculator', icon: 'calc', requiresSharp: true },
   { to: '/tools/kelly', label: 'Kelly Sizer', icon: 'kelly', requiresSharp: true },
   { to: '/bankroll', label: 'Bet Tracker', icon: 'tracker', requiresSharp: true },
+  { to: '/guide', label: 'How It Works', icon: 'brain', requiresSharp: false },
   { to: '/affiliate', label: 'Affiliates', icon: 'affiliate', requiresSharp: false },
   { to: '/settings', label: 'Settings', icon: 'settings', requiresSharp: false },
 ];

@@ -340,6 +340,7 @@ function shapeForFrontend(row) {
       firstHalf: null,
       asianHandicap: null,
     },
+    h2h: (md && md.h2h) || null,
     actualResult: row.over_hit != null || row.btts_hit != null ? {
       status: 'FT',
       overHit: row.over_hit,

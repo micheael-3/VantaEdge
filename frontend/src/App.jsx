@@ -11,6 +11,7 @@ import Affiliate from './pages/Affiliate.jsx';
 import EVCalculator from './pages/EVCalculator.jsx';
 import KellySizer from './pages/KellySizer.jsx';
 import Bankroll from './pages/Bankroll.jsx';
+import Guide from './pages/Guide.jsx';
 import AdminPanel from './pages/AdminPanel.jsx';
 
 export default function App() {
@@ -70,6 +71,14 @@ export default function App() {
         element={
           <Protected>
             <Bankroll />
+          </Protected>
+        }
+      />
+      <Route
+        path="/guide"
+        element={
+          <Protected>
+            <Guide />
           </Protected>
         }
       />

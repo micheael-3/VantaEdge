@@ -316,7 +316,7 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
                     letterSpacing: '0.08em',
                   }}
                 >
-                  CLAUDE ANALYSIS
+                  AI ANALYSIS
                 </span>
               </div>
               <p

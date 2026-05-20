@@ -88,8 +88,12 @@ export function restDaysDisplay(fixture) {
   return Number.isFinite(v) ? `${v}d` : '—';
 }
 
-// h2h goals/match — we don't currently surface this in the backend payload.
+// h2h goals/match. Backend stores a pre-formatted display string in
+// fixture.h2h ("3.2 G/M") populated by the weekly scan from the last-5
+// H2H meetings. Legacy shapes used fixture.h2h.goalsPerMatch — keep
+// that branch for back-compat.
 export function h2hDisplay(fixture) {
+  if (typeof fixture?.h2h === 'string' && fixture.h2h.trim()) return fixture.h2h;
   const v = fixture?.h2h?.goalsPerMatch;
   return typeof v === 'number' ? `${v.toFixed(1)} G/M` : '—';
 }

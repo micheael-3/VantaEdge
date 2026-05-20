@@ -112,14 +112,36 @@ async function setFinalStatus(id, status, errorMsg) {
 }
 
 // Fetch the 4 per-fixture detail calls in parallel.
+// Compute average goals per match across the last-5 H2H meetings.
+// Returns a display string like "3.2 G/M" or null if no data.
+function h2hAverageString(h2hList) {
+  if (!Array.isArray(h2hList) || h2hList.length === 0) return null;
+  let totalGoals = 0;
+  let counted = 0;
+  for (const g of h2hList) {
+    const home = g && g.goals && g.goals.home;
+    const away = g && g.goals && g.goals.away;
+    if (home == null || away == null) continue;
+    totalGoals += Number(home) + Number(away);
+    counted += 1;
+  }
+  if (counted === 0) return null;
+  const avg = totalGoals / counted;
+  return `${avg.toFixed(1)} G/M`;
+}
+
 async function fetchFixtureDetail(fx, leagueId) {
   const homeId = fx.teams.home.id;
   const awayId = fx.teams.away.id;
-  const [homeLast, awayLast, homeStats, awayStats] = await Promise.all([
+  // 5 parallel calls per fixture: last home, last away, both team stats,
+  // plus H2H. The H2H call lets the dashboard render a real "H2H 3.2 G/M"
+  // figure instead of an em-dash.
+  const [homeLast, awayLast, homeStats, awayStats, h2hList] = await Promise.all([
     football.getTeamLastHomeGames(homeId, leagueId),
     football.getTeamLastAwayGames(awayId, leagueId),
     football.getTeamStats(homeId, leagueId),
     football.getTeamStats(awayId, leagueId),
+    football.getH2H(homeId, awayId),
   ]);
   return {
     homeId, awayId,
@@ -130,6 +152,7 @@ async function fetchFixtureDetail(fx, leagueId) {
     homeStats, awayStats,
     homeGpg: gpgFromStats(homeStats),
     awayGpg: gpgFromStats(awayStats),
+    h2h: h2hAverageString(h2hList),
   };
 }
 
@@ -179,6 +202,7 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
         home: matchData.home || null,
         away: matchData.away || null,
         venue: matchData.venue || null,
+        h2h: matchData.h2h || null,
         reasoning: {
           over: (analysis.over && analysis.over.reasoning) || null,
           btts: (analysis.btts && analysis.btts.reasoning) || null,
@@ -308,6 +332,7 @@ async function runScan(leagueId, weekStart) {
           stats: detail.awayStats,
           goalsPerGame: detail.awayGpg,
         },
+        h2h: detail.h2h, // average goals-per-match string, e.g. "3.2 G/M"
       };
       const analysis = await analyseMatch(matchData, false, false);
 
