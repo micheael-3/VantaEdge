@@ -461,20 +461,37 @@ function CompareOdds({ oddsData, overLineFromAi }) {
 
 // ============ Match card ============
 function MatchCard({ m, userTier, onLogBet }) {
-  const [overOdds, setOverOdds] = useState('');
-  const [bttsOdds, setBttsOdds] = useState('');
+  const [odds, setOdds] = useState('');
   const [showAnalysis, setShowAnalysis] = useState(false);
 
   const over = m.predictions && m.predictions.over;
   const btts = m.predictions && m.predictions.btts;
   const isStrong = isStrongValue(m);
 
-  // EV/Kelly are gated on user-entered odds. We only show the badges once
-  // an odds value is present — no placeholder "enter odds" UI.
-  const overEV = useMemo(() => (overOdds && over ? calculateEV(over.confidence, overOdds) : null), [overOdds, over]);
-  const bttsEV = useMemo(() => (bttsOdds && btts ? calculateEV(btts.confidence, bttsOdds) : null), [bttsOdds, btts]);
-  const overKelly = useMemo(() => (overOdds && over ? calculateKelly(over.confidence, overOdds) : 0), [overOdds, over]);
-  const bttsKelly = useMemo(() => (bttsOdds && btts ? calculateKelly(btts.confidence, bttsOdds) : 0), [bttsOdds, btts]);
+  // Single odds input. EV/Kelly are computed against the higher-confidence
+  // market (Over vs BTTS) — that's the bet the user is most likely typing
+  // odds for. The market they're targeting shows in the badge label.
+  const primaryMarket = (() => {
+    const oc = over ? over.confidence : 0;
+    const bc = btts ? btts.confidence : 0;
+    if (!over && !btts) return null;
+    if (!over) return 'btts';
+    if (!btts) return 'over';
+    return oc >= bc ? 'over' : 'btts';
+  })();
+  const primaryPrediction = primaryMarket === 'over' ? over : btts;
+  const primaryLabel = primaryMarket === 'over'
+    ? (over ? `OVER ${over.line}` : '')
+    : (btts ? `BTTS ${btts.prediction}` : '');
+
+  const ev = useMemo(
+    () => (odds && primaryPrediction ? calculateEV(primaryPrediction.confidence, odds) : null),
+    [odds, primaryPrediction],
+  );
+  const kelly = useMemo(
+    () => (odds && primaryPrediction ? calculateKelly(primaryPrediction.confidence, odds) : 0),
+    [odds, primaryPrediction],
+  );
 
   const canSeeEV = userTier === 'ANALYST' || userTier === 'EDGE';
   const canLogBet = canSeeEV;
@@ -530,24 +547,6 @@ function MatchCard({ m, userTier, onLogBet }) {
 
   const sharpMove = !!m.isSharpMove;
 
-  // Goals-per-game line (cheap, still useful). Shown inline below the form row.
-  const gpgLine = (() => {
-    const h = m.home && m.home.goalsPerGame;
-    const a = m.away && m.away.goalsPerGame;
-    if (!h && !a) return null;
-    return (
-      <div className="dp-metric" style={{ flex: '1 1 100%' }}>
-        <span className="lbl">Goals/game (for/against)</span>
-        <span className="val">{fmtGpg(h)} · {fmtGpg(a)}</span>
-      </div>
-    );
-  })();
-
-  // Decide which market the user is most likely interested in logging.
-  const overEdgeNum = overEV ? overEV.edge : null;
-  const bttsEdgeNum = bttsEV ? bttsEV.edge : null;
-  const useOverForLog = (overEdgeNum != null && (bttsEdgeNum == null || overEdgeNum >= bttsEdgeNum));
-
   return (
     <div className={`dp-match ${isStrong ? 'glow' : ''} ${pastBorderClass} ${sharpMove ? 'sharp-move' : ''}`}>
       <div className="dp-match-main">
@@ -591,14 +590,6 @@ function MatchCard({ m, userTier, onLogBet }) {
             <span className="lbl">Away form</span>
             <FormDots form={m.away && m.away.form} />
           </div>
-          <div className="dp-metric">
-            <span className="lbl">Rest days</span>
-            <span className="val">
-              {m.home && m.home.restDays != null ? `${m.home.restDays}d` : '—'} /{' '}
-              {m.away && m.away.restDays != null ? `${m.away.restDays}d` : '—'}
-            </span>
-          </div>
-          {gpgLine}
         </div>
       </div>
 
@@ -658,7 +649,7 @@ function MatchCard({ m, userTier, onLogBet }) {
       <div className="dp-right">
         <div>
           <label className="dp-odds-row" style={{ marginBottom: 4 }}>
-            <span className="l">Over odds</span>
+            <span className="l">Enter odds for EV</span>
             <span />
           </label>
           <input
@@ -666,69 +657,43 @@ function MatchCard({ m, userTier, onLogBet }) {
             type="number"
             step="0.01"
             min="1"
-            placeholder="1.85"
-            value={overOdds}
-            onChange={(e) => setOverOdds(e.target.value)}
+            placeholder={primaryMarket === 'over' ? '1.85' : '1.90'}
+            value={odds}
+            onChange={(e) => setOdds(e.target.value)}
             inputMode="decimal"
           />
-        </div>
-        <div>
-          <label className="dp-odds-row" style={{ marginBottom: 4 }}>
-            <span className="l">BTTS odds</span>
-            <span />
-          </label>
-          <input
-            className="dp-odds-input"
-            type="number"
-            step="0.01"
-            min="1"
-            placeholder="1.90"
-            value={bttsOdds}
-            onChange={(e) => setBttsOdds(e.target.value)}
-            inputMode="decimal"
-          />
+          {primaryLabel && (
+            <div className="dp-mono" style={{ fontSize: 10, color: 'var(--dp-text-faint)', marginTop: 4 }}>
+              vs {primaryLabel}
+            </div>
+          )}
         </div>
 
-        {/* EV + Kelly only render once odds are typed, and only for paying tiers. */}
-        {canSeeEV && overEV && (
-          <div className={`dp-ev-pill ${overEV.edge >= 1 ? 'positive' : ''}`}>
-            <span className="l">Over edge</span>
-            <span className="v">{overEV.edge >= 0 ? '+' : ''}{overEV.edge.toFixed(1)}%</span>
+        {/* Single EV + Kelly display, gated on (a) odds typed and (b) paid tier. */}
+        {canSeeEV && ev && (
+          <div className={`dp-ev-pill ${ev.edge >= 1 ? 'positive' : ''}`}>
+            <span className="l">Edge</span>
+            <span className="v">{ev.edge >= 0 ? '+' : ''}{ev.edge.toFixed(1)}%</span>
           </div>
         )}
-        {canSeeEV && bttsEV && (
-          <div className={`dp-ev-pill ${bttsEV.edge >= 1 ? 'positive' : ''}`}>
-            <span className="l">BTTS edge</span>
-            <span className="v">{bttsEV.edge >= 0 ? '+' : ''}{bttsEV.edge.toFixed(1)}%</span>
-          </div>
-        )}
-        {canSeeEV && (overKelly > 0 || bttsKelly > 0) && (
+        {canSeeEV && kelly > 0 && (
           <div className="dp-odds-row">
-            <span className="l">Kelly stake</span>
-            <span className="v">
-              {Math.max(overKelly, bttsKelly) > 0
-                ? `${(Math.max(overKelly, bttsKelly) * 100).toFixed(1)}% bankroll`
-                : '—'}
-            </span>
+            <span className="l">Kelly</span>
+            <span className="v">{(kelly * 100).toFixed(1)}% bankroll</span>
           </div>
         )}
 
-        {canLogBet && onLogBet && (overEV || bttsEV) && (
+        {canLogBet && onLogBet && ev && (
           <button
             className="dp-compare-toggle"
             style={{ marginTop: 6 }}
             onClick={() => {
-              const useOver = useOverForLog;
-              const odds = useOver ? parseFloat(overOdds) : parseFloat(bttsOdds);
-              const market = useOver ? 'OVER' : 'BTTS';
-              const kelly = useOver ? overKelly : bttsKelly;
-              const bet = useOver ? `OVER ${over && over.line}` : `BTTS ${btts && btts.prediction}`;
               onLogBet({
                 predictionId: m.id,
-                odds,
-                market,
+                odds: parseFloat(odds),
+                market: primaryMarket === 'over' ? 'OVER' : 'BTTS',
                 kelly,
-                bet,
+                bet: primaryLabel,
                 match: `${m.home && m.home.name} vs ${m.away && m.away.name}`,
               });
             }}
@@ -946,7 +911,7 @@ export default function Dashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const data = await predictionsApi.getUpcoming(activeLeague, { past: 7, future: 7 });
+        const data = await predictionsApi.getUpcoming(activeLeague, { past: 1, future: 6 });
         if (!cancelled) setUpcomingDays(Array.isArray(data.days) ? data.days : []);
       } catch {
         if (!cancelled) setUpcomingDays([]);
@@ -999,7 +964,6 @@ export default function Dashboard() {
                   <span>LIVE · MATCHDAY · {new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                 </div>
                 <h1>Today's Edge</h1>
-                <div className="dp-sub">AI-scored fixtures across MLS, Bundesliga, and Eredivisie.</div>
               </div>
               <span className="dp-tier-pill dp-mono">{user.tier}</span>
             </div>
@@ -1040,10 +1004,10 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Date label + horizontal scroll of next 7 days */}
+          {/* Date label — bare, no "Recent Results" prefix. */}
           <div className="dp-date-row">
             <div className={`dp-date-label ${isPast ? 'past' : ''}`}>
-              {isPast ? 'Recent Results' : dateLabel}
+              {dateLabel || 'Today'}
               {matchDate && (
                 <span style={{ color: 'var(--dp-text-faint)', marginLeft: 8 }}>· {(() => {
                   try { return new Date(`${matchDate}T12:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); }
@@ -1052,10 +1016,36 @@ export default function Dashboard() {
               )}
             </div>
           </div>
-          {/* Date pills, filter bar, chip filter row, and HOW TO READ legend
-              were all removed in the simplification pass. State + fetch for
-              upcomingDays / activeDate still live above in case we revive
-              the pills row. */}
+
+          {/* Minimal date pills — Yesterday, Today, Tomorrow + 4 more.
+              Backend /upcoming is fetched with past=1&future=6 (7 pills max). */}
+          <div className="dp-date-pills">
+            {upcomingDays.slice(0, 7).map((d) => {
+              const isActive = activeDate === d.date || (activeDate === null && matchDate === d.date);
+              const empty = !d.count || d.count === 0;
+              const shortLabel =
+                d.isToday ? 'Today'
+                : d.label === 'Tomorrow' ? 'Tomorrow'
+                : d.label === 'Yesterday' ? 'Yesterday'
+                : (() => {
+                    try {
+                      return new Date(`${d.date}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' });
+                    } catch { return d.date; }
+                  })();
+              return (
+                <button
+                  key={d.date}
+                  type="button"
+                  className={`dp-date-pill ${isActive ? 'active' : ''} ${empty ? 'empty' : ''} ${d.isPast ? 'past' : ''} ${d.isToday ? 'today' : ''}`}
+                  onClick={() => setActiveDate(d.date)}
+                  title={`${d.count == null ? '?' : d.count} matches on ${d.label}`}
+                >
+                  <span>{shortLabel}</span>
+                  {d.count != null && <span className="ct">{d.count}</span>}
+                </button>
+              );
+            })}
+          </div>
 
           <div className="dp-matches">
             {loading ? (

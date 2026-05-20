@@ -473,14 +473,35 @@ async function handleLeague(event, leagueId) {
     error: 'Analysis timed out — try refreshing in a moment',
   });
 
-  // All fixtures in flight at once. Total time bound = max single fixture
-  // ≤ PER_FIXTURE_TIMEOUT_MS = 18s, leaving 8s headroom before the 26s
-  // Netlify function timeout.
-  const results = await Promise.all(
-    fixtures.map((fx) =>
-      withTimeout(processOne(fx), PER_FIXTURE_TIMEOUT_MS, timeoutFallbackFor(fx)),
-    ),
-  );
+  // Rate-limit-safe sequential batching. Process at most 3 fixtures in
+  // parallel, then sleep 1 second before the next batch. This bounds
+  // simultaneous API-Football calls to 3 × 4 = 12 (well below the
+  // per-minute Pro cap) and gives the rolling window time to drain
+  // between bursts. Hard cap at 9 fixtures so 3 batches × ~7s + 2 ×
+  // 1s = ~23s stays under the 26s function timeout. Anything beyond
+  // the 9th fixture is dropped for this load — refresh to see the rest
+  // (or, if it becomes a frequent issue, raise the OpenRouter plan).
+  const BATCH_SIZE = 3;
+  const BATCH_PAUSE_MS = 1000;
+  const MAX_FIXTURES = 9;
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const limited = fixtures.slice(0, MAX_FIXTURES);
+  if (fixtures.length > MAX_FIXTURES) {
+    console.log(`[predictions] capping ${fixtures.length} fixtures at ${MAX_FIXTURES} to fit function timeout`);
+  }
+
+  const results = [];
+  for (let i = 0; i < limited.length; i += BATCH_SIZE) {
+    const batch = limited.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map((fx) => withTimeout(processOne(fx), PER_FIXTURE_TIMEOUT_MS, timeoutFallbackFor(fx))),
+    );
+    results.push(...batchResults);
+    if (i + BATCH_SIZE < limited.length) {
+      await delay(BATCH_PAUSE_MS);
+    }
+  }
 
   return json(200, {
     league: league.name,
