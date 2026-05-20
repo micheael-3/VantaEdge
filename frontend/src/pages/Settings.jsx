@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Navbar from '../components/Navbar.jsx';
+import Layout from '../components/Layout.jsx';
 import { userApi } from '../api/client.js';
 import { isSharp, tierLabel, useAuth } from '../context/AuthContext.jsx';
 
+// Settings page — restyled to use the design's card + token system.
+// The visual structure stays simple (the design bundle did not include
+// a Settings screen) but uses dark Syne/Mono typography and mint accents
+// throughout, matching the rest of the app.
 export default function Settings() {
   const { user, logout, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -20,8 +24,6 @@ export default function Settings() {
   const [pwMsg, setPwMsg] = useState(null);
   const [pwBusy, setPwBusy] = useState(false);
 
-  const [upgradeMsg, setUpgradeMsg] = useState('');
-
   const submitEmail = async (e) => {
     e.preventDefault();
     setEmailMsg(null);
@@ -33,8 +35,8 @@ export default function Settings() {
       await refreshUser();
     } catch (err) {
       const msg =
-        (err.response && err.response.data && err.response.data.message) ||
-        (err.response && err.response.data && err.response.data.error) ||
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
         'Email update failed';
       setEmailMsg({ ok: false, text: msg });
     } finally {
@@ -57,8 +59,8 @@ export default function Settings() {
       setNewPassword('');
     } catch (err) {
       const msg =
-        (err.response && err.response.data && err.response.data.message) ||
-        (err.response && err.response.data && err.response.data.error) ||
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
         'Password change failed';
       setPwMsg({ ok: false, text: msg });
     } finally {
@@ -68,136 +70,254 @@ export default function Settings() {
 
   const onLogout = async () => {
     await logout();
-    navigate('/');
-  };
-
-  const onUpgrade = () => {
-    setUpgradeMsg('Sharp upgrades are coming soon — keep an eye on your inbox.');
+    navigate('/login');
   };
 
   return (
-    <>
-      <Navbar />
-      <main className="page">
-        <div className="container">
-          <div className="dash-header">
-            <div>
-              <h1>Settings</h1>
-              <div className="date-label">Account and subscription.</div>
-            </div>
+    <Layout>
+      {({ openUpgrade }) => (
+        <div style={{ maxWidth: 720 }}>
+          <div style={{ marginBottom: 28 }}>
+            <h1
+              className="display"
+              style={{
+                fontSize: 36,
+                fontWeight: 700,
+                margin: 0,
+                letterSpacing: '-0.025em',
+              }}
+            >
+              Settings
+            </h1>
+            <p
+              className="mono"
+              style={{
+                margin: '4px 0 0',
+                color: 'var(--text-3)',
+                fontSize: 12,
+                letterSpacing: '0.04em',
+              }}
+            >
+              ACCOUNT · SUBSCRIPTION
+            </p>
           </div>
 
-          <section className="settings-section">
-            <h2>Account</h2>
-            <form onSubmit={submitEmail} className="stack" style={{ marginBottom: 24 }}>
-              <div className="field-row">
-                <div>
-                  <label htmlFor="email">Email</label>
-                  <input
-                    id="email"
-                    type="email"
-                    value={newEmail}
-                    onChange={(e) => setNewEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="email-password">Current password</label>
-                  <input
-                    id="email-password"
-                    type="password"
-                    autoComplete="current-password"
-                    value={emailPassword}
-                    onChange={(e) => setEmailPassword(e.target.value)}
-                    required
-                  />
-                </div>
+          <div className="card" style={{ padding: 24, marginBottom: 16 }}>
+            <h3
+              className="display"
+              style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 600 }}
+            >
+              Email
+            </h3>
+            <form onSubmit={submitEmail} style={{ display: 'grid', gap: 12 }}>
+              <div>
+                <label
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--text-3)',
+                    letterSpacing: '0.1em',
+                    display: 'block',
+                    marginBottom: 6,
+                  }}
+                >
+                  EMAIL ADDRESS
+                </label>
+                <input
+                  className="input"
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--text-3)',
+                    letterSpacing: '0.1em',
+                    display: 'block',
+                    marginBottom: 6,
+                  }}
+                >
+                  CURRENT PASSWORD
+                </label>
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="current-password"
+                  value={emailPassword}
+                  onChange={(e) => setEmailPassword(e.target.value)}
+                  required
+                />
               </div>
               {emailMsg && (
-                <div className={emailMsg.ok ? 'success-text' : 'error-text'}>{emailMsg.text}</div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: emailMsg.ok ? 'var(--mint)' : 'var(--red)',
+                  }}
+                >
+                  {emailMsg.text}
+                </div>
               )}
               <div>
-                <button type="submit" className="btn btn-primary" disabled={emailBusy}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={emailBusy}
+                >
                   {emailBusy ? 'Updating…' : 'Update email'}
                 </button>
               </div>
             </form>
+          </div>
 
-            <form onSubmit={submitPassword} className="stack">
-              <h3 style={{ fontSize: 15, color: 'var(--text-dim)', fontFamily: 'Inter, sans-serif', fontWeight: 600 }}>
-                Change password
-              </h3>
-              <div className="field-row">
-                <div>
-                  <label htmlFor="current-password">Current password</label>
-                  <input
-                    id="current-password"
-                    type="password"
-                    autoComplete="current-password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="new-password">New password (8+ chars)</label>
-                  <input
-                    id="new-password"
-                    type="password"
-                    autoComplete="new-password"
-                    minLength={8}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-              {pwMsg && <div className={pwMsg.ok ? 'success-text' : 'error-text'}>{pwMsg.text}</div>}
+          <div className="card" style={{ padding: 24, marginBottom: 16 }}>
+            <h3
+              className="display"
+              style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 600 }}
+            >
+              Password
+            </h3>
+            <form onSubmit={submitPassword} style={{ display: 'grid', gap: 12 }}>
               <div>
-                <button type="submit" className="btn btn-primary" disabled={pwBusy}>
+                <label
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--text-3)',
+                    letterSpacing: '0.1em',
+                    display: 'block',
+                    marginBottom: 6,
+                  }}
+                >
+                  CURRENT PASSWORD
+                </label>
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--text-3)',
+                    letterSpacing: '0.1em',
+                    display: 'block',
+                    marginBottom: 6,
+                  }}
+                >
+                  NEW PASSWORD (8+ CHARS)
+                </label>
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                />
+              </div>
+              {pwMsg && (
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: pwMsg.ok ? 'var(--mint)' : 'var(--red)',
+                  }}
+                >
+                  {pwMsg.text}
+                </div>
+              )}
+              <div>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={pwBusy}
+                >
                   {pwBusy ? 'Changing…' : 'Change password'}
                 </button>
               </div>
             </form>
-          </section>
+          </div>
 
-          <section className="settings-section">
-            <h2>Subscription</h2>
-            <div className="spread" style={{ marginBottom: 16 }}>
-              <div>
-                <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>Current tier</div>
-                <span className={`tier-pill ${sharp ? 'sharp' : 'free'}`}>{tier}</span>
-              </div>
+          <div
+            className="card"
+            style={{
+              padding: 24,
+              marginBottom: 16,
+              borderColor: sharp ? 'rgba(110,231,183,0.3)' : 'var(--border)',
+              background: sharp
+                ? 'linear-gradient(180deg, rgba(110,231,183,0.05), transparent), var(--card)'
+                : 'var(--card)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 12,
+              }}
+            >
+              <h3
+                className="display"
+                style={{ margin: 0, fontSize: 18, fontWeight: 600 }}
+              >
+                Subscription
+              </h3>
+              <span
+                className={sharp ? 'badge badge-mint' : 'badge badge-soft'}
+              >
+                {tier.toUpperCase()}
+              </span>
             </div>
-            {!sharp && (
-              <div className="upgrade-card">
-                <h3>Upgrade to Sharp</h3>
-                <div className="muted">Unlock EV + Kelly on every pick.</div>
-                <div className="upgrade-price">$9.99<span style={{ fontSize: 14, color: 'var(--text-dim)' }}>/month</span></div>
-                <button type="button" className="btn btn-primary" onClick={onUpgrade}>
-                  Upgrade
+            {sharp ? (
+              <p style={{ margin: 0, color: 'var(--text-2)', fontSize: 13 }}>
+                You're on SHARP — EV + Kelly + Tracker are unlocked.
+              </p>
+            ) : (
+              <>
+                <p style={{ margin: '0 0 12px', color: 'var(--text-2)', fontSize: 13 }}>
+                  Upgrade to unlock EV %, Kelly stakes, AI reasoning, and the
+                  full bet tracker.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={openUpgrade}
+                >
+                  Get SHARP — $9.99/mo
                 </button>
-                {upgradeMsg && (
-                  <div className="muted" style={{ marginTop: 10, fontSize: 13 }}>{upgradeMsg}</div>
-                )}
-              </div>
+              </>
             )}
-            {sharp && (
-              <div className="muted">You’re on Sharp — EV + Kelly are live on every prediction.</div>
-            )}
-          </section>
+          </div>
 
-          <section className="settings-section">
-            <h2>Sign out</h2>
-            <p className="muted" style={{ marginBottom: 14 }}>
+          <div className="card" style={{ padding: 24 }}>
+            <h3
+              className="display"
+              style={{ margin: '0 0 12px', fontSize: 18, fontWeight: 600 }}
+            >
+              Sign out
+            </h3>
+            <p style={{ margin: '0 0 12px', color: 'var(--text-2)', fontSize: 13 }}>
               You can sign back in any time from the login page.
             </p>
-            <button type="button" className="btn" onClick={onLogout}>
+            <button type="button" className="btn btn-ghost" onClick={onLogout}>
               Sign out
             </button>
-          </section>
+          </div>
         </div>
-      </main>
-    </>
+      )}
+    </Layout>
   );
 }

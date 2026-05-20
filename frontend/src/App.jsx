@@ -7,6 +7,9 @@ import Dashboard from './pages/Dashboard.jsx';
 import History from './pages/History.jsx';
 import Settings from './pages/Settings.jsx';
 import Affiliate from './pages/Affiliate.jsx';
+import EVCalculator from './pages/EVCalculator.jsx';
+import KellySizer from './pages/KellySizer.jsx';
+import Bankroll from './pages/Bankroll.jsx';
 
 export default function App() {
   return (
@@ -41,6 +44,30 @@ export default function App() {
         element={
           <Protected>
             <History />
+          </Protected>
+        }
+      />
+      <Route
+        path="/tools/ev"
+        element={
+          <Protected>
+            <EVCalculator />
+          </Protected>
+        }
+      />
+      <Route
+        path="/tools/kelly"
+        element={
+          <Protected>
+            <KellySizer />
+          </Protected>
+        }
+      />
+      <Route
+        path="/bankroll"
+        element={
+          <Protected>
+            <Bankroll />
           </Protected>
         }
       />

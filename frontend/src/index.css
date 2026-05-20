@@ -883,3 +883,113 @@ table.tbl tr:last-child td { border-bottom: none; }
   .conf-badge { flex: 1 1 100%; }
   .container { padding: 0 14px; }
 }
+
+/* ============================================================
+   Sidebar + app shell — the new authed layout introduced
+   in the design handoff (Sidebar.jsx + Layout.jsx).
+   ============================================================ */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  padding: 36px 40px;
+  max-width: 1280px;
+}
+
+.sb {
+  width: 230px;
+  flex-shrink: 0;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  border-right: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 16px;
+  background: var(--bg);
+  z-index: 40;
+}
+
+.sb-logo {
+  padding: 0 8px 28px;
+  cursor: pointer;
+}
+
+.sb-nav {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 24px;
+}
+
+.sb-nav .nav-item {
+  text-decoration: none;
+}
+.sb-nav .nav-item:hover { text-decoration: none; }
+
+.sb-upgrade { /* spacing helper handled inline */ }
+
+.sb-mobile-toggle {
+  display: none;
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  width: 40px;
+  height: 40px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  color: var(--text);
+}
+
+.sb-backdrop {
+  display: none;
+}
+
+/* Mobile sidebar */
+@media (max-width: 720px) {
+  .sb-mobile-toggle { display: inline-flex; }
+  .sb {
+    position: fixed;
+    top: 0;
+    left: 0;
+    transform: translateX(-110%);
+    transition: transform 0.25s ease;
+    height: 100vh;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  }
+  .sb.sb-open { transform: translateX(0); }
+  .sb-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    z-index: 35;
+  }
+  .app-main {
+    padding: 70px 16px 24px;
+  }
+}
+
+/* Responsive grid tweaks for the new pages. */
+@media (max-width: 880px) {
+  .best-bet-grid { grid-template-columns: 1fr !important; }
+  .history-kpi-grid { grid-template-columns: 1fr 1fr !important; }
+  .ev-grid { grid-template-columns: 1fr !important; }
+  .aff-comm-grid {
+    grid-template-columns: 1fr !important;
+    text-align: center;
+  }
+  .aff-calc-grid { grid-template-columns: 1fr !important; }
+  .aff-link-grid { grid-template-columns: 1fr !important; }
+  .bk-stats-grid { grid-template-columns: 1fr 1fr !important; }
+}
