@@ -8,7 +8,7 @@ AI-powered football goals prediction platform. Covers MLS, Bundesliga, Eredivisi
 - **Backend**: Netlify Functions (`netlify/functions/*`) — no separate server
 - **Database**: Neon Postgres (free tier, browser-only setup)
 - **Auth**: JWT in `HttpOnly` cookies (access 15 min, refresh 7 d, same-origin)
-- **Payments / Entitlements**: RevenueCat (webhook-driven tier updates)
+- **Payments / Entitlements**: Whop (webhook-driven tier updates)
 - **Match data**: API-Football (direct, `x-apisports-key`)
 - **AI analysis**: OpenRouter (`meta-llama/llama-3.1-8b-instruct` by default)
 
@@ -29,7 +29,7 @@ FastScore/
 │   ├── predictions.js       # GET /:leagueId (8 leagues, tier-gated)
 │   ├── history.js           # GET /, /accuracy (ANALYST+)
 │   ├── user.js              # POST /email, /password, DELETE /
-│   └── webhook.js           # POST /revenuecat
+│   └── webhook.js           # POST /whop
 └── frontend/
     ├── package.json
     ├── vite.config.js
@@ -73,7 +73,7 @@ All endpoints are `/api/*` from the browser. `netlify.toml` rewrites them to `/.
 | POST   | `/api/user/email`                 | yes  | Update email (requires current password)                   |
 | POST   | `/api/user/password`              | yes  | Update password (revokes refresh token)                    |
 | DELETE | `/api/user`                       | yes  | Delete account (requires password)                         |
-| POST   | `/api/webhook/revenuecat`         | sig  | RevenueCat events update `users.tier`                      |
+| POST   | `/api/webhook/whop`               | sig  | Whop events update `users.tier`                            |
 | POST   | `/api/admin/login`                | adm  | Verifies `ADMIN_PASSWORD` bearer header                    |
 | GET    | `/api/admin/users`                | adm  | All users + their prediction counts                        |
 | GET    | `/api/admin/predictions`          | adm  | All predictions created today                              |
@@ -92,7 +92,9 @@ All on the Netlify site (one place). See [NETLIFY-DEPLOY.md](NETLIFY-DEPLOY.md) 
 | `JWT_REFRESH_SECRET`        | Different 128-char random hex                                       |
 | `FOOTBALL_API_KEY`          | dashboard.api-football.com                                          |
 | `OPENROUTER_API_KEY`        | openrouter.ai/keys                                                  |
-| `REVENUECAT_WEBHOOK_SECRET` | Random string, also pasted into RevenueCat webhook header           |
+| `WHOP_WEBHOOK_SECRET`       | Whop dashboard → Developer → Webhooks → reveal secret               |
+| `WHOP_CHECKOUT_URL`         | Whop product → copy checkout link                                   |
+| `VITE_WHOP_CHECKOUT_URL`    | Same checkout URL, exposed to the client bundle                     |
 | `ADMIN_PASSWORD`            | Password for `/admin` panel. Pick a strong one — it's the only credential for the admin UI. |
 | `NODE_ENV`                  | any value other than `development` (controls `Secure` cookie flag)  |
 | `RESEND_API_KEY`            | _Optional._ For daily-digest email (Resend.com). Functions ship but won't send mail until set. |
@@ -100,6 +102,19 @@ All on the Netlify site (one place). See [NETLIFY-DEPLOY.md](NETLIFY-DEPLOY.md) 
 | `ODDS_API_KEY`              | _Optional._ Auto-fetch real bookmaker odds from the-odds-api.com. Manual odds entry stays as fallback. |
 
 `URL` is set automatically by Netlify (used for the OpenRouter `HTTP-Referer` header).
+
+---
+
+## Whop Setup
+
+1. Go to whop.com → create account → create a product
+2. Set price: $9.99/month recurring
+3. Product name: FastScore SHARP
+4. Copy the checkout link → paste as `WHOP_CHECKOUT_URL` and `VITE_WHOP_CHECKOUT_URL` in Netlify env vars
+5. Go to Whop dashboard → Developer → Webhooks
+6. Add webhook URL: `https://your-netlify-site.netlify.app/api/webhook/whop`
+7. Select events: `membership.went_valid`, `membership.went_invalid`, `membership.was_created`
+8. Copy webhook secret → paste as `WHOP_WEBHOOK_SECRET` in Netlify env vars (Site configuration → Environment variables)
 
 ---
 
@@ -120,5 +135,5 @@ For full local stack (frontend + functions), install Netlify CLI and run `netlif
 ## Notes / future work
 
 - A scheduled function (Netlify Scheduled Functions) should backfill `predictions.over_hit` / `btts_hit` once final scores are available, and roll up `prediction_history` rows for the chart.
-- The `Subscribe` buttons in `UpgradeModal` currently point at `#`. Swap in your RevenueCat web-paywall URLs.
+- The `Subscribe` buttons in `UpgradeModal` open the Whop checkout via `VITE_WHOP_CHECKOUT_URL`. If unset, they show an alert at runtime.
 - In-process cache in `_shared/cache.js` only survives within a single warm function instance. For higher hit-rate, swap to Upstash Redis (free tier, also HTTP-friendly).

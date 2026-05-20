@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import Icon from './Icon.jsx';
+import { openWhopCheckout } from '../lib/checkout.js';
 
 // SHARP upgrade modal. Ported from the design's app.jsx UpgradeModal.
 // Triggered when FREE users hit a locked overlay or click an upgrade CTA.
@@ -176,7 +177,7 @@ export default function UpgradeModal({ onClose }) {
           type="button"
           className="btn btn-primary"
           style={{ width: '100%', padding: '14px 20px', fontSize: 15 }}
-          onClick={onClose}
+          onClick={openWhopCheckout}
         >
           Get SHARP — $9.99/mo <Icon name="arrow-right" size={15} />
         </button>

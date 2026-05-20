@@ -38,7 +38,9 @@ You need three external keys before deploying:
 | ---------------------------- | ---------------------------------------------------------------------------- |
 | `FOOTBALL_API_KEY`           | <https://dashboard.api-football.com> → **Account → API Key**                 |
 | `OPENROUTER_API_KEY`         | <https://openrouter.ai/keys> → **Create key**                                |
-| `REVENUECAT_WEBHOOK_SECRET`  | Any strong string you make up. You'll paste the same value into RevenueCat. |
+| `WHOP_WEBHOOK_SECRET`        | Whop dashboard → Developer → Webhooks → reveal secret.                       |
+| `WHOP_CHECKOUT_URL`          | Whop product → copy checkout link.                                           |
+| `VITE_WHOP_CHECKOUT_URL`     | Same checkout URL — exposed to the client bundle by Vite.                    |
 
 Generate the two JWT secrets in your browser DevTools console (Cmd/Ctrl+Shift+J on any page):
 
@@ -76,7 +78,9 @@ Run that command **twice** — save one value as `JWT_SECRET`, the other as `JWT
 | `JWT_REFRESH_SECRET`        | The other 128-char hex string from step 2                                                                   |
 | `FOOTBALL_API_KEY`          | From dashboard.api-football.com                                                                             |
 | `OPENROUTER_API_KEY`        | From openrouter.ai/keys                                                                                     |
-| `REVENUECAT_WEBHOOK_SECRET` | Your made-up strong string                                                                                  |
+| `WHOP_WEBHOOK_SECRET`       | From Whop dashboard → Developer → Webhooks → reveal secret                                                  |
+| `WHOP_CHECKOUT_URL`         | From Whop product → copy checkout link                                                                      |
+| `VITE_WHOP_CHECKOUT_URL`    | Same checkout URL, exposed to the client bundle                                                             |
 | `ADMIN_PASSWORD`            | A strong password for the `/admin` panel. Only credential for the admin UI — choose carefully.              |
 | `NODE_ENV`                  | leave at Netlify's default (any value other than `development`) — controls whether auth cookies are issued `Secure` |
 | `RESEND_API_KEY`            | _Optional._ Resend.com key for daily-digest email. Skip if you're not running notifications yet.            |
@@ -93,15 +97,13 @@ Site settings → **Domain management → Add a domain you already own**, or sti
 
 ---
 
-## 4. RevenueCat webhook (only if you're charging money)
+## 4. Whop webhook (only if you're charging money)
 
-1. RevenueCat dashboard → **Integrations → Webhooks → New Webhook**.
-2. **URL**: `https://<your-netlify-site>.netlify.app/api/webhook/revenuecat`
-3. **Authorization header value**: paste the same string you used for `REVENUECAT_WEBHOOK_SECRET`.
-4. Configure products with these exact identifiers (the function maps on them):
-   - `vantaedge_scout_monthly`
-   - `vantaedge_analyst_monthly`
-   - `vantaedge_edge_monthly`
+1. Whop dashboard → **Developer → Webhooks → New Webhook**.
+2. **URL**: `https://<your-netlify-site>.netlify.app/api/webhook/whop`
+3. Select events: `membership.went_valid`, `membership.was_created`, `membership.went_invalid`.
+4. Reveal the webhook secret and paste it as `WHOP_WEBHOOK_SECRET` in Netlify env vars.
+5. Create one $9.99/month recurring product (name: `FastScore SHARP`) and copy its checkout link into `WHOP_CHECKOUT_URL` and `VITE_WHOP_CHECKOUT_URL`.
 
 ---
 
@@ -137,7 +139,7 @@ FastScore/
 │       ├── predictions.js   # /api/predictions/:leagueId
 │       ├── history.js       # /api/history, /api/history/accuracy
 │       ├── user.js          # /api/user/email, /api/user/password, DELETE /api/user
-│       └── webhook.js       # /api/webhook/revenuecat
+│       └── webhook.js       # /api/webhook/whop
 └── frontend/
     ├── package.json         # Vite + React + Recharts
     └── src/                 # pages, components, AuthContext, API client

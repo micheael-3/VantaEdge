@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import { userApi } from '../api/client.js';
 import { isSharp, tierLabel, useAuth } from '../context/AuthContext.jsx';
+import { openWhopCheckout } from '../lib/checkout.js';
 
 // Settings page — restyled to use the design's card + token system.
 // The visual structure stays simple (the design bundle did not include
@@ -282,9 +283,30 @@ export default function Settings() {
               </span>
             </div>
             {sharp ? (
-              <p style={{ margin: 0, color: 'var(--text-2)', fontSize: 13 }}>
-                You're on SHARP — EV + Kelly + Tracker are unlocked.
-              </p>
+              <>
+                <p style={{ margin: '0 0 12px', color: 'var(--text-2)', fontSize: 13 }}>
+                  You're on SHARP — EV + Kelly + Tracker are unlocked.
+                </p>
+                <a
+                  href="https://whop.com/hub"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-ghost"
+                  style={{ display: 'inline-block' }}
+                >
+                  Manage subscription
+                </a>
+                <p
+                  style={{
+                    margin: '8px 0 0',
+                    color: 'var(--text-3)',
+                    fontSize: 12,
+                  }}
+                >
+                  Manage your subscription, payment method, or cancel from your
+                  Whop hub.
+                </p>
+              </>
             ) : (
               <>
                 <p style={{ margin: '0 0 12px', color: 'var(--text-2)', fontSize: 13 }}>
@@ -294,9 +316,9 @@ export default function Settings() {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={openUpgrade}
+                  onClick={openWhopCheckout}
                 >
-                  Get SHARP — $9.99/mo
+                  Upgrade to SHARP — $9.99/mo
                 </button>
               </>
             )}

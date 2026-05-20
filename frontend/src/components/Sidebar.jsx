@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { isSharp, useAuth } from '../context/AuthContext.jsx';
+import { openWhopCheckout } from '../lib/checkout.js';
 import Logo from './Logo.jsx';
 import Icon from './Icon.jsx';
 
@@ -114,7 +115,7 @@ export default function Sidebar({ onUpgrade }) {
               type="button"
               className="btn btn-primary btn-sm"
               style={{ width: '100%' }}
-              onClick={onUpgrade}
+              onClick={openWhopCheckout}
             >
               Get SHARP
             </button>

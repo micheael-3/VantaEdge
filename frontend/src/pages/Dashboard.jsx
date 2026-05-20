@@ -9,6 +9,60 @@ import { isSharp, useAuth } from '../context/AuthContext.jsx';
 import { predictions } from '../api/client.js';
 import { agentScore } from '../lib/fixture.js';
 
+// Small inline toast used by the post-checkout polling flow. Mint background,
+// slide-in from the top, manual close. No library — this is the only place we
+// need a toast right now.
+function CheckoutToast({ message, onClose }) {
+  return (
+    <div
+      role="status"
+      style={{
+        position: 'fixed',
+        top: 16,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 300,
+        background: 'var(--mint)',
+        color: '#001a10',
+        padding: '12px 18px',
+        borderRadius: 10,
+        boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        fontSize: 14,
+        fontWeight: 600,
+        maxWidth: '90vw',
+        animation: 'checkoutToastIn 280ms ease-out',
+      }}
+    >
+      <style>{`
+        @keyframes checkoutToastIn {
+          from { transform: translate(-50%, -120%); opacity: 0; }
+          to   { transform: translate(-50%, 0);     opacity: 1; }
+        }
+      `}</style>
+      <span>{message}</span>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: '#001a10',
+          fontSize: 18,
+          lineHeight: 1,
+          cursor: 'pointer',
+          padding: 0,
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 // Today's Edge — the dashboard root.
 //
 // Progressive loading flow (was a single 22s blocking fetch):
@@ -17,8 +71,9 @@ import { agentScore } from '../lib/fixture.js';
 //      Each .then() splices the prediction into that one card. Other cards
 //      stay live throughout — no Promise.all gate.
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const sharp = isSharp(user);
+  const [checkoutToast, setCheckoutToast] = useState(null);
   const [data, setData] = useState(null);
   const [days, setDays] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -44,6 +99,63 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, []);
+
+  // Post-checkout polling. Whop opens its checkout in a new tab; on success it
+  // sends the user to /dashboard?checkout=success. The webhook is racing this
+  // redirect, so we poll /auth/me up to 10× (every 3s = 30s) until the tier
+  // flips to ANALYST/EDGE. Strip the query param on success so a manual reload
+  // doesn't re-trigger the toast.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkout') !== 'success') return undefined;
+
+    setCheckoutToast({
+      kind: 'pending',
+      message: 'Payment successful — activating your SHARP plan…',
+    });
+
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    const tick = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      try {
+        const updated = await refreshUser();
+        if (cancelled) return;
+        if (updated && (updated.tier === 'ANALYST' || updated.tier === 'EDGE')) {
+          setCheckoutToast({
+            kind: 'success',
+            message: 'SHARP plan activated! 🎉',
+          });
+          const url = new URL(window.location.href);
+          url.searchParams.delete('checkout');
+          window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+          return;
+        }
+      } catch {
+        /* keep polling */
+      }
+      if (attempts >= maxAttempts) {
+        setCheckoutToast({
+          kind: 'timeout',
+          message:
+            'Activation taking longer than expected — refresh the page in a moment.',
+        });
+        return;
+      }
+      setTimeout(tick, 3000);
+    };
+
+    // Kick off after a short delay so the first poll lets the webhook race.
+    const initial = setTimeout(tick, 1000);
+    return () => {
+      cancelled = true;
+      clearTimeout(initial);
+    };
+  }, [refreshUser]);
 
   // Splice one analyzed fixture's prediction into `data.fixtures` by fixtureId.
   // Guarded by fetchToken so a stale analyze response from a previous day
@@ -189,6 +301,12 @@ export default function Dashboard() {
     <Layout>
       {({ openUpgrade }) => (
         <div>
+          {checkoutToast && (
+            <CheckoutToast
+              message={checkoutToast.message}
+              onClose={() => setCheckoutToast(null)}
+            />
+          )}
           <div style={{ marginBottom: 24 }}>
             <div
               style={{

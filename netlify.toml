@@ -36,7 +36,7 @@
 
 [build.environment]
   NODE_VERSION           = "20"
-  SECRETS_SCAN_OMIT_KEYS = "NODE_ENV,FOOTBALL_DEFAULT_SEASON"
+  SECRETS_SCAN_OMIT_KEYS = "NODE_ENV,FOOTBALL_DEFAULT_SEASON,WHOP_CHECKOUT_URL,VITE_WHOP_CHECKOUT_URL"
 
 # Frontend calls /api/* — rewrite to the matching Netlify Function (same origin, no CORS).
 [[redirects]]

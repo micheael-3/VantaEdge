@@ -14,7 +14,7 @@ async function requireUser(event) {
     if (err.name === 'TokenExpiredError') return { res: error(401, 'TOKEN_EXPIRED') };
     return { res: error(401, 'UNAUTHORIZED') };
   }
-  const rows = await sql()`SELECT id, email, tier, daily_refreshes, last_refresh_date, revenuecat_id
+  const rows = await sql()`SELECT id, email, tier, daily_refreshes, last_refresh_date
                            FROM users WHERE id = ${decoded.id}`;
   if (rows.length === 0) return { res: error(401, 'UNAUTHORIZED') };
   return { user: rows[0], token: decoded };
