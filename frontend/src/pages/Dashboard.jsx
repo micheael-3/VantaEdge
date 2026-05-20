@@ -1217,7 +1217,7 @@ export default function Dashboard() {
               <span className="dp-filter-label">Min confidence</span>
               <input
                 type="range"
-                min="50"
+                min="0"
                 max="90"
                 step="1"
                 value={advFilters.minConfidence}
