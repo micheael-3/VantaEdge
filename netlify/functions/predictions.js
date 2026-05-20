@@ -512,10 +512,17 @@ async function handleLeague(event, leagueId) {
   });
 }
 
-// GET /api/predictions/upcoming/:leagueId — scans the next 7 days and
-// returns [{date, count, label, isToday}]. Lightweight: only the per-date
-// fixture count is needed, and every call reuses the shared cache so a
-// dashboard refresh after a tab switch is free.
+// GET /api/predictions/upcoming/:leagueId — scans a date window and
+// returns [{date, count, label, isToday, isPast}]. Lightweight: only the
+// per-date fixture count is needed, and every call reuses the shared
+// cache so a dashboard refresh after a tab switch is free.
+//
+// Query params (both optional):
+//   ?past=N    days to include BEFORE today (default 0, max 14)
+//   ?future=N  days to include INCLUDING today (default 7, max 14)
+//
+// Output is ordered oldest → newest so the frontend can render pills
+// left-to-right naturally with past on the left and future on the right.
 async function handleUpcoming(event, leagueId) {
   const { res, user } = await requireUser(event);
   if (res) return res;
@@ -527,9 +534,32 @@ async function handleUpcoming(event, leagueId) {
     return error(403, 'UPGRADE_REQUIRED', { requiredTier: league.minTier });
   }
 
+  const qs = event.queryStringParameters || {};
+  const past   = clamp(parseInt(qs.past, 10), 0, 14, 0);
+  const future = clamp(parseInt(qs.future, 10), 1, 14, 7);
+
   const today = todayDateStr();
   const days = [];
-  for (let i = 0; i < 7; i++) {
+  // Past dates: i = -past → -1. Skip when past=0.
+  for (let i = -past; i < 0; i++) {
+    const dateStr = addDaysStr(today, i);
+    let count = null;
+    try {
+      // Past dates rarely change — 24h TTL.
+      count = await football.getFixtureCountByDate(leagueId, dateStr, 86400);
+    } catch (e) {
+      console.error(`upcoming scan failed for ${dateStr}:`, e.message);
+    }
+    days.push({
+      date: dateStr,
+      count: count == null ? null : Number(count),
+      label: labelForDateStr(dateStr),
+      isToday: false,
+      isPast: true,
+    });
+  }
+  // Today + future dates: i = 0 → future-1.
+  for (let i = 0; i < future; i++) {
     const dateStr = addDaysStr(today, i);
     let count = null;
     try {
@@ -544,10 +574,16 @@ async function handleUpcoming(event, leagueId) {
       count: count == null ? null : Number(count),
       label: labelForDateStr(dateStr),
       isToday: i === 0,
+      isPast: false,
     });
   }
 
   return json(200, { leagueId, league: league.name, days });
+}
+
+function clamp(n, lo, hi, fallback) {
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(lo, Math.min(hi, n));
 }
 
 // GET /api/predictions/test — UNAUTHENTICATED probe for debugging

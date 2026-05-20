@@ -1018,7 +1018,7 @@ export default function Dashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const data = await predictionsApi.getUpcoming(activeLeague);
+        const data = await predictionsApi.getUpcoming(activeLeague, { past: 7, future: 7 });
         if (!cancelled) setUpcomingDays(Array.isArray(data.days) ? data.days : []);
       } catch {
         if (!cancelled) setUpcomingDays([]);
@@ -1200,6 +1200,7 @@ export default function Dashboard() {
                 const shortLabel =
                   d.isToday ? 'Today'
                   : d.label === 'Tomorrow' ? 'Tomorrow'
+                  : d.label === 'Yesterday' ? 'Yesterday'
                   : (() => {
                       try {
                         return new Date(`${d.date}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' });
@@ -1209,7 +1210,7 @@ export default function Dashboard() {
                   <button
                     key={d.date}
                     type="button"
-                    className={`dp-date-pill ${isActive ? 'active' : ''} ${empty ? 'empty' : ''}`}
+                    className={`dp-date-pill ${isActive ? 'active' : ''} ${empty ? 'empty' : ''} ${d.isPast ? 'past' : ''} ${d.isToday ? 'today' : ''}`}
                     onClick={() => setActiveDate(d.date)}
                     title={`${d.count == null ? '?' : d.count} matches on ${d.label}`}
                   >

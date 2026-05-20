@@ -867,6 +867,30 @@
   color: var(--dp-mint);
 }
 .dashboard-page .dp-date-pill.empty { opacity: 0.55; }
+/* Past pills: subtly muted, italic so they're visibly "behind" today */
+.dashboard-page .dp-date-pill.past {
+  border-style: dashed;
+  color: var(--dp-text-faint);
+}
+.dashboard-page .dp-date-pill.past:hover {
+  color: var(--dp-text);
+  border-style: solid;
+}
+.dashboard-page .dp-date-pill.past.active {
+  border-style: solid;
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--dp-text);
+}
+.dashboard-page .dp-date-pill.past.active .ct {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--dp-text);
+}
+/* Today pill: brighter even when inactive so it's easy to spot in a long pill row */
+.dashboard-page .dp-date-pill.today:not(.active) {
+  border-color: rgba(110, 231, 183, 0.25);
+  color: var(--dp-text);
+}
 .dashboard-page .dp-date-pill .ct {
   font-size: 10px;
   padding: 1px 6px;
