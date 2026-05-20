@@ -12,12 +12,17 @@ import EVCalculator from './pages/EVCalculator.jsx';
 import KellySizer from './pages/KellySizer.jsx';
 import Bankroll from './pages/Bankroll.jsx';
 import Guide from './pages/Guide.jsx';
+import Landing from './pages/Landing.jsx';
 import AdminPanel from './pages/AdminPanel.jsx';
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      {/* Public landing for fastscore.eu. Logged-in users are redirected
+          to /dashboard from inside the Landing component itself, so we
+          don't end up showing them marketing copy every time they hit
+          the bare domain. */}
+      <Route path="/" element={<Landing />} />
       <Route
         path="/login"
         element={
@@ -108,7 +113,9 @@ export default function App() {
           </Protected>
         }
       />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      {/* Unknown paths bounce to landing — Landing itself forwards logged-in
+          users into /dashboard, so this is safe for both audiences. */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

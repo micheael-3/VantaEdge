@@ -1,0 +1,461 @@
+import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import Logo from '../components/Logo.jsx';
+import Icon from '../components/Icon.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import { openWhopCheckout } from '../lib/checkout.js';
+
+// Public landing — the first thing fastscore.eu shows unauthenticated
+// visitors. Hero + sample match card + how-it-works + pricing + footer.
+// Mirrors the Claude Design handoff screenshot.
+export default function Landing() {
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+
+  // If they're already logged in, send them straight to the dashboard.
+  useEffect(() => {
+    if (!loading && user) navigate('/dashboard', { replace: true });
+  }, [user, loading, navigate]);
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
+      <Nav />
+      <Hero />
+      <HowItWorks />
+      <Pricing />
+      <Footer />
+    </div>
+  );
+}
+
+function Nav() {
+  return (
+    <nav
+      style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 30,
+        background: 'rgba(10,10,15,0.85)',
+        backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid var(--border-soft)',
+      }}
+    >
+      <div style={navInner}>
+        <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <Logo />
+        </Link>
+        <div className="lp-nav-links" style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
+          <a href="#how" className="mono" style={navLink}>HOW IT WORKS</a>
+          <a href="#pricing" className="mono" style={navLink}>PRICING</a>
+          <Link to="/login" className="mono" style={navLink}>LOG IN</Link>
+          <Link to="/register" className="btn btn-primary">
+            Start Free <Icon name="arrow-right" size={14} />
+          </Link>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+function Hero() {
+  return (
+    <section style={{ padding: '80px 24px 100px', maxWidth: 1200, margin: '0 auto' }}>
+      <div className="lp-hero-grid">
+        <div>
+          <div
+            className="mono"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 12px',
+              borderRadius: 999,
+              background: 'rgba(110,231,183,0.08)',
+              border: '1px solid rgba(110,231,183,0.25)',
+              color: 'var(--mint)',
+              fontSize: 11,
+              letterSpacing: '0.08em',
+              marginBottom: 32,
+            }}
+          >
+            <span style={{ width: 6, height: 6, background: 'var(--mint)', borderRadius: '50%' }} />
+            MLS MATCHES ANALYSED EVERY WEEK
+          </div>
+
+          <h1
+            className="display"
+            style={{
+              fontSize: 'clamp(40px, 6vw, 72px)',
+              fontWeight: 700,
+              lineHeight: 1.05,
+              letterSpacing: '-0.03em',
+              margin: 0,
+            }}
+          >
+            The Edge<br />
+            Bookmakers{' '}
+            <em style={{ color: 'var(--mint)', fontStyle: 'italic' }}>Don't Want</em><br />
+            You To Have
+          </h1>
+
+          <p
+            style={{
+              marginTop: 28,
+              maxWidth: 520,
+              fontSize: 17,
+              lineHeight: 1.55,
+              color: 'var(--text-2)',
+            }}
+          >
+            AI analyses every MLS match — form, goals data, rest days, head-to-head
+            — then finds where the bookmaker's odds are wrong. That gap is your
+            profit.
+          </p>
+
+          <div style={{ display: 'flex', gap: 12, marginTop: 36, flexWrap: 'wrap' }}>
+            <Link to="/register" className="btn btn-primary" style={{ padding: '14px 22px', fontSize: 15 }}>
+              Start Free <Icon name="arrow-right" size={15} />
+            </Link>
+            <a href="#how" className="btn btn-ghost" style={{ padding: '14px 22px', fontSize: 15 }}>
+              See how it works
+            </a>
+          </div>
+
+          <div className="mono" style={{ marginTop: 36, fontSize: 12, color: 'var(--text-3)', letterSpacing: '0.04em' }}>
+            NO CARD REQUIRED · CANCEL ANYTIME · 18+
+          </div>
+        </div>
+
+        <DemoMatchCard />
+      </div>
+    </section>
+  );
+}
+
+function DemoMatchCard() {
+  return (
+    <div
+      className="card"
+      style={{
+        padding: 24,
+        borderColor: 'rgba(110,231,183,0.3)',
+        background: 'linear-gradient(180deg, rgba(110,231,183,0.04), transparent), var(--card)',
+        boxShadow: '0 30px 80px rgba(0,0,0,0.4), 0 0 60px rgba(110,231,183,0.08)',
+        position: 'relative',
+      }}
+    >
+      <div
+        className="mono"
+        style={{
+          position: 'absolute',
+          top: 18,
+          right: 18,
+          padding: '4px 9px',
+          borderRadius: 4,
+          background: 'rgba(239,68,68,0.12)',
+          border: '1px solid rgba(239,68,68,0.3)',
+          color: '#fca5a5',
+          fontSize: 10,
+          letterSpacing: '0.08em',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
+        <span style={{ width: 6, height: 6, background: '#ef4444', borderRadius: '50%' }} className="blink" />
+        LIVE DEMO
+      </div>
+
+      <div className="mono" style={{ fontSize: 10, color: 'var(--text-3)', letterSpacing: '0.08em', marginBottom: 14 }}>
+        MLS · TONIGHT 9:00 PM ET
+      </div>
+      <div
+        className="display"
+        style={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, marginBottom: 16 }}
+      >
+        Portland Timbers <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>vs</span>{' '}
+        Seattle Sounders
+      </div>
+
+      <div
+        className="mono"
+        style={{
+          display: 'flex',
+          gap: 14,
+          fontSize: 11,
+          color: 'var(--text-2)',
+          padding: '10px 0',
+          borderTop: '1px solid var(--border-soft)',
+          borderBottom: '1px solid var(--border-soft)',
+          marginBottom: 16,
+          flexWrap: 'wrap',
+        }}
+      >
+        <span>AVG GOALS <span style={{ color: 'var(--text)' }}>2.4</span> / <span style={{ color: 'var(--text)' }}>1.6</span></span>
+        <span style={{ color: 'var(--text-faint)' }}>·</span>
+        <span>REST <span style={{ color: 'var(--text)' }}>5d</span></span>
+        <span style={{ color: 'var(--text-faint)' }}>·</span>
+        <span>H2H <span style={{ color: 'var(--text)' }}>3.2 G/M</span></span>
+      </div>
+
+      <PredictionDemo label="OVER 2.5" conf={81} />
+      <PredictionDemo label="BTTS YES" conf={73} delay={0.2} />
+    </div>
+  );
+}
+
+function PredictionDemo({ label, conf, delay = 0 }) {
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setW(conf), 200 + delay * 1000);
+    return () => clearTimeout(t);
+  }, [conf, delay]);
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span className="badge badge-mint">
+          {label} · <span className="mono">{conf}%</span>
+        </span>
+        <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>AI conf</span>
+      </div>
+      <div className="conf-bar">
+        <div
+          className="conf-bar-fill"
+          style={{ width: `${w}%`, background: 'linear-gradient(90deg, #34d399, #6ee7b7)' }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function HowItWorks() {
+  const steps = [
+    {
+      n: 1,
+      title: 'Weekly AI scan',
+      body: 'Every Monday we pull all of next week\'s MLS fixtures and score them with a large language model fed on form, goals data, rest days, and last-5 head-to-head.',
+    },
+    {
+      n: 2,
+      title: 'See where the bookie is wrong',
+      body: 'Each card shows a confidence % for Over/Under and BTTS. Type your bookmaker\'s odds and the EV calculator surfaces the edge — green when the price is wrong in your favour.',
+    },
+    {
+      n: 3,
+      title: 'Bet your edge with Kelly sizing',
+      body: 'The built-in Kelly Sizer tells you exactly what percentage of your bankroll to wager. Track every bet through the Bet Tracker. Watch your real ROI emerge over 50–100 bets.',
+    },
+  ];
+  return (
+    <section id="how" style={{ padding: '60px 24px 80px', maxWidth: 1100, margin: '0 auto' }}>
+      <h2
+        className="display"
+        style={{ fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 700, letterSpacing: '-0.02em', margin: '0 0 12px' }}
+      >
+        How FastScore works
+      </h2>
+      <p style={{ color: 'var(--text-2)', fontSize: 16, marginBottom: 40, maxWidth: 640 }}>
+        Three steps. The math does the work. You decide which prices to take.
+      </p>
+      <div className="lp-how-grid">
+        {steps.map((s) => (
+          <div key={s.n} className="card" style={{ padding: 28 }}>
+            <div
+              className="display"
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                background: 'rgba(110,231,183,0.12)',
+                border: '1px solid rgba(110,231,183,0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--mint)',
+                fontWeight: 700,
+                fontSize: 16,
+                marginBottom: 16,
+              }}
+            >
+              {s.n}
+            </div>
+            <h3 className="display" style={{ fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>
+              {s.title}
+            </h3>
+            <p style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 1.6, margin: 0 }}>
+              {s.body}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Pricing() {
+  return (
+    <section id="pricing" style={{ padding: '60px 24px 100px', maxWidth: 980, margin: '0 auto' }}>
+      <h2
+        className="display"
+        style={{ fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 700, letterSpacing: '-0.02em', margin: '0 0 12px', textAlign: 'center' }}
+      >
+        Two plans. Pick one.
+      </h2>
+      <p style={{ color: 'var(--text-2)', fontSize: 16, marginBottom: 40, textAlign: 'center' }}>
+        Start free. Upgrade the moment you want EV + Kelly on your bets.
+      </p>
+
+      <div className="lp-pricing-grid">
+        <PlanCard
+          name="FREE"
+          price="$0"
+          tagline="See the picks. No card needed."
+          features={[
+            'All MLS matches every week',
+            'AI confidence on Over/Under and BTTS',
+            'Form, rest days, goals data, H2H',
+            'Read-only How It Works guide',
+          ]}
+          cta={<Link to="/register" className="btn btn-ghost" style={{ width: '100%', padding: '12px 18px' }}>Start free</Link>}
+        />
+        <PlanCard
+          name="SHARP"
+          price="$9.99"
+          per="/mo"
+          accent
+          tagline="Bet with the math on your side."
+          features={[
+            'Everything in Free',
+            'Live EV calculator on every card',
+            'Kelly Stake % per bet',
+            'Bet Tracker with P&L',
+            'Full accuracy history',
+            'AI reasoning paragraphs unlocked',
+            'CSV export · Full betting guide',
+          ]}
+          cta={
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={openWhopCheckout}
+              style={{ width: '100%', padding: '12px 18px' }}
+            >
+              Get SHARP — $9.99/mo
+            </button>
+          }
+        />
+      </div>
+
+      <p className="mono" style={{ marginTop: 28, fontSize: 11, color: 'var(--text-faint)', textAlign: 'center', letterSpacing: '0.04em' }}>
+        CANCEL ANYTIME · 18+ BET RESPONSIBLY
+      </p>
+    </section>
+  );
+}
+
+function PlanCard({ name, price, per, tagline, features, cta, accent }) {
+  return (
+    <div
+      className="card"
+      style={{
+        padding: 32,
+        borderColor: accent ? 'rgba(110,231,183,0.35)' : 'var(--border)',
+        background: accent
+          ? 'linear-gradient(180deg, rgba(110,231,183,0.05), transparent), var(--card)'
+          : 'var(--card)',
+        boxShadow: accent ? '0 0 60px rgba(110,231,183,0.08)' : 'none',
+        position: 'relative',
+      }}
+    >
+      <div
+        className="mono"
+        style={{
+          fontSize: 10,
+          letterSpacing: '0.16em',
+          color: accent ? 'var(--mint)' : 'var(--text-3)',
+          marginBottom: 12,
+        }}
+      >
+        {name}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 6 }}>
+        <span className="display" style={{ fontSize: 44, fontWeight: 700, letterSpacing: '-0.03em' }}>
+          {price}
+        </span>
+        {per && (
+          <span className="mono" style={{ fontSize: 13, color: 'var(--text-3)' }}>{per}</span>
+        )}
+      </div>
+      <p style={{ color: 'var(--text-2)', fontSize: 13, margin: '0 0 22px' }}>{tagline}</p>
+      <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', display: 'grid', gap: 10 }}>
+        {features.map((f) => (
+          <li key={f} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5 }}>
+            <Icon name="check" size={13} color={accent ? 'var(--mint)' : 'var(--text-2)'} /> {f}
+          </li>
+        ))}
+      </ul>
+      {cta}
+    </div>
+  );
+}
+
+function Footer() {
+  return (
+    <footer
+      style={{
+        borderTop: '1px solid var(--border-soft)',
+        padding: '32px 24px',
+        marginTop: 40,
+        background: 'var(--bg-2)',
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 1100,
+          margin: '0 auto',
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 20,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <Logo size="sm" />
+          <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', letterSpacing: '0.04em' }}>
+            © 2026 FastScore · 18+ BET RESPONSIBLY
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 18 }}>
+          <Link to="/login" className="mono" style={footerLink}>Log in</Link>
+          <Link to="/register" className="mono" style={footerLink}>Sign up</Link>
+          <a href="#pricing" className="mono" style={footerLink}>Pricing</a>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+const navInner = {
+  maxWidth: 1200,
+  margin: '0 auto',
+  height: 64,
+  padding: '0 24px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+};
+
+const navLink = {
+  color: 'var(--text-2)',
+  fontSize: 11,
+  letterSpacing: '0.1em',
+  textDecoration: 'none',
+};
+
+const footerLink = {
+  color: 'var(--text-2)',
+  fontSize: 11,
+  letterSpacing: '0.08em',
+  textDecoration: 'none',
+};

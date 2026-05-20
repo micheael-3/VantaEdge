@@ -993,3 +993,17 @@ table.tbl tr:last-child td { border-bottom: none; }
   .aff-link-grid { grid-template-columns: 1fr !important; }
   .bk-stats-grid { grid-template-columns: 1fr 1fr !important; }
 }
+
+/* Public landing — Hero, How It Works, and Pricing grids stack on phones.
+   Desktop: 2-col hero, 3-col how-it-works, 2-col pricing. */
+.lp-hero-grid     { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+.lp-how-grid      { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.lp-pricing-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 880px) {
+  .lp-hero-grid    { grid-template-columns: 1fr; gap: 40px; }
+  .lp-how-grid     { grid-template-columns: 1fr; }
+  .lp-pricing-grid { grid-template-columns: 1fr; }
+  /* Mobile: hide the plain text nav links — only the Start Free
+     button stays visible alongside the logo. */
+  .lp-nav-links > a:not(.btn) { display: none; }
+}
