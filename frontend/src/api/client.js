@@ -56,7 +56,8 @@ export const predictions = {
 };
 
 export const history = {
-  getHistory: () => api.get('/api/history').then((r) => r.data),
+  getHistory: (window) =>
+    api.get('/api/history', { params: window && window !== 'default' ? { window } : {} }).then((r) => r.data),
   getAccuracy: () => api.get('/api/history/accuracy').then((r) => r.data),
 };
 

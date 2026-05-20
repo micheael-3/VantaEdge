@@ -65,6 +65,18 @@ async function getTeamFixtures(teamId, leagueId) {
   return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params));
 }
 
+// Fetch a single fixture by its API-Football ID. Bypasses the general cache
+// so we always read the latest status. The results worker only calls this
+// for matches that should be over, so the volume is bounded.
+async function getFixtureById(fixtureId) {
+  const res = await client().get('/fixtures', { params: { id: fixtureId } });
+  if (res.data && res.data.errors && Object.keys(res.data.errors).length > 0) {
+    throw new Error(`API-Football /fixtures id=${fixtureId}: ${JSON.stringify(res.data.errors)}`);
+  }
+  const list = res.data && Array.isArray(res.data.response) ? res.data.response : [];
+  return list[0] || null;
+}
+
 function extractFormForTeam(fixtures, teamId) {
   if (!Array.isArray(fixtures)) return [];
   return fixtures
@@ -96,6 +108,7 @@ module.exports = {
   getH2H,
   getTeamStats,
   getTeamFixtures,
+  getFixtureById,
   extractFormForTeam,
   calculateRestDays,
 };

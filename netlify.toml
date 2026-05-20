@@ -94,6 +94,11 @@
   to     = "/.netlify/functions/email/:splat"
   status = 200
 
+[[redirects]]
+  from   = "/api/results/*"
+  to     = "/.netlify/functions/results/:splat"
+  status = 200
+
 # SPA fallback — every non-API, non-asset path serves index.html.
 [[redirects]]
   from   = "/*"
