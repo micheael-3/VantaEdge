@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'meta-llama/llama-3.1-8b-instruct';
+const MODEL = 'anthropic/claude-3.5-haiku';
 
 const SYSTEM_PROMPT = `You are an expert football analyst specialising in goals markets across MLS, Bundesliga, Eredivisie, Championship, Ligue 1, Scottish Premiership, La Liga, and Premier League.
 
