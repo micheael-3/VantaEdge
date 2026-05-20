@@ -101,10 +101,10 @@ export default function Navbar() {
             </>
           ) : (
             <>
-              <Link to="/blog" className="btn btn-ghost">
+              <Link to="/blog" className="btn btn-ghost nav-mobile-hidden">
                 Blog
               </Link>
-              <Link to="/affiliate" className="btn btn-ghost">
+              <Link to="/affiliate" className="btn btn-ghost nav-mobile-hidden">
                 Affiliates
               </Link>
               <Link to="/login" className="btn btn-ghost">
