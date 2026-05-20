@@ -14,39 +14,62 @@ const path = require('path');
 const { sql } = require('./_shared/db');
 
 // Smart splitter aware of $$ ... $$ PL/pgSQL blocks so DO blocks stay
-// intact. Splits on `;` only when we're not inside a $$ block. Drops
-// pure comment lines (-- ...) but preserves inline comments.
+// intact. Strips line comments (-- ...) BEFORE the char-by-char scan so
+// semicolons inside comments (e.g. "daily cache; one row per date")
+// can't break a CREATE TABLE in half. Then splits on `;` when we're
+// outside a $$ block and outside a '...' string literal.
 function splitSql(rawSql) {
+  const cleaned = rawSql
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trimStart();
+      if (trimmed.startsWith('--')) return '';
+      // Strip trailing line comments too: "-- foo" after some SQL
+      const idx = findLineCommentStart(line);
+      return idx >= 0 ? line.slice(0, idx) : line;
+    })
+    .join('\n');
+
   const statements = [];
   let buf = '';
   let inDollar = false;
-  for (let i = 0; i < rawSql.length; i++) {
-    const c = rawSql[i];
-    const next = rawSql[i + 1];
-    if (c === '$' && next === '$') {
+  let inSingleQuote = false;
+  for (let i = 0; i < cleaned.length; i++) {
+    const c = cleaned[i];
+    const next = cleaned[i + 1];
+    if (!inSingleQuote && c === '$' && next === '$') {
       inDollar = !inDollar;
       buf += '$$';
       i += 1;
       continue;
     }
-    if (c === ';' && !inDollar) {
-      const stmt = stripCommentLines(buf).trim();
+    if (!inDollar && c === "'") {
+      inSingleQuote = !inSingleQuote;
+      buf += c;
+      continue;
+    }
+    if (c === ';' && !inDollar && !inSingleQuote) {
+      const stmt = buf.trim();
       if (stmt) statements.push(stmt);
       buf = '';
       continue;
     }
     buf += c;
   }
-  const tail = stripCommentLines(buf).trim();
+  const tail = buf.trim();
   if (tail) statements.push(tail);
   return statements;
 }
 
-function stripCommentLines(s) {
-  return s
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('--'))
-    .join('\n');
+// Returns the index of a `--` line-comment start that isn't inside a
+// single-quoted string on the same line. Returns -1 if no comment.
+function findLineCommentStart(line) {
+  let inQuote = false;
+  for (let i = 0; i < line.length - 1; i++) {
+    if (line[i] === "'") inQuote = !inQuote;
+    if (!inQuote && line[i] === '-' && line[i + 1] === '-') return i;
+  }
+  return -1;
 }
 
 // Execute a single raw SQL statement against Neon. The serverless driver's
