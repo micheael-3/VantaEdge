@@ -127,6 +127,74 @@ async function me(event) {
   });
 }
 
+// Diagnostic: returns the raw user row from the DB for the current JWT,
+// PLUS lists every user with is_admin = TRUE so we can verify the admin
+// SQL actually matched a row. Auth-required (JWT cookie) — no extra
+// secret needed since the only sensitive info revealed is your own row.
+async function whoami(event) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+
+  // Raw row from DB — bypasses the auth-mw resilience fallback so we see
+  // the real values, including is_admin.
+  let rawRow = null;
+  let columnExists = true;
+  try {
+    const rows = await sql()`SELECT id, email, tier, is_admin, created_at
+                             FROM users WHERE id = ${user.id}`;
+    rawRow = rows[0] || null;
+  } catch (err) {
+    columnExists = false;
+    rawRow = { error: err.message, code: err.code };
+  }
+
+  // Who else is admin? Lists all admins so we can spot if the UPDATE
+  // matched the wrong row, or if there are zero admins at all.
+  let allAdmins = [];
+  try {
+    allAdmins = await sql()`SELECT id, email, tier, is_admin FROM users WHERE is_admin = TRUE`;
+  } catch {
+    allAdmins = [{ error: 'is_admin column missing — run /api/migrate' }];
+  }
+
+  // Case-insensitive match for the specific email so we can see whether
+  // the user's email-at-signup matches what they expected.
+  const targetEmail = 'panayidesmichalis81@gmail.com';
+  let exactMatch = null;
+  try {
+    const rows = await sql()`SELECT id, email, tier, is_admin
+                             FROM users
+                             WHERE LOWER(email) = LOWER(${targetEmail})`;
+    exactMatch = rows[0] || null;
+  } catch (err) {
+    exactMatch = { error: err.message };
+  }
+
+  return json(200, {
+    diagnostic: 'whoami',
+    jwtUser: {
+      id: user.id,
+      email: user.email,
+      tier: user.tier,
+      is_admin_from_authMw: !!user.is_admin,
+    },
+    rawDbRow: rawRow,
+    is_admin_column_exists: columnExists,
+    foundUserByTargetEmail: exactMatch,
+    allAdminUsersInDb: allAdmins,
+    hint:
+      rawRow && rawRow.is_admin
+        ? 'is_admin=TRUE in DB. If the UI still shows you as FREE, log out and log back in to refresh the JWT cookie.'
+        : exactMatch && exactMatch.id !== user.id
+        ? 'The target email exists in DB but as a DIFFERENT user from the one you are logged in as. You signed up with a different email/account.'
+        : exactMatch && !exactMatch.is_admin
+        ? 'Target email exists but is_admin=FALSE in DB. The UPDATE SQL did not run successfully or matched 0 rows.'
+        : !exactMatch
+        ? 'No user with that email exists in the DB. Check what email you actually signed up with.'
+        : 'is_admin=FALSE on your row. Run the admin UPDATE SQL.',
+  });
+}
+
 exports.handler = async (event) => {
   try {
     const path = subPath(event, 'auth');
@@ -138,6 +206,7 @@ exports.handler = async (event) => {
     if (method === 'POST' && path === '/refresh') return await refresh(event);
     if (method === 'POST' && path === '/logout') return await logout(event);
     if (method === 'GET' && path === '/me') return await me(event);
+    if (method === 'GET' && path === '/whoami') return await whoami(event);
 
     return notFound();
   } catch (err) {
