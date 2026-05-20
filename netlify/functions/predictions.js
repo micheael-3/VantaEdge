@@ -55,62 +55,80 @@ function ttlForDate(dateStr) {
 // Status codes from API-Football that mean the match is over with a final score.
 const TERMINAL_STATUSES = new Set(['FT', 'AET', 'PEN', 'AWD', 'WO']);
 
+// Try a season on a specific date. Returns [] on any error so the cascade
+// can keep going. All errors get logged in football.js / here.
+async function tryDate(leagueId, dateStr, ttl, season) {
+  try {
+    const list = await football.getFixturesByDate(leagueId, dateStr, ttl, season);
+    return Array.isArray(list) ? list : [];
+  } catch (err) {
+    console.error(`[predictions] cascade: ${dateStr} s${season} failed: ${err.message}`);
+    return [];
+  }
+}
+
 // Find a sensible fixture batch. If the caller supplied an explicit date we
 // fetch only that. Otherwise we cascade: today → tomorrow → recent past.
+// On each attempt we try the default season; if it returns nothing we retry
+// with the *other* season (paid plan upgrade often coincides with a new
+// season key going live before the next default is rolled out).
+const FALLBACK_SEASONS = [football.SEASON, football.SEASON === 2024 ? 2025 : 2024];
+
 async function pickFixtures(leagueId, explicitDate) {
+  const today = todayDateStr();
+
   if (explicitDate) {
-    const list = await football.getFixturesByDate(leagueId, explicitDate, ttlForDate(explicitDate));
-    const today = todayDateStr();
+    let list = [];
+    let usedSeason = null;
+    for (const season of FALLBACK_SEASONS) {
+      list = await tryDate(leagueId, explicitDate, ttlForDate(explicitDate), season);
+      if (list.length) { usedSeason = season; break; }
+    }
+    console.log(`[predictions] cascade explicit league=${leagueId} date=${explicitDate} season=${usedSeason} → ${list.length} fixtures`);
     return {
-      fixtures: list || [],
+      fixtures: list,
       dateLabel: labelForDateStr(explicitDate),
       matchDate: explicitDate,
       isPast: explicitDate < today,
       isUpcoming: explicitDate > today,
       isToday: explicitDate === today,
       mode: 'explicit',
+      seasonUsed: usedSeason,
     };
   }
 
-  const today = todayDateStr();
-  // 1. Today
-  let list = await football.getFixturesByDate(leagueId, today, 300);
-  if (list && list.length) {
-    return {
-      fixtures: list,
-      dateLabel: 'Today',
-      matchDate: today,
-      isPast: false,
-      isUpcoming: false,
-      isToday: true,
-      mode: 'today',
-    };
+  // 1. Today, both seasons
+  for (const season of FALLBACK_SEASONS) {
+    const list = await tryDate(leagueId, today, 300, season);
+    if (list.length) {
+      console.log(`[predictions] cascade league=${leagueId} hit TODAY season=${season} → ${list.length}`);
+      return { fixtures: list, dateLabel: 'Today', matchDate: today, isPast: false, isUpcoming: false, isToday: true, mode: 'today', seasonUsed: season };
+    }
   }
-  // 2. Tomorrow (per spec, only today + tomorrow get pre-scanned on initial load)
+  // 2. Tomorrow, both seasons
   const tomorrow = addDaysStr(today, 1);
-  list = await football.getFixturesByDate(leagueId, tomorrow, 3600);
-  if (list && list.length) {
-    return {
-      fixtures: list,
-      dateLabel: 'Tomorrow',
-      matchDate: tomorrow,
-      isPast: false,
-      isUpcoming: true,
-      isToday: false,
-      mode: 'tomorrow',
-    };
+  for (const season of FALLBACK_SEASONS) {
+    const list = await tryDate(leagueId, tomorrow, 3600, season);
+    if (list.length) {
+      console.log(`[predictions] cascade league=${leagueId} hit TOMORROW season=${season} → ${list.length}`);
+      return { fixtures: list, dateLabel: 'Tomorrow', matchDate: tomorrow, isPast: false, isUpcoming: true, isToday: false, mode: 'tomorrow', seasonUsed: season };
+    }
   }
-  // 3. Recent past as the last-resort fallback so the page is never empty.
-  const recent = await football.getRecentPlayedFixtures(leagueId, 10);
-  return {
-    fixtures: Array.isArray(recent) ? recent : [],
-    dateLabel: 'Recent Matches',
-    matchDate: null,
-    isPast: true,
-    isUpcoming: false,
-    isToday: false,
-    mode: 'recent',
-  };
+  // 3. Recent past (last=10) as the last-resort fallback. Try both seasons.
+  for (const season of FALLBACK_SEASONS) {
+    try {
+      const recent = await football.apiGet('/fixtures', { league: leagueId, season, last: 10 }, { tag: `recent s${season}` });
+      if (Array.isArray(recent) && recent.length) {
+        console.log(`[predictions] cascade league=${leagueId} hit RECENT season=${season} → ${recent.length}`);
+        return { fixtures: recent, dateLabel: 'Recent Matches', matchDate: null, isPast: true, isUpcoming: false, isToday: false, mode: 'recent', seasonUsed: season };
+      }
+    } catch (err) {
+      console.error(`[predictions] recent s${season} failed: ${err.message}`);
+    }
+  }
+
+  console.warn(`[predictions] cascade league=${leagueId} — empty for both seasons today/tomorrow/recent`);
+  return { fixtures: [], dateLabel: 'Recent Matches', matchDate: null, isPast: true, isUpcoming: false, isToday: false, mode: 'recent', seasonUsed: null };
 }
 
 async function handleLeague(event, leagueId) {
@@ -445,6 +463,7 @@ async function handleLeague(event, leagueId) {
     isUpcoming: picked.isUpcoming,
     isToday: picked.isToday,
     mode: picked.mode,
+    seasonUsed: picked.seasonUsed,
     fixtures: results,
   });
 }
@@ -487,12 +506,92 @@ async function handleUpcoming(event, leagueId) {
   return json(200, { leagueId, league: league.name, days });
 }
 
+// GET /api/predictions/test — UNAUTHENTICATED probe for debugging
+// API-Football connectivity. Returns raw response shapes for each probe
+// so you can paste them straight into a bug report.
+async function handleTest(event) {
+  const today = todayDateStr();
+  const tomorrow = addDaysStr(today, 1);
+  const leagueId = 253; // MLS
+  const probes = [
+    { tag: 'today_2024',    params: { league: leagueId, season: 2024, date: today } },
+    { tag: 'today_2025',    params: { league: leagueId, season: 2025, date: today } },
+    { tag: 'tomorrow_2024', params: { league: leagueId, season: 2024, date: tomorrow } },
+    { tag: 'tomorrow_2025', params: { league: leagueId, season: 2025, date: tomorrow } },
+    { tag: 'last10_2024',   params: { league: leagueId, season: 2024, last: 10 } },
+    { tag: 'last10_2025',   params: { league: leagueId, season: 2025, last: 10 } },
+  ];
+
+  const results = {};
+  for (const p of probes) {
+    const url = football.buildUrl('/fixtures', p.params);
+    const start = Date.now();
+    try {
+      const response = await football.apiGet('/fixtures', p.params, { tag: `probe ${p.tag}` });
+      results[p.tag] = {
+        ok: true,
+        url,
+        durationMs: Date.now() - start,
+        responseCount: response.length,
+        firstFixture: response[0] ? {
+          id: response[0].fixture && response[0].fixture.id,
+          date: response[0].fixture && response[0].fixture.date,
+          status: response[0].fixture && response[0].fixture.status,
+          home: response[0].teams && response[0].teams.home && response[0].teams.home.name,
+          away: response[0].teams && response[0].teams.away && response[0].teams.away.name,
+          score: response[0].goals,
+        } : null,
+        sample: response.slice(0, 3),
+      };
+    } catch (err) {
+      results[p.tag] = {
+        ok: false,
+        url,
+        durationMs: Date.now() - start,
+        error: err.message,
+      };
+    }
+  }
+
+  const verdict = (() => {
+    if (results.today_2025 && results.today_2025.responseCount > 0) return { working: true, season: 2025, source: 'today_2025' };
+    if (results.today_2024 && results.today_2024.responseCount > 0) return { working: true, season: 2024, source: 'today_2024' };
+    if (results.tomorrow_2025 && results.tomorrow_2025.responseCount > 0) return { working: true, season: 2025, source: 'tomorrow_2025' };
+    if (results.tomorrow_2024 && results.tomorrow_2024.responseCount > 0) return { working: true, season: 2024, source: 'tomorrow_2024' };
+    if (results.last10_2025 && results.last10_2025.responseCount > 0) return { working: true, season: 2025, source: 'last10_2025' };
+    if (results.last10_2024 && results.last10_2024.responseCount > 0) return { working: true, season: 2024, source: 'last10_2024' };
+    const anyAuth = Object.values(results).some((r) => r.error && r.error.includes('auth failed'));
+    if (anyAuth) return { working: false, reason: 'auth_failed', hint: 'Check FOOTBALL_API_KEY on Netlify env vars + redeploy.' };
+    const anyQuota = Object.values(results).some((r) => r.error && r.error.includes('429'));
+    if (anyQuota) return { working: false, reason: 'quota_exhausted' };
+    return { working: false, reason: 'no_data', hint: 'Both seasons returned 0 fixtures for this league today/tomorrow/last10. Try a different league or check season=2025 has started.' };
+  })();
+
+  return json(200, {
+    now: new Date().toISOString(),
+    today,
+    tomorrow,
+    leagueId,
+    leagueName: 'MLS',
+    keyConfigured: !!process.env.FOOTBALL_API_KEY,
+    keyLength: process.env.FOOTBALL_API_KEY ? process.env.FOOTBALL_API_KEY.length : 0,
+    defaultSeason: football.SEASON,
+    verdict,
+    probes: results,
+  });
+}
+
 exports.handler = async (event) => {
   try {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, body: '' };
     if (event.httpMethod !== 'GET') return error(405, 'Method not allowed');
 
     const path = subPath(event, 'predictions');
+
+    // /test — UNAUTHENTICATED debug probe. Returns raw API-Football
+    // responses for league=253 (MLS) across today, tomorrow, and last=10
+    // for BOTH seasons 2024 and 2025, plus a verdict on which works.
+    if (path === '/test' || path === '/test/') return await handleTest(event);
 
     // /upcoming/:leagueId — date-pill helper
     const upcomingMatch = path.match(/^\/upcoming\/(\d+)\/?$/);

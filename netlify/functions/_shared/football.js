@@ -2,29 +2,70 @@ const axios = require('axios');
 const { getOrFetch } = require('./cache');
 
 const BASE_URL = 'https://v3.football.api-sports.io';
-const SEASON = 2024;
+// Default season. Override per call by passing { season } in params — used
+// by the cascade in predictions.js to retry 2025 when 2024 returns nothing.
+const SEASON = parseInt(process.env.FOOTBALL_DEFAULT_SEASON, 10) || 2024;
 
 function client() {
   return axios.create({
     baseURL: BASE_URL,
     headers: { 'x-apisports-key': process.env.FOOTBALL_API_KEY },
     timeout: 15000,
+    validateStatus: () => true, // we want full visibility on non-2xx
   });
 }
 
-async function apiGet(endpoint, params) {
-  try {
-    const res = await client().get(endpoint, { params });
-    if (res.data && res.data.errors && Object.keys(res.data.errors).length > 0) {
-      throw new Error(`API-Football ${endpoint}: ${JSON.stringify(res.data.errors)}`);
-    }
-    return res.data && Array.isArray(res.data.response) ? res.data.response : [];
-  } catch (err) {
-    if (err.response) {
-      throw new Error(`API-Football ${endpoint} failed: ${err.response.status} ${err.response.statusText}`);
-    }
-    throw err;
+function buildUrl(endpoint, params) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v !== undefined && v !== null) qs.append(k, String(v));
   }
+  return `${BASE_URL}${endpoint}${qs.toString() ? `?${qs.toString()}` : ''}`;
+}
+
+// apiGet — verbose by default. Logs the exact URL we hit, the HTTP status,
+// any API-Football errors body, and how many rows came back. The API key is
+// never in the URL (it's a header), so the logged URL is safe.
+async function apiGet(endpoint, params, { tag = '' } = {}) {
+  const url = buildUrl(endpoint, params);
+  const prefix = `[apiFootball${tag ? ' ' + tag : ''}]`;
+  if (!process.env.FOOTBALL_API_KEY) {
+    console.error(`${prefix} FOOTBALL_API_KEY is not set — every request will 401.`);
+  }
+  console.log(`${prefix} GET ${url}`);
+  let res;
+  try {
+    res = await client().get(endpoint, { params });
+  } catch (err) {
+    console.error(`${prefix} network error: ${err.message}`);
+    throw new Error(`API-Football ${endpoint} network error: ${err.message}`);
+  }
+
+  const data = res.data || {};
+  const errors = data.errors;
+  const results = typeof data.results === 'number' ? data.results : null;
+  const responseLen = Array.isArray(data.response) ? data.response.length : null;
+  console.log(
+    `${prefix} status=${res.status} results=${results} responseLen=${responseLen}` +
+      (errors && (Array.isArray(errors) ? errors.length : Object.keys(errors).length)
+        ? ` errors=${JSON.stringify(errors)}`
+        : ''),
+  );
+
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(`API-Football ${endpoint} ${res.status}: auth failed — check FOOTBALL_API_KEY (paid plan keys use the same endpoint).`);
+  }
+  if (res.status === 429) {
+    throw new Error(`API-Football ${endpoint} 429: daily quota reached.`);
+  }
+  if (res.status >= 400) {
+    throw new Error(`API-Football ${endpoint} ${res.status} ${res.statusText}: ${JSON.stringify(data).slice(0, 400)}`);
+  }
+  // Some endpoints return errors inside a 200 envelope. Treat as failure.
+  if (errors && ((Array.isArray(errors) && errors.length > 0) || (typeof errors === 'object' && Object.keys(errors).length > 0))) {
+    throw new Error(`API-Football ${endpoint}: ${JSON.stringify(errors)}`);
+  }
+  return Array.isArray(data.response) ? data.response : [];
 }
 
 function todayString() {
@@ -36,9 +77,10 @@ function todayString() {
 //   • today -> 300s (lineups, late changes)
 //   • future -> 3600s (rarely changes)
 //   • past   -> 86400s (final results don't change)
-async function getFixturesByDate(leagueId, dateStr, ttlSeconds) {
-  const params = { league: leagueId, season: SEASON, date: dateStr };
-  return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), ttlSeconds);
+async function getFixturesByDate(leagueId, dateStr, ttlSeconds, seasonOverride) {
+  const season = Number.isFinite(seasonOverride) ? seasonOverride : SEASON;
+  const params = { league: leagueId, season, date: dateStr };
+  return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params, { tag: `byDate ${dateStr} s${season}` }), ttlSeconds);
 }
 
 async function getTodayFixtures(leagueId) {
@@ -228,6 +270,10 @@ function calculateRestDays(fixtures) {
 }
 
 module.exports = {
+  SEASON,
+  BASE_URL,
+  apiGet,
+  buildUrl,
   getTodayFixtures,
   getFixturesByDate,
   getRecentPlayedFixtures,
