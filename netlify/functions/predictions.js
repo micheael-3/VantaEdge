@@ -72,7 +72,14 @@ async function tryDate(leagueId, dateStr, ttl, season) {
 // On each attempt we try the default season; if it returns nothing we retry
 // with the *other* season (paid plan upgrade often coincides with a new
 // season key going live before the next default is rolled out).
-const FALLBACK_SEASONS = [football.SEASON, football.SEASON === 2024 ? 2025 : 2024];
+// Static fallback only used for the "recent matches" probe where we
+// don't have a target date to derive a season from. Per-date lookups use
+// football.candidateSeasonsForDate(date) so a calendar year date in 2026
+// is queried with season=2026 first, regardless of FOOTBALL_DEFAULT_SEASON.
+const RECENT_FALLBACK_SEASONS = (() => {
+  const set = new Set([football.SEASON, football.SEASON + 1, football.SEASON - 1]);
+  return Array.from(set);
+})();
 
 async function pickFixtures(leagueId, explicitDate) {
   const today = todayDateStr();
@@ -80,7 +87,7 @@ async function pickFixtures(leagueId, explicitDate) {
   if (explicitDate) {
     let list = [];
     let usedSeason = null;
-    for (const season of FALLBACK_SEASONS) {
+    for (const season of football.candidateSeasonsForDate(explicitDate)) {
       list = await tryDate(leagueId, explicitDate, ttlForDate(explicitDate), season);
       if (list.length) { usedSeason = season; break; }
     }
@@ -97,25 +104,26 @@ async function pickFixtures(leagueId, explicitDate) {
     };
   }
 
-  // 1. Today, both seasons
-  for (const season of FALLBACK_SEASONS) {
+  // 1. Today, candidate seasons derived from today's calendar year
+  for (const season of football.candidateSeasonsForDate(today)) {
     const list = await tryDate(leagueId, today, 300, season);
     if (list.length) {
       console.log(`[predictions] cascade league=${leagueId} hit TODAY season=${season} → ${list.length}`);
       return { fixtures: list, dateLabel: 'Today', matchDate: today, isPast: false, isUpcoming: false, isToday: true, mode: 'today', seasonUsed: season };
     }
   }
-  // 2. Tomorrow, both seasons
+  // 2. Tomorrow, candidate seasons derived from tomorrow's calendar year
   const tomorrow = addDaysStr(today, 1);
-  for (const season of FALLBACK_SEASONS) {
+  for (const season of football.candidateSeasonsForDate(tomorrow)) {
     const list = await tryDate(leagueId, tomorrow, 3600, season);
     if (list.length) {
       console.log(`[predictions] cascade league=${leagueId} hit TOMORROW season=${season} → ${list.length}`);
       return { fixtures: list, dateLabel: 'Tomorrow', matchDate: tomorrow, isPast: false, isUpcoming: true, isToday: false, mode: 'tomorrow', seasonUsed: season };
     }
   }
-  // 3. Recent past (last=10) as the last-resort fallback. Try both seasons.
-  for (const season of FALLBACK_SEASONS) {
+  // 3. Recent past (last=10) as the last-resort fallback. No date here,
+  //    so use the static SEASON +/- 1 list.
+  for (const season of RECENT_FALLBACK_SEASONS) {
     try {
       const recent = await football.apiGet('/fixtures', { league: leagueId, season, last: 10 }, { tag: `recent s${season}` });
       if (Array.isArray(recent) && recent.length) {
@@ -546,7 +554,7 @@ async function handleUpcoming(event, leagueId) {
     let count = null;
     try {
       // Past dates rarely change — 24h TTL.
-      count = await football.getFixtureCountByDate(leagueId, dateStr, 86400);
+      count = await football.getFixtureCountByDateAuto(leagueId, dateStr, 86400);
     } catch (e) {
       console.error(`upcoming scan failed for ${dateStr}:`, e.message);
     }
@@ -565,7 +573,7 @@ async function handleUpcoming(event, leagueId) {
     try {
       // i === 0 → today (5min TTL), i ≥ 1 → future (1h TTL)
       const ttl = i === 0 ? 300 : 3600;
-      count = await football.getFixtureCountByDate(leagueId, dateStr, ttl);
+      count = await football.getFixtureCountByDateAuto(leagueId, dateStr, ttl);
     } catch (e) {
       console.error(`upcoming scan failed for ${dateStr}:`, e.message);
     }

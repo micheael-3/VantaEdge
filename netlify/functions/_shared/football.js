@@ -101,6 +101,47 @@ async function getFixtureCountByDate(leagueId, dateStr, ttlSeconds) {
   return Array.isArray(list) ? list.length : 0;
 }
 
+// Candidate API-Football season keys for a given calendar date. MLS and
+// most domestic leagues key seasons by year; a 2026-05-24 game lives in
+// season 2026, but the default SEASON env var may still be 2025. Returns
+// [year-of-date, year-of-date - 1, SEASON, SEASON+1] deduped — try in
+// order, first one that returns rows wins.
+function candidateSeasonsForDate(dateStr) {
+  const seasons = [];
+  const seen = new Set();
+  const add = (s) => {
+    if (Number.isFinite(s) && !seen.has(s)) { seen.add(s); seasons.push(s); }
+  };
+  const yearOfDate = dateStr && /^\d{4}-/.test(dateStr) ? parseInt(dateStr.slice(0, 4), 10) : null;
+  if (yearOfDate) {
+    add(yearOfDate);
+    add(yearOfDate - 1);
+  }
+  add(SEASON);
+  add(SEASON + 1);
+  return seasons;
+}
+
+// Like getFixturesByDate but tries multiple season keys until one comes
+// back non-empty. Used by the date-pill scan so a date in calendar year
+// 2026 doesn't return 0 just because the default SEASON is still 2025.
+// Returns { fixtures, season } so callers can know which season matched.
+async function getFixturesByDateAuto(leagueId, dateStr, ttlSeconds) {
+  const candidates = candidateSeasonsForDate(dateStr);
+  let lastFixtures = [];
+  for (const season of candidates) {
+    const list = await getFixturesByDate(leagueId, dateStr, ttlSeconds, season);
+    if (Array.isArray(list) && list.length > 0) return { fixtures: list, season };
+    lastFixtures = list || [];
+  }
+  return { fixtures: lastFixtures, season: candidates[0] || SEASON };
+}
+
+async function getFixtureCountByDateAuto(leagueId, dateStr, ttlSeconds) {
+  const { fixtures } = await getFixturesByDateAuto(leagueId, dateStr, ttlSeconds);
+  return Array.isArray(fixtures) ? fixtures.length : 0;
+}
+
 // API-Football's /fixtures `venue` param now expects an INTEGER venue ID
 // (it used to accept the strings 'home' / 'away'). To preserve the
 // home/away split without venue lookups, fetch the team's last N games
@@ -285,8 +326,11 @@ module.exports = {
   buildUrl,
   getTodayFixtures,
   getFixturesByDate,
+  getFixturesByDateAuto,
+  candidateSeasonsForDate,
   getRecentPlayedFixtures,
   getFixtureCountByDate,
+  getFixtureCountByDateAuto,
   getTeamLastHomeGames,
   getTeamLastAwayGames,
   getH2H,
