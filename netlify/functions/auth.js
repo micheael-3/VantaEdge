@@ -195,6 +195,65 @@ async function whoami(event) {
   });
 }
 
+// One-shot admin grant. Gated on the ADMIN_PASSWORD env var so only the
+// site operator can call it. Hits the real Neon DB the deployed function
+// is connected to — no chance of accidentally running against the wrong
+// branch like the SQL editor allows.
+//
+// Usage: GET /api/auth/grant-admin?key=<ADMIN_PASSWORD>&email=<email>
+async function grantAdmin(event) {
+  const params = (event && event.queryStringParameters) || {};
+  const supplied = params.key || '';
+  const expected = process.env.ADMIN_PASSWORD || '';
+  const email = (params.email || '').trim();
+
+  if (!expected) {
+    return json(500, { error: 'ADMIN_PASSWORD env var is not set on the server.' });
+  }
+  if (supplied !== expected) {
+    return json(401, { error: 'Unauthorized. Append ?key=<ADMIN_PASSWORD>&email=<email>.' });
+  }
+  if (!email) {
+    return json(400, { error: 'Missing ?email= parameter.' });
+  }
+
+  try {
+    const rows = await sql()`
+      UPDATE users
+      SET is_admin = TRUE
+      WHERE LOWER(email) = LOWER(${email})
+      RETURNING id, email, tier, is_admin`;
+
+    if (rows.length === 0) {
+      // List candidate emails so the operator can see what's actually
+      // in the DB and pick the right one.
+      const candidates = await sql()`
+        SELECT email FROM users
+        ORDER BY created_at DESC
+        LIMIT 20`;
+      return json(404, {
+        error: `No user found with email ${email}`,
+        hint: 'The email did not match any row in the DB (case-insensitive). One of these existing emails is yours:',
+        existingEmails: candidates.map((r) => r.email),
+      });
+    }
+
+    return json(200, {
+      ok: true,
+      message: 'Admin granted. Log out and log back in to refresh your JWT cookie, then the Admin Panel link will appear in the sidebar.',
+      updatedUser: rows[0],
+    });
+  } catch (err) {
+    if (err && (err.code === '42703' || /column "?is_admin"? does not exist/i.test(err.message || ''))) {
+      return json(500, {
+        error: 'is_admin column is missing — hit /api/migrate?key=<ADMIN_PASSWORD> first to apply the schema.',
+        details: err.message,
+      });
+    }
+    return json(500, { error: err.message, code: err.code });
+  }
+}
+
 exports.handler = async (event) => {
   try {
     const path = subPath(event, 'auth');
@@ -207,6 +266,7 @@ exports.handler = async (event) => {
     if (method === 'POST' && path === '/logout') return await logout(event);
     if (method === 'GET' && path === '/me') return await me(event);
     if (method === 'GET' && path === '/whoami') return await whoami(event);
+    if (method === 'GET' && path === '/grant-admin') return await grantAdmin(event);
 
     return notFound();
   } catch (err) {
