@@ -95,6 +95,9 @@ All on the Netlify site (one place). See [NETLIFY-DEPLOY.md](NETLIFY-DEPLOY.md) 
 | `REVENUECAT_WEBHOOK_SECRET` | Random string, also pasted into RevenueCat webhook header           |
 | `ADMIN_PASSWORD`            | Password for `/admin` panel. Pick a strong one — it's the only credential for the admin UI. |
 | `NODE_ENV`                  | any value other than `development` (controls `Secure` cookie flag)  |
+| `RESEND_API_KEY`            | _Optional._ For daily-digest email (Resend.com). Functions ship but won't send mail until set. |
+| `OPENWEATHER_API_KEY`       | _Optional._ For weather-aware predictions. Falls back gracefully when absent. |
+| `ODDS_API_KEY`              | _Optional._ Auto-fetch real bookmaker odds from the-odds-api.com. Manual odds entry stays as fallback. |
 
 `URL` is set automatically by Netlify (used for the OpenRouter `HTTP-Referer` header).
 

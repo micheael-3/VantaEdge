@@ -79,6 +79,9 @@ Run that command **twice** — save one value as `JWT_SECRET`, the other as `JWT
 | `REVENUECAT_WEBHOOK_SECRET` | Your made-up strong string                                                                                  |
 | `ADMIN_PASSWORD`            | A strong password for the `/admin` panel. Only credential for the admin UI — choose carefully.              |
 | `NODE_ENV`                  | leave at Netlify's default (any value other than `development`) — controls whether auth cookies are issued `Secure` |
+| `RESEND_API_KEY`            | _Optional._ Resend.com key for daily-digest email. Skip if you're not running notifications yet.            |
+| `OPENWEATHER_API_KEY`       | _Optional._ OpenWeatherMap free tier — enables weather-aware predictions when wired in.                     |
+| `ODDS_API_KEY`              | _Optional._ the-odds-api.com key for auto-fetching real bookmaker odds. Without it, the manual odds inputs on each match card stay enabled. |
 
 `URL` is set automatically by Netlify to your site's primary URL, so the OpenRouter `HTTP-Referer` is filled in for you. You don't need to set it manually.
 

@@ -699,3 +699,173 @@
   color: var(--dp-text-dim);
 }
 .dashboard-page .dp-mobile-nav a.active { color: var(--dp-mint); border-color: rgba(110, 231, 183, 0.4); }
+
+/* ---- Best Bet hero card ---- */
+.dashboard-page .dp-bestbet {
+  margin: 24px 36px 0;
+  border: 1px solid rgba(110, 231, 183, 0.5);
+  border-radius: var(--dp-radius);
+  background:
+    linear-gradient(135deg, rgba(110, 231, 183, 0.08), rgba(110, 231, 183, 0.02));
+  padding: 22px 26px;
+  position: relative;
+  box-shadow: 0 0 0 1px rgba(110, 231, 183, 0.25), 0 0 36px -8px rgba(110, 231, 183, 0.35);
+}
+@media (max-width: 720px) { .dashboard-page .dp-bestbet { margin: 20px 20px 0; padding: 18px 18px; } }
+
+.dashboard-page .dp-bestbet-tag {
+  position: absolute;
+  top: -10px;
+  left: 22px;
+  background: var(--dp-mint);
+  color: #052e1f;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.dashboard-page .dp-bestbet-row {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.dashboard-page .dp-bestbet-main { flex: 1; min-width: 260px; }
+.dashboard-page .dp-bestbet-league {
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  color: var(--dp-text-dim); text-transform: uppercase; letter-spacing: 0.12em;
+}
+.dashboard-page .dp-bestbet-match {
+  font-family: 'Syne', sans-serif; font-weight: 700;
+  font-size: 22px; letter-spacing: -0.015em;
+  margin-top: 8px;
+}
+.dashboard-page .dp-bestbet-bet {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(110, 231, 183, 0.12);
+  border: 1px solid rgba(110, 231, 183, 0.45);
+  color: var(--dp-mint);
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+.dashboard-page .dp-bestbet-stats { display: flex; gap: 24px; }
+.dashboard-page .dp-bestbet-stat .lbl {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.14em; color: var(--dp-text-faint);
+}
+.dashboard-page .dp-bestbet-stat .val {
+  display: block;
+  font-family: 'DM Mono', monospace; font-size: 22px; font-weight: 500;
+  color: var(--dp-mint); margin-top: 4px;
+}
+.dashboard-page .dp-bestbet-blur { filter: blur(7px); user-select: none; pointer-events: none; }
+.dashboard-page .dp-bestbet-blur-overlay {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--dp-bg-raised);
+  border: 1px solid var(--dp-border);
+  color: var(--dp-mint);
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.dashboard-page .dp-bestbet-empty {
+  margin: 24px 36px 0;
+  border: 1px dashed var(--dp-border);
+  border-radius: var(--dp-radius);
+  background: rgba(17, 17, 24, 0.4);
+  padding: 22px 26px;
+  color: var(--dp-text-dim);
+  font-size: 13.5px;
+}
+@media (max-width: 720px) { .dashboard-page .dp-bestbet-empty { margin: 20px 20px 0; } }
+
+/* ---- Advanced filter bar ---- */
+.dashboard-page .dp-filter-bar {
+  display: flex;
+  gap: 16px;
+  padding: 12px 36px 16px;
+  border-bottom: 1px solid var(--dp-border);
+  align-items: center;
+  flex-wrap: wrap;
+}
+@media (max-width: 720px) { .dashboard-page .dp-filter-bar { padding: 12px 20px 14px; } }
+.dashboard-page .dp-filter-group { display: flex; align-items: center; gap: 8px; }
+.dashboard-page .dp-filter-label {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--dp-text-faint);
+  white-space: nowrap;
+}
+.dashboard-page .dp-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 140px;
+  height: 4px;
+  background: var(--dp-bg-raised);
+  border: 1px solid var(--dp-border);
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+}
+.dashboard-page .dp-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--dp-mint);
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(110, 231, 183, 0.6);
+}
+.dashboard-page .dp-slider::-moz-range-thumb {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--dp-mint);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(110, 231, 183, 0.6);
+}
+.dashboard-page .dp-slider-val {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  color: var(--dp-mint);
+  min-width: 36px;
+}
+.dashboard-page .dp-select {
+  background: var(--dp-bg-raised);
+  border: 1px solid var(--dp-border);
+  color: var(--dp-text);
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.dashboard-page .dp-select:focus { outline: none; border-color: var(--dp-mint); }
+.dashboard-page .dp-toggle {
+  border: 1px solid var(--dp-border);
+  background: transparent;
+  color: var(--dp-text-dim);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 200ms;
+}
+.dashboard-page .dp-toggle:hover { border-color: var(--dp-border-strong); color: var(--dp-text); }
+.dashboard-page .dp-toggle.on {
+  background: rgba(110, 231, 183, 0.1);
+  border-color: rgba(110, 231, 183, 0.4);
+  color: var(--dp-mint);
+}

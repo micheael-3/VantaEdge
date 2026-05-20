@@ -64,6 +64,21 @@
   to     = "/.netlify/functions/stats/:splat"
   status = 200
 
+[[redirects]]
+  from   = "/api/blog/*"
+  to     = "/.netlify/functions/blog/:splat"
+  status = 200
+
+[[redirects]]
+  from   = "/api/blog"
+  to     = "/.netlify/functions/blog"
+  status = 200
+
+[[redirects]]
+  from   = "/api/best-bet"
+  to     = "/.netlify/functions/best-bet"
+  status = 200
+
 # SPA fallback — every non-API, non-asset path serves index.html.
 [[redirects]]
   from   = "/*"

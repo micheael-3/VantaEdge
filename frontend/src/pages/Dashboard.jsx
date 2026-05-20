@@ -2,9 +2,36 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { predictions as predictionsApi } from '../api/client';
+import { bestBet as bestBetApi } from '../api/blog';
 import { LEAGUES } from '../config/leagues';
 import { calculateEV, calculateKelly } from '../lib/ev';
 import './Dashboard.css';
+
+const FILTER_KEY = 'vantaedge_dash_filters_v1';
+const DEFAULT_FILTERS = {
+  minConfidence: 60,
+  market: 'all', // 'all' | 'over' | 'btts'
+  valueOnly: false,
+  sort: 'edge', // 'edge' | 'confidence' | 'kickoff'
+};
+
+function loadFilters() {
+  try {
+    const raw = window.localStorage.getItem(FILTER_KEY);
+    if (!raw) return DEFAULT_FILTERS;
+    return { ...DEFAULT_FILTERS, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_FILTERS;
+  }
+}
+
+function saveFilters(f) {
+  try {
+    window.localStorage.setItem(FILTER_KEY, JSON.stringify(f));
+  } catch {
+    // ignore
+  }
+}
 
 // ============ Helpers ============
 function kickoffStr(iso) {
@@ -353,6 +380,95 @@ function Empty({ leagueName, onAll }) {
   );
 }
 
+// ============ Best Bet card ============
+function BestBetCard({ user }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await bestBetApi.today();
+        if (!cancelled) setData(res);
+      } catch {
+        if (!cancelled) setData(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loading) return null;
+  if (!data || !data.bestBet) {
+    return (
+      <div className="dp-bestbet-empty">
+        <strong style={{ color: 'var(--dp-text)', fontFamily: 'Syne, sans-serif', fontSize: 15 }}>
+          No qualifying Best Bet yet today.
+        </strong>{' '}
+        Picks need ≥70% confidence (and ≥8% EV when odds are present). The bar fills as
+        predictions are generated through the day.
+      </div>
+    );
+  }
+
+  const bb = data.bestBet;
+  const isFree = bb.teaser || user.tier === 'FREE';
+  const bet = `${bb.betType} ${bb.line != null ? bb.line : ''}`.trim();
+  const kickoffStr2 = bb.kickoff ? kickoffStr(bb.kickoff) : '';
+
+  return (
+    <div className="dp-bestbet">
+      <span className="dp-bestbet-tag">⭐ Best Bet Today</span>
+      <div className="dp-bestbet-row">
+        <div className="dp-bestbet-main">
+          <div className="dp-bestbet-league">
+            {bb.league}
+            {kickoffStr2 ? <> · {kickoffStr2}</> : null}
+          </div>
+          <div className="dp-bestbet-match">
+            {bb.homeTeam} vs {bb.awayTeam}
+          </div>
+          <div className="dp-bestbet-bet">{bet}</div>
+        </div>
+        {isFree ? (
+          <div>
+            <div className="dp-bestbet-blur">
+              <div className="dp-bestbet-stats">
+                <div className="dp-bestbet-stat">
+                  <span className="lbl">Confidence</span>
+                  <span className="val">88%</span>
+                </div>
+                <div className="dp-bestbet-stat">
+                  <span className="lbl">Edge</span>
+                  <span className="val">+22.5%</span>
+                </div>
+              </div>
+            </div>
+            <Link to="/register" className="dp-bestbet-blur-overlay">
+              🔒 Upgrade to Scout to unlock confidence + edge
+            </Link>
+          </div>
+        ) : (
+          <div className="dp-bestbet-stats">
+            <div className="dp-bestbet-stat">
+              <span className="lbl">Confidence</span>
+              <span className="val">{bb.confidence != null ? `${bb.confidence}%` : '—'}</span>
+            </div>
+            <div className="dp-bestbet-stat">
+              <span className="lbl">Edge</span>
+              <span className="val">{bb.evEdge != null ? `+${bb.evEdge.toFixed(1)}%` : '—'}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ============ Dashboard ============
 export default function Dashboard() {
   const { user, logout } = useAuth();
@@ -366,6 +482,12 @@ export default function Dashboard() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [filter, setFilter] = useState('all');
   const [showLegend, setShowLegend] = useState(true);
+  const [advFilters, setAdvFilters] = useState(loadFilters);
+
+  // Persist filters across sessions.
+  useEffect(() => {
+    saveFilters(advFilters);
+  }, [advFilters]);
 
   const fetchData = useCallback(async (leagueId, initial = false) => {
     setLoading(true);
@@ -398,6 +520,8 @@ export default function Dashboard() {
 
   const filtered = useMemo(() => {
     let list = matches.slice();
+
+    // Chip filter (legacy, kept for the 'Strong Value' / market quick buttons)
     if (filter === 'strong') list = list.filter(isStrongValue);
     if (filter === 'value') list = list.filter((m) => {
       const e = bestEv(m);
@@ -405,7 +529,40 @@ export default function Dashboard() {
     });
     if (filter === 'over') list = list.filter((m) => m.predictions && m.predictions.over);
     if (filter === 'btts') list = list.filter((m) => m.predictions && m.predictions.btts);
+
+    // Advanced filters
+    list = list.filter((m) => {
+      const overC = m.predictions && m.predictions.over ? m.predictions.over.confidence : 0;
+      const bttsC = m.predictions && m.predictions.btts ? m.predictions.btts.confidence : 0;
+      const maxC = Math.max(overC, bttsC);
+      if (maxC < advFilters.minConfidence) return false;
+      if (advFilters.market === 'over' && !(m.predictions && m.predictions.over)) return false;
+      if (advFilters.market === 'btts' && !(m.predictions && m.predictions.btts)) return false;
+      if (advFilters.valueOnly) {
+        const e = bestEv(m);
+        if (e == null || e <= 0) return false;
+      }
+      return true;
+    });
+
+    // Sort
+    const sortKey = advFilters.sort;
     return list.sort((a, b) => {
+      if (sortKey === 'kickoff') {
+        return new Date(a.kickoff || 0) - new Date(b.kickoff || 0);
+      }
+      if (sortKey === 'confidence') {
+        const ca = Math.max(
+          a.predictions && a.predictions.over ? a.predictions.over.confidence : 0,
+          a.predictions && a.predictions.btts ? a.predictions.btts.confidence : 0,
+        );
+        const cb = Math.max(
+          b.predictions && b.predictions.over ? b.predictions.over.confidence : 0,
+          b.predictions && b.predictions.btts ? b.predictions.btts.confidence : 0,
+        );
+        return cb - ca;
+      }
+      // 'edge' (default)
       const ea = bestEv(a);
       const eb = bestEv(b);
       if (ea == null && eb == null) {
@@ -415,7 +572,7 @@ export default function Dashboard() {
       }
       return (eb ?? -Infinity) - (ea ?? -Infinity);
     });
-  }, [matches, filter]);
+  }, [matches, filter, advFilters]);
 
   const strongCount = matches.filter(isStrongValue).length;
   const avgStrongConf = (() => {
@@ -486,7 +643,9 @@ export default function Dashboard() {
             </div>
           </header>
 
-          <div className="dp-league-tabs-wrap">
+          <BestBetCard user={user} />
+
+          <div className="dp-league-tabs-wrap" style={{ marginTop: 24 }}>
             <div className="dp-league-tabs">
               {LEAGUES.map((l) => (
                 <button
@@ -499,6 +658,65 @@ export default function Dashboard() {
                   {activeLeague === l.id && <span className="ct">{matches.length}</span>}
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div className="dp-filter-bar">
+            <div className="dp-filter-group">
+              <span className="dp-filter-label">Min confidence</span>
+              <input
+                type="range"
+                min="50"
+                max="90"
+                step="1"
+                value={advFilters.minConfidence}
+                onChange={(e) => setAdvFilters((f) => ({ ...f, minConfidence: parseInt(e.target.value, 10) }))}
+                className="dp-slider"
+                aria-label="Minimum confidence"
+              />
+              <span className="dp-slider-val">{advFilters.minConfidence}%</span>
+            </div>
+            <div className="dp-filter-group">
+              <span className="dp-filter-label">Markets</span>
+              <button
+                className={`dp-toggle ${advFilters.market === 'all' ? 'on' : ''}`}
+                onClick={() => setAdvFilters((f) => ({ ...f, market: 'all' }))}
+              >
+                All
+              </button>
+              <button
+                className={`dp-toggle ${advFilters.market === 'over' ? 'on' : ''}`}
+                onClick={() => setAdvFilters((f) => ({ ...f, market: 'over' }))}
+              >
+                Over only
+              </button>
+              <button
+                className={`dp-toggle ${advFilters.market === 'btts' ? 'on' : ''}`}
+                onClick={() => setAdvFilters((f) => ({ ...f, market: 'btts' }))}
+              >
+                BTTS only
+              </button>
+            </div>
+            <div className="dp-filter-group">
+              <button
+                className={`dp-toggle ${advFilters.valueOnly ? 'on' : ''}`}
+                onClick={() => setAdvFilters((f) => ({ ...f, valueOnly: !f.valueOnly }))}
+                title="Hide cards with no positive EV (needs odds entered to be visible)"
+              >
+                {advFilters.valueOnly ? '✓ Value only' : 'Value only'}
+              </button>
+            </div>
+            <div className="dp-filter-group" style={{ marginLeft: 'auto' }}>
+              <span className="dp-filter-label">Sort</span>
+              <select
+                className="dp-select"
+                value={advFilters.sort}
+                onChange={(e) => setAdvFilters((f) => ({ ...f, sort: e.target.value }))}
+              >
+                <option value="edge">EV edge (high → low)</option>
+                <option value="confidence">Confidence (high → low)</option>
+                <option value="kickoff">Kickoff time</option>
+              </select>
             </div>
           </div>
 

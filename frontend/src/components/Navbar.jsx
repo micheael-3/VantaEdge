@@ -29,6 +29,9 @@ export default function Navbar() {
               <NavLink to="/affiliate/dashboard" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
                 Affiliates
               </NavLink>
+              <NavLink to="/blog" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
+                Blog
+              </NavLink>
               <NavLink to="/settings" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
                 Settings
               </NavLink>
@@ -39,6 +42,9 @@ export default function Navbar() {
             </>
           ) : (
             <>
+              <Link to="/blog" className="btn btn-ghost">
+                Blog
+              </Link>
               <Link to="/affiliate" className="btn btn-ghost">
                 Affiliates
               </Link>

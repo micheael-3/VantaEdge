@@ -17,6 +17,8 @@ import { getAdminToken } from './api/admin';
 import Affiliate from './pages/Affiliate';
 import AffiliateDashboard from './pages/AffiliateDashboard';
 import RefCapture from './pages/RefCapture';
+import Blog from './pages/Blog';
+import BlogPost from './pages/BlogPost';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -120,6 +122,8 @@ export default function App() {
           }
         />
         <Route path="/ref/:code" element={<RefCapture />} />
+        <Route path="/blog" element={<Blog />} />
+        <Route path="/blog/:slug" element={<BlogPost />} />
         <Route path="/affiliate" element={<Affiliate />} />
         <Route
           path="/affiliate/dashboard"

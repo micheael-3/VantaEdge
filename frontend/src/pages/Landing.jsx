@@ -61,6 +61,43 @@ function HeroNum({ value, suffix = '', ready = true }) {
   );
 }
 
+function BestBetTeaser() {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get('/api/best-bet');
+        if (!cancelled) setData(data);
+      } catch {
+        // ignore — section just won't render
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!data || !data.bestBet) return null;
+  const bb = data.bestBet;
+  const bet = `${bb.betType} ${bb.line != null ? bb.line : ''}`.trim();
+
+  return (
+    <div className="lp-bestbet-teaser">
+      <div>
+        <div className="label">⭐ Today's Top Pick</div>
+        <div className="match">{bb.homeTeam} vs {bb.awayTeam}</div>
+        <div className="meta">{bb.league} · {bet}</div>
+      </div>
+      <div>
+        <div className="label">Confidence</div>
+        <div className="blur">88%</div>
+      </div>
+      <Link to="/register" className="unlock">Unlock confidence →</Link>
+    </div>
+  );
+}
+
 function useLiveStats() {
   const [stats, setStats] = useState({ valueBetsThisMonth: 0, avgConfidenceStrongValue: 0, leagues: 8 });
   const [ready, setReady] = useState(false);
@@ -101,6 +138,7 @@ function Nav({ openAppHref }) {
           <a href="#how">How It Works</a>
           <a href="#leagues">Leagues</a>
           <a href="#pricing">Pricing</a>
+          <Link to="/blog">Blog</Link>
         </div>
         <div className="lp-nav-actions">
           <Link className="lp-btn lp-btn-ghost lp-btn-sm lp-hidden-md" to="/login">
@@ -178,6 +216,8 @@ function Hero() {
             <span className="lbl">Leagues analysed every matchday</span>
           </div>
         </div>
+
+        <BestBetTeaser />
       </div>
     </section>
   );
@@ -554,6 +594,7 @@ function Footer({ openAppHref }) {
           </div>
           <div className="lp-footer-col">
             <h5>Resources</h5>
+            <Link to="/blog">Blog</Link>
             <a href="#how">How EV works</a>
             <a href="#leagues">Leagues</a>
             <a href="#pricing">Pricing</a>

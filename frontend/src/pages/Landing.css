@@ -303,6 +303,49 @@
   max-width: 180px;
 }
 
+.landing-page .lp-bestbet-teaser {
+  margin: 36px auto 0;
+  max-width: 540px;
+  border: 1px solid rgba(110, 231, 183, 0.45);
+  border-radius: var(--lp-radius);
+  background: linear-gradient(135deg, rgba(110, 231, 183, 0.08), rgba(110, 231, 183, 0.02));
+  padding: 16px 20px;
+  box-shadow: 0 0 0 1px rgba(110, 231, 183, 0.18), 0 0 28px -10px rgba(110, 231, 183, 0.4);
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.landing-page .lp-bestbet-teaser .label {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--lp-mint);
+}
+.landing-page .lp-bestbet-teaser .match {
+  font-family: 'Syne', sans-serif; font-weight: 600;
+  font-size: 16px; letter-spacing: -0.01em;
+  margin-top: 4px;
+}
+.landing-page .lp-bestbet-teaser .meta {
+  font-family: 'DM Mono', monospace; font-size: 11px; color: var(--lp-text-dim);
+  margin-top: 2px;
+}
+.landing-page .lp-bestbet-teaser .blur {
+  filter: blur(6px); user-select: none;
+  font-family: 'DM Mono', monospace;
+}
+.landing-page .lp-bestbet-teaser .unlock {
+  margin-left: auto;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--lp-mint);
+  border: 1px solid rgba(110, 231, 183, 0.4);
+  padding: 6px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
 /* ---- Three-col feature ---- */
 .landing-page .lp-three-col {
   display: grid;
