@@ -31,6 +31,9 @@
 [functions."agent-best-bet"]
   schedule = "0 7 * * *"
 
+[functions."email"]
+  schedule = "0 7 * * *"
+
 [build.environment]
   NODE_VERSION           = "20"
   SECRETS_SCAN_OMIT_KEYS = "NODE_ENV,FOOTBALL_DEFAULT_SEASON"
@@ -124,11 +127,6 @@
 [[redirects]]
   from   = "/api/email/*"
   to     = "/.netlify/functions/email/:splat"
-  status = 200
-
-[[redirects]]
-  from   = "/api/results/*"
-  to     = "/.netlify/functions/results/:splat"
   status = 200
 
 [[redirects]]

@@ -93,3 +93,21 @@
 .dashboard-page .cs-day.past:not(.empty):not(.today) {
   color: var(--dp-text);
 }
+
+/* Mobile: tighten padding + ensure touch-friendly tap target so the strip
+   doesn't blow the page horizontally on 375px screens. */
+@media (max-width: 480px) {
+  .dashboard-page .cs-strip {
+    padding: 8px 16px;
+    gap: 6px;
+    /* iOS momentum scroll */
+    -webkit-overflow-scrolling: touch;
+  }
+  .dashboard-page .cs-day {
+    width: 40px;
+    height: 56px;
+    min-width: 40px;
+  }
+  .dashboard-page .cs-day .day-num { font-size: 16px; }
+  .dashboard-page .cs-day .day-name { font-size: 9px; }
+}
