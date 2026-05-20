@@ -13,8 +13,8 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-inner">
-        <Link to={user ? '/dashboard' : '/'} className="brand">
-          Vanta<span className="brand-mark">Edge</span>
+        <Link to="/" className="brand">
+          Vanta<span className="brand-mark">·</span>Edge
         </Link>
         <div className="row" style={{ gap: 14 }}>
           {user ? (

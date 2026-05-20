@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import api from '../api/client';
 import './Landing.css';
 
 // ============ Hooks ============
@@ -50,14 +51,41 @@ function Brand() {
   );
 }
 
-function HeroNum({ value, suffix = '' }) {
-  const n = useCounter(value, 1800);
+function HeroNum({ value, suffix = '', ready = true }) {
+  const n = useCounter(value, 1800, ready);
   return (
     <>
       {Math.round(n).toLocaleString()}
       {suffix}
     </>
   );
+}
+
+function useLiveStats() {
+  const [stats, setStats] = useState({ valueBetsThisMonth: 0, avgConfidenceStrongValue: 0, leagues: 8 });
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get('/api/stats/public');
+        if (cancelled) return;
+        setStats({
+          valueBetsThisMonth: Number(data.valueBetsThisMonth) || 0,
+          avgConfidenceStrongValue: Number(data.avgConfidenceStrongValue) || 0,
+          leagues: Number(data.leagues) || 8,
+        });
+      } catch {
+        // keep defaults
+      } finally {
+        if (!cancelled) setReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return { stats, ready };
 }
 
 // ============ Sections ============
@@ -88,6 +116,7 @@ function Nav({ openAppHref }) {
 }
 
 function Hero() {
+  const { stats, ready } = useLiveStats();
   return (
     <section className="lp-hero lp-container">
       <div className="lp-hero-inner">
@@ -130,19 +159,21 @@ function Hero() {
         <div className="lp-hero-stats">
           <div className="lp-hero-stat">
             <span className="num">
-              <HeroNum value={847} />
+              {ready ? <HeroNum value={stats.valueBetsThisMonth} /> : '—'}
             </span>
             <span className="lbl">Value bets identified this month</span>
           </div>
           <div className="lp-hero-stat">
             <span className="num">
-              <HeroNum value={73} suffix="%" />
+              {ready && stats.avgConfidenceStrongValue > 0
+                ? <HeroNum value={stats.avgConfidenceStrongValue} suffix="%" />
+                : '—'}
             </span>
             <span className="lbl">Avg confidence on Strong Value picks</span>
           </div>
           <div className="lp-hero-stat">
             <span className="num">
-              <HeroNum value={8} />
+              <HeroNum value={stats.leagues} />
             </span>
             <span className="lbl">Leagues analysed every matchday</span>
           </div>
@@ -509,7 +540,9 @@ function Footer({ openAppHref }) {
       <div className="lp-container">
         <div className="lp-footer-top">
           <div>
-            <Brand />
+            <Link to="/" aria-label="VantaEdge home">
+              <Brand />
+            </Link>
             <p className="tagline">Statistical edge. Every matchday.</p>
           </div>
           <div className="lp-footer-col">

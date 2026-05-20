@@ -1,152 +1,586 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Navbar from '../components/Navbar';
-import LeagueTabs from '../components/LeagueTabs';
-import MatchCard from '../components/MatchCard';
-import SkeletonCard from '../components/SkeletonCard';
-import UpgradeModal from '../components/UpgradeModal';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { predictions as predictionsApi } from '../api/client';
-import { LEAGUES, REFRESH_LIMITS, canAccessLeague } from '../config/leagues';
+import { LEAGUES } from '../config/leagues';
+import { calculateEV, calculateKelly } from '../lib/ev';
+import './Dashboard.css';
 
-function defaultLeague(tier) {
-  const accessible = LEAGUES.find((l) => canAccessLeague(tier, l.minTier));
-  return accessible ? accessible.id : LEAGUES[0].id;
+// ============ Helpers ============
+function kickoffStr(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
 }
 
+function confidenceBand(c) {
+  if (c >= 70) return 'high';
+  if (c >= 55) return 'med';
+  return 'low';
+}
+
+function bestEv(m) {
+  const overEdge = m.ev && m.ev.over ? m.ev.over.edge : null;
+  const bttsEdge = m.ev && m.ev.btts ? m.ev.btts.edge : null;
+  if (overEdge == null && bttsEdge == null) return null;
+  if (overEdge == null) return bttsEdge;
+  if (bttsEdge == null) return overEdge;
+  return Math.max(overEdge, bttsEdge);
+}
+
+function isStrongValue(m) {
+  // Treat as Strong Value when confidence is high — EV may not be present
+  // until the user enters odds, so confidence alone drives the glow treatment.
+  const overConf = m.predictions && m.predictions.over ? m.predictions.over.confidence : 0;
+  const bttsConf = m.predictions && m.predictions.btts ? m.predictions.btts.confidence : 0;
+  return Math.max(overConf, bttsConf) >= 70;
+}
+
+// ============ Sidebar ============
+function Sidebar({ user, onLogout }) {
+  return (
+    <aside className="dp-sidebar">
+      <Link to="/" className="dp-brand">
+        Vanta<span className="accent-dot">·</span>Edge
+      </Link>
+
+      <div className="dp-side-section">
+        <div className="dp-side-label">Workspace</div>
+        <NavLink to="/dashboard" className={({ isActive }) => `dp-side-link ${isActive ? 'active' : ''}`} end>
+          <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <rect x="3" y="3" width="7" height="9" rx="1" />
+            <rect x="14" y="3" width="7" height="5" rx="1" />
+            <rect x="14" y="12" width="7" height="9" rx="1" />
+            <rect x="3" y="16" width="7" height="5" rx="1" />
+          </svg>
+          Today's Edge
+        </NavLink>
+        <NavLink to="/history" className={({ isActive }) => `dp-side-link ${isActive ? 'active' : ''}`}>
+          <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path d="M3 17l5-5 4 4 8-8" />
+            <path d="M14 8h6v6" />
+          </svg>
+          ROI / History
+        </NavLink>
+        <NavLink to="/affiliate/dashboard" className={({ isActive }) => `dp-side-link ${isActive ? 'active' : ''}`}>
+          <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
+          </svg>
+          Affiliates
+        </NavLink>
+      </div>
+
+      <div className="dp-side-section">
+        <div className="dp-side-label">Tools</div>
+        <div className="dp-side-link disabled" title="Coming soon">
+          <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+            <path d="M9 9h6M9 13h6M9 17h3" />
+          </svg>
+          EV Calculator
+        </div>
+        <div className="dp-side-link disabled" title="Coming soon">
+          <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path d="M12 2v20M2 12h20" />
+          </svg>
+          Kelly Sizer
+        </div>
+        <div className="dp-side-link disabled" title="Coming soon">
+          <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M9 12h6" />
+          </svg>
+          Bet Tracker
+        </div>
+      </div>
+
+      <div className="dp-side-section">
+        <div className="dp-side-label">Account</div>
+        <NavLink to="/settings" className={({ isActive }) => `dp-side-link ${isActive ? 'active' : ''}`}>
+          <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21v-1a6 6 0 0112 0v1" />
+          </svg>
+          Profile · {user.email}
+        </NavLink>
+        <button className="dp-side-link" onClick={onLogout}>
+          <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path d="M16 17l5-5-5-5" />
+            <path d="M21 12H9" />
+            <path d="M9 21H4V3h5" />
+          </svg>
+          Logout
+        </button>
+      </div>
+
+      <div style={{ marginTop: 'auto', paddingTop: 28 }}>
+        <div className="dp-upgrade">
+          <div className="dp-upgrade-eyebrow">AFFILIATE PROGRAM</div>
+          <div className="dp-upgrade-title">Earn 40% recurring</div>
+          <div className="dp-upgrade-sub">Refer bettors. Get paid every month they stay subscribed.</div>
+          <Link className="dp-btn dp-btn-primary dp-btn-sm" style={{ marginTop: 14, width: '100%' }} to="/affiliate/dashboard">
+            Open dashboard
+          </Link>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ============ Mobile top bar (sidebar is hidden on small screens) ============
+function MobileTop({ user, onLogout }) {
+  return (
+    <div className="dp-mobile-top">
+      <Link to="/" className="dp-brand">
+        Vanta<span className="accent-dot">·</span>Edge
+      </Link>
+      <nav className="dp-mobile-nav">
+        <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'active' : '')} end>
+          Dashboard
+        </NavLink>
+        <NavLink to="/history" className={({ isActive }) => (isActive ? 'active' : '')}>
+          History
+        </NavLink>
+        <NavLink to="/affiliate/dashboard" className={({ isActive }) => (isActive ? 'active' : '')}>
+          Affiliates
+        </NavLink>
+        <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
+          Settings
+        </NavLink>
+        <button onClick={onLogout} className="dp-btn dp-btn-ghost dp-btn-sm" style={{ height: 30 }}>
+          Logout
+        </button>
+      </nav>
+    </div>
+  );
+}
+
+// ============ Conf bar ============
+function ConfBar({ value }) {
+  const band = confidenceBand(value);
+  return (
+    <div className="dp-conf-block">
+      <div className="dp-conf-head">
+        <span className="dp-conf-label">AI Confidence</span>
+        <span className={`dp-conf-val ${band}`}>{Math.round(value)}%</span>
+      </div>
+      <div className="dp-conf-bar">
+        <div className={`dp-conf-bar-fill ${band}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// ============ Form dots ============
+function FormDots({ form }) {
+  const items = Array.isArray(form) ? form.slice(-5) : [];
+  if (items.length === 0) return <span className="dp-mono" style={{ fontSize: 10, color: 'var(--dp-text-faint)' }}>—</span>;
+  return (
+    <span className="dp-form-dots">
+      {items.map((r, i) => (
+        <span key={i} className={`dp-dot-form ${r === 'W' ? 'W' : r === 'L' ? 'L' : 'D'}`} title={r} />
+      ))}
+    </span>
+  );
+}
+
+// ============ Match card ============
+function MatchCard({ m }) {
+  const [overOdds, setOverOdds] = useState('');
+  const [bttsOdds, setBttsOdds] = useState('');
+
+  const over = m.predictions && m.predictions.over;
+  const btts = m.predictions && m.predictions.btts;
+  const headline = over || { confidence: 50, line: 2.5 };
+  const headlineConfidence = over && btts && btts.confidence > over.confidence ? btts.confidence : headline.confidence;
+  const isStrong = isStrongValue(m);
+
+  // Live EV — primary market is OVER unless user has entered BTTS odds only.
+  const overEV = useMemo(() => (overOdds && over ? calculateEV(over.confidence, overOdds) : null), [overOdds, over]);
+  const bttsEV = useMemo(() => (bttsOdds && btts ? calculateEV(btts.confidence, bttsOdds) : null), [bttsOdds, btts]);
+  const overKelly = useMemo(() => (overOdds && over ? calculateKelly(over.confidence, overOdds) : 0), [overOdds, over]);
+
+  const primaryEV = overEV || bttsEV;
+  const hasOdds = !!primaryEV;
+  const positive = !!primaryEV && primaryEV.edge >= 1;
+
+  if (m.error) {
+    return (
+      <div className="dp-match">
+        <div className="dp-match-main">
+          <div className="dp-match-league">
+            <span>{m.league}</span>
+            <span className="sep">·</span>
+            <span>{kickoffStr(m.kickoff)}</span>
+          </div>
+          <div className="dp-match-teams">
+            <span className="dp-team">{m.home && m.home.name}</span>
+            <span className="vs">vs</span>
+            <span className="dp-team">{m.away && m.away.name}</span>
+          </div>
+          <div className="dp-mono" style={{ marginTop: 14, fontSize: 12, color: 'var(--dp-text-faint)' }}>{m.error}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`dp-match ${isStrong ? 'glow' : ''}`}>
+      <div className="dp-match-main">
+        <div className="dp-match-league">
+          <span>{m.league}</span>
+          <span className="sep">·</span>
+          <span>{kickoffStr(m.kickoff)}</span>
+        </div>
+        <div className="dp-match-teams">
+          <span className="dp-team">
+            <span className="dp-crest">{(m.home.name || '').slice(0, 2).toUpperCase()}</span>
+            {m.home.name}
+          </span>
+          <span className="vs">vs</span>
+          <span className="dp-team">
+            <span className="dp-crest">{(m.away.name || '').slice(0, 2).toUpperCase()}</span>
+            {m.away.name}
+          </span>
+        </div>
+        <div className="dp-metrics">
+          <div className="dp-metric">
+            <span className="lbl">Home form</span>
+            <FormDots form={m.home && m.home.form} />
+          </div>
+          <div className="dp-metric">
+            <span className="lbl">Away form</span>
+            <FormDots form={m.away && m.away.form} />
+          </div>
+          <div className="dp-metric">
+            <span className="lbl">Rest days</span>
+            <span className="val">
+              {m.home && m.home.restDays != null ? `${m.home.restDays}d` : '—'} /{' '}
+              {m.away && m.away.restDays != null ? `${m.away.restDays}d` : '—'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="dp-conf-wrap">
+        <ConfBar value={headlineConfidence} />
+        <div className="dp-bet-badges">
+          {over && (
+            <span className={`dp-bet-badge on mint`}>OVER {over.line}</span>
+          )}
+          {btts && (
+            <span className={`dp-bet-badge on`}>BTTS {btts.prediction}</span>
+          )}
+        </div>
+      </div>
+
+      <div className="dp-right">
+        <div>
+          <label className="dp-odds-row" style={{ marginBottom: 4 }}>
+            <span className="l">Over odds</span>
+            <span />
+          </label>
+          <input
+            className="dp-odds-input"
+            type="number"
+            step="0.01"
+            min="1"
+            placeholder="1.85"
+            value={overOdds}
+            onChange={(e) => setOverOdds(e.target.value)}
+            inputMode="decimal"
+          />
+        </div>
+        <div>
+          <label className="dp-odds-row" style={{ marginBottom: 4 }}>
+            <span className="l">BTTS odds</span>
+            <span />
+          </label>
+          <input
+            className="dp-odds-input"
+            type="number"
+            step="0.01"
+            min="1"
+            placeholder="1.90"
+            value={bttsOdds}
+            onChange={(e) => setBttsOdds(e.target.value)}
+            inputMode="decimal"
+          />
+        </div>
+
+        <div className={`dp-ev-pill ${!hasOdds ? 'empty' : positive ? 'positive' : ''}`}>
+          <span className="l">Your Edge</span>
+          <span className="v">
+            {!hasOdds
+              ? 'enter odds'
+              : `${primaryEV.edge >= 0 ? '+' : ''}${primaryEV.edge.toFixed(1)}%`}
+          </span>
+        </div>
+
+        {overKelly > 0 && (
+          <div className="dp-odds-row">
+            <span className="l">Kelly stake</span>
+            <span className="v">{(overKelly * 100).toFixed(1)}% bankroll</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============ Empty state ============
+function Empty({ leagueName, onAll }) {
+  return (
+    <div className="dp-empty">
+      <div className="icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M21 21l-5-5" />
+        </svg>
+      </div>
+      <h3>No matches today in {leagueName}</h3>
+      <p>This league has no fixtures in our window. Check back tomorrow or switch league above.</p>
+      <div className="dp-empty-actions">
+        <button className="dp-btn dp-btn-sm" onClick={onAll}>
+          Show first available league
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============ Dashboard ============
 export default function Dashboard() {
-  const { user, refresh } = useAuth();
-  const [activeLeague, setActiveLeague] = useState(defaultLeague(user.tier));
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const [activeLeague, setActiveLeague] = useState(LEAGUES[0].id);
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const [requiredTier, setRequiredTier] = useState(null);
-  const [dailyRefreshes, setDailyRefreshes] = useState(0);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [filter, setFilter] = useState('all');
+  const [showLegend, setShowLegend] = useState(true);
 
-  const refreshLimit = REFRESH_LIMITS[user.tier] || 0;
-  const remaining = refreshLimit === Infinity ? Infinity : Math.max(0, refreshLimit - dailyRefreshes);
-
-  const fetchData = useCallback(
-    async (leagueId, initial = false) => {
-      setLoading(true);
-      setError('');
-      setMessage('');
-      try {
-        const data = await predictionsApi.getByLeague(leagueId, initial ? { initial: 1 } : {});
-        setMatches(data.fixtures || []);
-        if (data.message) setMessage(data.message);
-        if (typeof data.dailyRefreshes === 'number') setDailyRefreshes(data.dailyRefreshes);
-        setHasLoadedOnce(true);
-      } catch (err) {
-        const status = err.response && err.response.status;
-        const code = err.response && err.response.data && err.response.data.error;
-        if (status === 429) {
-          setError('Daily refresh limit reached. Upgrade for more.');
-        } else if (status === 403) {
-          // upgrade event already dispatched by interceptor
-          setMatches([]);
-        } else {
-          setError((err.response && err.response.data && err.response.data.error) || 'Failed to load predictions');
-        }
-      } finally {
-        setLoading(false);
-      }
-    },
-    [],
-  );
+  const fetchData = useCallback(async (leagueId, initial = false) => {
+    setLoading(true);
+    setError('');
+    setMessage('');
+    try {
+      const data = await predictionsApi.getByLeague(leagueId, initial ? { initial: 1 } : {});
+      setMatches(data.fixtures || []);
+      if (data.message) setMessage(data.message);
+      setHasLoadedOnce(true);
+    } catch (err) {
+      const status = err.response && err.response.status;
+      if (status === 429) setError('Daily refresh limit reached.');
+      else if (status === 403) setMatches([]);
+      else setError((err.response && err.response.data && err.response.data.error) || 'Failed to load predictions');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchData(activeLeague, !hasLoadedOnce);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLeague]);
 
-  useEffect(() => {
-    const onUpgrade = (e) => {
-      setRequiredTier((e.detail && e.detail.requiredTier) || 'SCOUT');
-      setUpgradeOpen(true);
-    };
-    window.addEventListener('upgrade-required', onUpgrade);
-    return () => window.removeEventListener('upgrade-required', onUpgrade);
-  }, []);
-
-  const handleLocked = (minTier) => {
-    setRequiredTier(minTier);
-    setUpgradeOpen(true);
+  const handleLogout = async () => {
+    await logout();
+    navigate('/');
   };
 
-  // TESTING MODE: refresh always works, no tier gating, no daily cap.
-  const handleRefresh = () => {
-    fetchData(activeLeague, false);
-  };
+  const filtered = useMemo(() => {
+    let list = matches.slice();
+    if (filter === 'strong') list = list.filter(isStrongValue);
+    if (filter === 'value') list = list.filter((m) => {
+      const e = bestEv(m);
+      return e != null && e >= 5;
+    });
+    if (filter === 'over') list = list.filter((m) => m.predictions && m.predictions.over);
+    if (filter === 'btts') list = list.filter((m) => m.predictions && m.predictions.btts);
+    return list.sort((a, b) => {
+      const ea = bestEv(a);
+      const eb = bestEv(b);
+      if (ea == null && eb == null) {
+        const ca = a.predictions && a.predictions.over ? a.predictions.over.confidence : 0;
+        const cb = b.predictions && b.predictions.over ? b.predictions.over.confidence : 0;
+        return cb - ca;
+      }
+      return (eb ?? -Infinity) - (ea ?? -Infinity);
+    });
+  }, [matches, filter]);
 
-  const refreshLabel = useMemo(() => {
-    void remaining;
-    void refreshLimit;
-    return '↺ Refresh';
-  }, [remaining, refreshLimit]);
+  const strongCount = matches.filter(isStrongValue).length;
+  const avgStrongConf = (() => {
+    const strong = matches.filter(isStrongValue);
+    if (strong.length === 0) return 0;
+    const sum = strong.reduce((acc, m) => {
+      const c = m.predictions && m.predictions.over ? m.predictions.over.confidence : 0;
+      return acc + c;
+    }, 0);
+    return Math.round(sum / strong.length);
+  })();
+  const bestEdge = (() => {
+    let max = null;
+    for (const m of matches) {
+      const e = bestEv(m);
+      if (e != null && (max == null || e > max)) max = e;
+    }
+    return max;
+  })();
+
+  const activeLeagueObj = LEAGUES.find((l) => l.id === activeLeague) || LEAGUES[0];
 
   return (
-    <>
-      <Navbar />
-      <div className="container" style={{ paddingTop: 12 }}>
-        <div className="spread" style={{ alignItems: 'flex-end' }}>
-          <div>
-            <h2 style={{ marginBottom: 4 }}>Today's matches</h2>
-            <div className="muted small">
-              {LEAGUES.find((l) => l.id === activeLeague) && LEAGUES.find((l) => l.id === activeLeague).name}
+    <div className="dashboard-page">
+      <div className="dp-layout">
+        <Sidebar user={user} onLogout={handleLogout} />
+        <main className="dp-main">
+          <MobileTop user={user} onLogout={handleLogout} />
+
+          <header className="dp-header">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-start' }}>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <div className="dp-eyebrow">
+                  <span className="dot" />
+                  <span>LIVE · MATCHDAY · {new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                </div>
+                <h1>Today's Edge</h1>
+                <div className="dp-sub">AI-scored fixtures across 8 leagues. Strong Value picks first.</div>
+              </div>
+              <span className="dp-tier-pill dp-mono">{user.tier}</span>
+            </div>
+            <div className="dp-meta">
+              <div className="dp-meta-cell">
+                <span className="lbl">Today</span>
+                <span className="val">{matches.length}</span>
+              </div>
+              <div className="dp-meta-cell">
+                <span className="lbl">Strong value</span>
+                <span className="val mint">{strongCount}</span>
+              </div>
+              <div className="dp-meta-cell">
+                <span className="lbl">Avg conf (strong)</span>
+                <span className="val">{avgStrongConf ? `${avgStrongConf}%` : '—'}</span>
+              </div>
+              <div className="dp-meta-cell">
+                <span className="lbl">Best edge</span>
+                <span className="val mint">{bestEdge != null ? `+${bestEdge.toFixed(1)}%` : '—'}</span>
+              </div>
+              <div style={{ marginLeft: 'auto' }}>
+                <button
+                  className="dp-btn dp-btn-sm"
+                  onClick={() => fetchData(activeLeague, false)}
+                  disabled={loading}
+                >
+                  {loading ? 'Loading…' : '↺ Refresh'}
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <div className="dp-league-tabs-wrap">
+            <div className="dp-league-tabs">
+              {LEAGUES.map((l) => (
+                <button
+                  key={l.id}
+                  className={`dp-league-tab ${activeLeague === l.id ? 'active' : ''}`}
+                  onClick={() => setActiveLeague(l.id)}
+                >
+                  <span className="flag">{l.flag}</span>
+                  <span>{l.name}</span>
+                  {activeLeague === l.id && <span className="ct">{matches.length}</span>}
+                </button>
+              ))}
             </div>
           </div>
-          <button className="btn" onClick={handleRefresh}>
-            {refreshLabel}
-          </button>
-        </div>
 
-        <LeagueTabs
-          userTier={user.tier}
-          activeLeague={activeLeague}
-          onSelect={setActiveLeague}
-          onLocked={handleLocked}
-        />
+          <div className="dp-filter-row">
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--dp-text-faint)', textTransform: 'uppercase', letterSpacing: '0.14em', marginRight: 4 }}>
+              Filter:
+            </span>
+            <button className={`dp-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>All picks</button>
+            <button className={`dp-chip ${filter === 'strong' ? 'mint-active' : ''}`} onClick={() => setFilter('strong')}>Strong Value</button>
+            <button className={`dp-chip ${filter === 'value' ? 'active' : ''}`} onClick={() => setFilter('value')}>+EV &gt; 5%</button>
+            <button className={`dp-chip ${filter === 'over' ? 'active' : ''}`} onClick={() => setFilter('over')}>Over / Under</button>
+            <button className={`dp-chip ${filter === 'btts' ? 'active' : ''}`} onClick={() => setFilter('btts')}>BTTS</button>
+            <div style={{ flex: 1 }} />
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--dp-text-dim)' }}>
+              Sorted by edge ↓
+            </span>
+          </div>
 
-        {loading ? (
-          <div className="matches-grid">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </div>
-        ) : error ? (
-          <div className="card">
-            <div className="error-text">{error}</div>
-          </div>
-        ) : matches.length === 0 ? (
-          <div className="card">
-            <h3>No matches</h3>
-            <p className="muted small">{message || 'No fixtures scheduled today for this league.'}</p>
-          </div>
-        ) : (
-          <div className="matches-grid">
-            {matches.map((m) => (
-              <MatchCard
-                key={m.fixtureId || m.id}
-                match={m}
-                userTier={user.tier}
-                onUpgrade={(tier) => {
-                  setRequiredTier(tier || 'ANALYST');
-                  setUpgradeOpen(true);
-                }}
+          <div className="dp-matches">
+            {showLegend && (
+              <div className="dp-legend">
+                <div className="dp-legend-head">
+                  <span className="dp-mono" style={{ fontSize: 10, color: 'var(--dp-mint)', letterSpacing: '0.16em' }}>
+                    HOW TO READ A MATCH
+                  </span>
+                  <button className="dp-legend-close" onClick={() => setShowLegend(false)} aria-label="Dismiss">
+                    ×
+                  </button>
+                </div>
+                <div className="dp-legend-cols">
+                  <div>
+                    <div className="dp-legend-num">1</div>
+                    <div className="dp-legend-title">Match &amp; stats</div>
+                    <div className="dp-legend-body">Form dots, rest days — the inputs feeding the model.</div>
+                  </div>
+                  <div>
+                    <div className="dp-legend-num">2</div>
+                    <div className="dp-legend-title">AI confidence + market</div>
+                    <div className="dp-legend-body">How sure the model is on Over/Under and BTTS for this match.</div>
+                  </div>
+                  <div>
+                    <div className="dp-legend-num">3</div>
+                    <div className="dp-legend-title">Your odds &amp; edge</div>
+                    <div className="dp-legend-body">
+                      Type the bookmaker's odds and we compute your edge live. Green = <strong style={{ color: 'var(--dp-mint)' }}>+EV</strong>.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {loading ? (
+              <div className="dp-mono" style={{ color: 'var(--dp-text-dim)', padding: '40px 0', textAlign: 'center' }}>
+                Loading fixtures…
+              </div>
+            ) : error ? (
+              <div className="dp-empty">
+                <h3>Something went wrong</h3>
+                <p>{error}</p>
+                <div className="dp-empty-actions">
+                  <button className="dp-btn dp-btn-sm" onClick={() => fetchData(activeLeague, false)}>
+                    Try again
+                  </button>
+                </div>
+              </div>
+            ) : filtered.length === 0 ? (
+              <Empty
+                leagueName={activeLeagueObj.name}
+                onAll={() => setActiveLeague(LEAGUES[0].id)}
               />
-            ))}
-          </div>
-        )}
-      </div>
+            ) : (
+              filtered.map((m) => <MatchCard key={m.fixtureId || m.id} m={m} />)
+            )}
 
-      <UpgradeModal
-        open={upgradeOpen}
-        requiredTier={requiredTier}
-        onClose={() => setUpgradeOpen(false)}
-      />
-    </>
+            {!loading && matches.length === 0 && message && (
+              <div className="dp-mono" style={{ color: 'var(--dp-text-faint)', textAlign: 'center', paddingTop: 8 }}>
+                {message}
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+    </div>
   );
 }
