@@ -9,6 +9,7 @@ const { calculateEV, calculateKelly } = require('./_shared/ev');
 const oddsService = require('./_shared/odds');
 const weatherService = require('./_shared/weather');
 const { loadAdjustments, calibrate } = require('./_shared/calibration');
+const { cyprusDateStr, cyprusMonday } = require('./_shared/dates');
 
 // Hardcoded for this MLS-only build. Every code path that used to take a
 // league id now ignores anything other than 253.
@@ -279,12 +280,13 @@ function buildActualResult(fx, analysis) {
 // the scan_status row. If no rows exist yet and the scan isn't already
 // running, fires off the background scan and returns scanning:true so the
 // frontend can show a progress UI while polling.
+// Cyprus-local week boundary. The previous version computed Monday in
+// UTC, which meant a Cyprus user looking at the dashboard at 01:30 AM
+// Monday Cyprus time (= 23:30 UTC Sunday) would get LAST week's data
+// because UTC still thought it was Sunday. cyprusMonday() does the
+// math in Asia/Nicosia so the week boundary matches the user's reality.
 function mondayOf(date) {
-  const d = new Date(date);
-  const day = d.getUTCDay(); // 0=Sun, 1=Mon, ... 6=Sat
-  const diff = day === 0 ? -6 : 1 - day; // shift back to Monday
-  d.setUTCDate(d.getUTCDate() + diff);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  return cyprusMonday(date);
 }
 
 function shapeForFrontend(row, adjustments) {
@@ -355,6 +357,11 @@ function shapeForFrontend(row, adjustments) {
     // render the "Referee" block — without surfacing it here the card
     // always shows "Unknown".
     referee: (md && md.referee) || null,
+    // Data-quality fields set by the weekly scan's classifyMatchData.
+    // 'full' | 'partial' | 'invalid' (invalid rows shouldn't reach the
+    // DB but we surface anyway). issues is a string[] of flag names.
+    dataConfidence: (md && md.dataConfidence) || null,
+    dataIssues: (md && md.dataIssues) || null,
     actualResult: row.over_hit != null || row.btts_hit != null ? {
       status: 'FT',
       overHit: row.over_hit,
@@ -427,15 +434,15 @@ async function handleWeek(event) {
   // Load calibration adjustments once for the whole week response.
   const adjustments = await loadAdjustments();
 
-  // 2. Group by date (YYYY-MM-DD via kickoff UTC date).
+  // 2. Group by Asia/Nicosia kickoff date. This used to use the UTC date
+  //    of the kickoff ISO, which silently mis-bucketed any late-night
+  //    Cyprus kickoff: a 02:30 AM Sunday match (23:30 UTC Saturday) was
+  //    showing under the Saturday pill. Bucketing in Cyprus time makes
+  //    the date strip match what the user expects to see.
   const dates = {};
   for (const r of rows) {
-    let dateKey;
-    try {
-      dateKey = new Date(r.kickoff).toISOString().slice(0, 10);
-    } catch {
-      continue;
-    }
+    const dateKey = cyprusDateStr(r.kickoff);
+    if (!dateKey) continue;
     if (!dates[dateKey]) dates[dateKey] = [];
     dates[dateKey].push(shapeForFrontend(r, adjustments));
   }
@@ -1299,12 +1306,115 @@ async function handleAITest(_event) {
   }
 }
 
+// GET /api/predictions/debug/:fixtureId?key=<ADMIN_PASSWORD>
+//
+// Inspector endpoint for verifying what the scan would actually pull and
+// save for a single fixture. Returns every raw API-Football response we
+// touch (fixture, last home/away games, team stats, h2h) plus the
+// extracted form arrays, the gpgFromStats output, the referee block,
+// and the EXACT matchData object that would be handed to Claude.
+//
+// Auth: ADMIN_PASSWORD via ?key= (same pattern as /api/migrate). I
+// pushed back on "no auth required" — this endpoint leaks the upstream
+// API shape and could be hammered to burn API-Football quota. Cheap
+// admin gate, consistent with the rest of the admin surface.
+async function handleDebugFixture(event, fixtureIdStr) {
+  const expected = process.env.ADMIN_PASSWORD || '';
+  const supplied = (event && event.queryStringParameters && event.queryStringParameters.key) || '';
+  if (!expected) return error(503, 'ADMIN_PASSWORD not set on server');
+  if (supplied !== expected) return error(401, 'Unauthorized — pass ?key=<ADMIN_PASSWORD>');
+
+  const fixtureId = parseInt(fixtureIdStr, 10);
+  if (!Number.isFinite(fixtureId) || fixtureId <= 0) {
+    return error(400, 'fixtureId must be a positive integer');
+  }
+
+  // 1. Raw fixture.
+  let rawFixture = null;
+  try {
+    rawFixture = await football.getFixtureById(fixtureId);
+  } catch (e) {
+    return json(500, { stage: 'getFixtureById', error: e.message, fixtureId });
+  }
+  if (!rawFixture) {
+    return json(404, { stage: 'getFixtureById', error: 'fixture not found', fixtureId });
+  }
+  const homeId = rawFixture.teams && rawFixture.teams.home && rawFixture.teams.home.id;
+  const awayId = rawFixture.teams && rawFixture.teams.away && rawFixture.teams.away.id;
+  const leagueId = rawFixture.league && rawFixture.league.id;
+  const seasonHint = rawFixture.league && rawFixture.league.season;
+
+  // 2. Raw per-team last-N + team stats + h2h, in parallel. We capture
+  //    errors per call so a partial failure still surfaces the rest.
+  async function safe(label, p) {
+    try { return { ok: true, label, data: await p }; }
+    catch (e) { return { ok: false, label, error: e.message }; }
+  }
+  const [homeLastR, awayLastR, homeStatsR, awayStatsR, h2hR] = await Promise.all([
+    safe('homeLast', football.getTeamLastHomeGames(homeId, leagueId, seasonHint)),
+    safe('awayLast', football.getTeamLastAwayGames(awayId, leagueId, seasonHint)),
+    safe('homeStats', football.getTeamStats(homeId, leagueId, seasonHint)),
+    safe('awayStats', football.getTeamStats(awayId, leagueId, seasonHint)),
+    safe('h2h', football.getH2H(homeId, awayId)),
+  ]);
+
+  // 3. Run the same extractors the scan would run.
+  const homeForm = homeLastR.ok ? football.extractFormForTeam(homeLastR.data, homeId) : null;
+  const awayForm = awayLastR.ok ? football.extractFormForTeam(awayLastR.data, awayId) : null;
+
+  // 4. Synthesize the matchData object the scan would build & hand to
+  //    Claude. Mirrors fetchFixtureDetail in predictions-scan-background.
+  const refNameRaw = rawFixture.fixture && typeof rawFixture.fixture.referee === 'string'
+    ? rawFixture.fixture.referee.trim() : '';
+  const matchDataPreview = {
+    league: rawFixture.league && rawFixture.league.name,
+    kickoff: rawFixture.fixture && rawFixture.fixture.date,
+    venue: rawFixture.fixture && rawFixture.fixture.venue && rawFixture.fixture.venue.city,
+    home: {
+      id: homeId,
+      name: rawFixture.teams && rawFixture.teams.home && rawFixture.teams.home.name,
+      form: homeForm,
+      stats: homeStatsR.ok ? homeStatsR.data : null,
+    },
+    away: {
+      id: awayId,
+      name: rawFixture.teams && rawFixture.teams.away && rawFixture.teams.away.name,
+      form: awayForm,
+      stats: awayStatsR.ok ? awayStatsR.data : null,
+    },
+    referee: refNameRaw ? { name: refNameRaw } : null,
+  };
+
+  return json(200, {
+    fixtureId,
+    fetchedAt: new Date().toISOString(),
+    rawFixture,
+    raw: {
+      homeLast: homeLastR,
+      awayLast: awayLastR,
+      homeStats: homeStatsR,
+      awayStats: awayStatsR,
+      h2h: h2hR,
+    },
+    extracted: {
+      homeForm,
+      awayForm,
+      refereeName: refNameRaw || null,
+    },
+    matchDataPreview,
+  });
+}
+
 exports.handler = async (event) => {
   try {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, body: '' };
     if (event.httpMethod !== 'GET') return error(405, 'Method not allowed');
 
     const path = subPath(event, 'predictions');
+
+    // /debug/:fixtureId — admin-gated inspector. See handleDebugFixture.
+    const debugMatch = path.match(/^\/debug\/(\d+)\/?$/);
+    if (debugMatch) return await handleDebugFixture(event, debugMatch[1]);
 
     // /test — unauthenticated debug probe.
     if (path === '/test' || path === '/test/') return await handleTest(event);

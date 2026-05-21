@@ -211,7 +211,7 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
             // 1. No name yet → ref hasn't been announced (normal >48h out)
             // 2. Name + per-ref goals → full data, surface the tendency
             // 3. Name but no goals/game → ref is new or limited history
-            refereeName(fixture) === 'Awaiting assignment'
+            refereeName(fixture) === 'Not announced'
               ? 'Referees are usually announced 24–48 hours before kickoff'
               : refereeGoalsPerGame(fixture) != null
                 ? `This referee averages ${refereeGoalsPerGame(fixture).toFixed(1)} goals per game officiated`

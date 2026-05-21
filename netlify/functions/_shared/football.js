@@ -321,20 +321,53 @@ function flagKeyPlayer(inj) {
   return pos.includes('goalkeeper') || pos.includes('attacker') || pos.includes('forward');
 }
 
+// Build W/D/L array for a team's recent matches. Two real bugs this
+// version fixes vs the previous one:
+//
+//   1. Old version compared `goals.home` vs `goals.away`. If either
+//      side was null (data quality issue, abandoned match, etc) it
+//      silently returned 'D' — phantom draws were the most common
+//      symptom of "wrong form" in user reports.
+//
+//   2. Old version included not-yet-played fixtures because nothing
+//      checked `fixture.status.short`. A scheduled future match was
+//      becoming a 'D' the same way.
+//
+// New behaviour:
+//   - Only count finished fixtures (status 'FT' / 'AET' / 'PEN').
+//   - Use API-Football's per-side `winner` field: true=W, false=L,
+//     null=D (only when the match IS finished — null on a not-played
+//     fixture means we already filtered it out above).
+//   - Chronological order oldest → newest so the dashboard's dot row
+//     reads left-to-right as time progresses.
+//   - Per-fixture debug log so we can verify decisions in production.
 function extractFormForTeam(fixtures, teamId) {
   if (!Array.isArray(fixtures)) return [];
-  return fixtures
+  // API-Football "finished" status codes. PST (postponed), CANC, ABD,
+  // NS (not started), TBD, LIVE-in-progress etc are all excluded.
+  const FINISHED = new Set(['FT', 'AET', 'PEN']);
+  const out = fixtures
     .slice()
+    .filter((f) => f && f.fixture && f.teams && FINISHED.has(f.fixture.status && f.fixture.status.short))
     .sort((a, b) => new Date(a.fixture.date) - new Date(b.fixture.date))
     .map((f) => {
-      const isHome = f.teams.home.id === teamId;
-      const myG = isHome ? f.goals.home : f.goals.away;
-      const theirG = isHome ? f.goals.away : f.goals.home;
-      if (myG == null || theirG == null) return 'D';
-      if (myG > theirG) return 'W';
-      if (myG < theirG) return 'L';
-      return 'D';
-    });
+      const isHome = f.teams.home && f.teams.home.id === teamId;
+      const isAway = f.teams.away && f.teams.away.id === teamId;
+      if (!isHome && !isAway) return null; // shouldn't happen, defensive
+      const winner = isHome ? f.teams.home.winner : f.teams.away.winner;
+      // winner: true=W, false=L, null=actual draw (since we filtered to
+      // finished matches above)
+      const result = winner === true ? 'W' : winner === false ? 'L' : 'D';
+      console.log(
+        `[football extractForm] team=${teamId} fx=${f.fixture.id} ` +
+          `status=${f.fixture.status && f.fixture.status.short} ` +
+          `score=${f.goals && f.goals.home}-${f.goals && f.goals.away} ` +
+          `winner=${winner} -> ${result}`,
+      );
+      return result;
+    })
+    .filter((v) => v != null);
+  return out;
 }
 
 function calculateRestDays(fixtures) {

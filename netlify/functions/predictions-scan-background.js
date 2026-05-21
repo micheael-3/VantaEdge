@@ -19,18 +19,15 @@ const { analyseMatch } = require('./_shared/claude');
 const { calculateEV, calculateKelly } = require('./_shared/ev');
 const oddsService = require('./_shared/odds');
 const { LEAGUES } = require('./_shared/tier');
+const { cyprusDateStr, addDaysStr } = require('./_shared/dates');
 
 const MLS_LEAGUE_ID = 253;
 
+// Server-side "today" used to be UTC. For a cron that exists to serve
+// Cyprus users, we anchor today in Asia/Nicosia so any "starts today"
+// math lines up with the dashboard's date strip.
 function todayDateStr() {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-}
-
-function addDaysStr(baseDateStr, days) {
-  const d = new Date(`${baseDateStr}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  return cyprusDateStr(new Date());
 }
 
 function restDaysFromForm(formFixtures) {
@@ -41,14 +38,77 @@ function restDaysFromForm(formFixtures) {
   return Math.max(0, Math.floor((Date.now() - new Date(lastPlayed.fixture.date).getTime()) / 86400000));
 }
 
-function gpgFromStats(stats) {
-  if (!stats || !stats.goals) return null;
-  const f = stats.goals.for && stats.goals.for.average && stats.goals.for.average.total;
-  const a = stats.goals.against && stats.goals.against.average && stats.goals.against.average.total;
+// Pull goals-per-game from API-Football's /teams/statistics shape.
+// We KEEP null when data is missing — saving 0 instead would silently
+// tell the model "this team scores zero on average", which would shift
+// every prediction Under and poison the calibration buckets. The
+// scan's validation step downstream lets us mark these rows with a
+// statsConfidence flag instead of pretending the data is complete.
+function gpgFromStats(stats, teamLabel) {
+  if (!stats || !stats.goals) {
+    console.log(`[scan-bg gpg] ${teamLabel || ''} stats=null/missing — returning null GPG`);
+    return null;
+  }
+  const fAvg = stats.goals.for && stats.goals.for.average;
+  const aAvg = stats.goals.against && stats.goals.against.average;
+  const f = fAvg && fAvg.total;
+  const a = aAvg && aAvg.total;
+  console.log(
+    `[scan-bg gpg] ${teamLabel || ''} raw goals.for.average=${JSON.stringify(fAvg)} ` +
+      `goals.against.average=${JSON.stringify(aAvg)} -> for=${f} against=${a}`,
+  );
   return {
-    avgFor: f != null ? Number(f) : null,
-    avgAgainst: a != null ? Number(a) : null,
+    avgFor: f != null && f !== '' ? Number(f) : null,
+    avgAgainst: a != null && a !== '' ? Number(a) : null,
   };
+}
+
+// Classify how confident we are in the row we're about to write.
+//   'full'    — names+kickoff+stats+form (>=3 each side) all present
+//   'partial' — names+kickoff present, but stats or form is thin
+//   'invalid' — names or kickoff missing → reject, do not insert
+// Surfaced into match_data so the UI and the calibration engine can
+// downweight or hide low-confidence rows.
+function classifyMatchData(matchData, fx) {
+  const issues = [];
+  if (!matchData.home || !matchData.home.name) issues.push('home_name_missing');
+  if (!matchData.away || !matchData.away.name) issues.push('away_name_missing');
+  // Kickoff sanity — must be a parseable date within the next 14 days
+  // (scan only ever fetches a 7-day window, the extra week is slack).
+  const k = matchData.kickoff ? new Date(matchData.kickoff) : null;
+  if (!k || Number.isNaN(k.getTime())) {
+    issues.push('kickoff_unparseable');
+  } else {
+    const ageDays = (k.getTime() - Date.now()) / 86400000;
+    if (ageDays < -1 || ageDays > 14) issues.push(`kickoff_out_of_window(${ageDays.toFixed(1)}d)`);
+  }
+  const fatal = issues.length > 0;
+
+  // Soft signals — they don't block the insert, just lower confidence.
+  const soft = [];
+  const homeGpg = matchData.home && matchData.home.goalsPerGame;
+  const awayGpg = matchData.away && matchData.away.goalsPerGame;
+  const statsMissing =
+    !homeGpg || homeGpg.avgFor == null || homeGpg.avgAgainst == null ||
+    !awayGpg || awayGpg.avgFor == null || awayGpg.avgAgainst == null;
+  if (statsMissing) soft.push('stats_partial');
+  const homeForm = (matchData.home && matchData.home.form) || [];
+  const awayForm = (matchData.away && matchData.away.form) || [];
+  if (homeForm.length < 3 || awayForm.length < 3) soft.push('form_thin');
+
+  let confidence;
+  if (fatal) confidence = 'invalid';
+  else if (soft.length === 0) confidence = 'full';
+  else confidence = 'partial';
+
+  if (fatal || soft.length) {
+    console.log(
+      `[scan-bg validate] fixture=${fx && fx.fixture && fx.fixture.id} ` +
+        `${matchData.home && matchData.home.name} vs ${matchData.away && matchData.away.name} ` +
+        `confidence=${confidence} issues=${[...issues, ...soft].join(',')}`,
+    );
+  }
+  return { confidence, issues: [...issues, ...soft] };
 }
 
 function isAuthorised(event) {
@@ -164,8 +224,8 @@ async function fetchFixtureDetail(fx, leagueId, season) {
     homeRest: restDaysFromForm(homeLast),
     awayRest: restDaysFromForm(awayLast),
     homeStats, awayStats,
-    homeGpg: gpgFromStats(homeStats),
-    awayGpg: gpgFromStats(awayStats),
+    homeGpg: gpgFromStats(homeStats, `home(${fx.teams.home.name})`),
+    awayGpg: gpgFromStats(awayStats, `away(${fx.teams.away.name})`),
     h2h: h2hAverageString(h2hList),
     referee: refName
       ? {
@@ -229,6 +289,12 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
         // /api/predictions/week can rehydrate it for the stats grid
         // without re-fetching. Null when no ref was assigned at scan time.
         referee: matchData.referee || null,
+        // Data-quality flags from classifyMatchData. 'full' is the
+        // good case; 'partial' means we shipped despite thin form or
+        // missing stats — UI can downweight these visually. 'invalid'
+        // rows are filtered upstream and never reach insert.
+        dataConfidence: matchData.dataConfidence || null,
+        dataIssues: matchData.dataIssues && matchData.dataIssues.length ? matchData.dataIssues : null,
         reasoning: {
           over: (analysis.over && analysis.over.reasoning) || null,
           btts: (analysis.btts && analysis.btts.reasoning) || null,
@@ -364,9 +430,22 @@ async function runScan(leagueId, weekStart) {
         h2h: detail.h2h, // average goals-per-match string, e.g. "3.2 G/M"
         // Referee + per-ref goals tendency. Null when API-Football hasn't
         // assigned a ref yet (typical until ~48h before kickoff) — the UI
-        // surfaces "Unknown" with a soft note instead of an em-dash.
+        // surfaces "Not announced" with a soft note instead of an em-dash.
         referee: detail.referee || null,
       };
+      // Validate BEFORE calling Claude — burning tokens on a row we're
+      // going to throw away is wasteful, and a hard validation failure
+      // (missing team name / unparseable kickoff) means the upstream
+      // fetch returned garbage. Skip and move on.
+      const validation = classifyMatchData(matchData, fx);
+      if (validation.confidence === 'invalid') {
+        console.error(
+          `[scan-bg] SKIPPING fixture=${fx.fixture && fx.fixture.id} — invalid: ${validation.issues.join(',')}`,
+        );
+        continue;
+      }
+      matchData.dataConfidence = validation.confidence;
+      matchData.dataIssues = validation.issues;
       const analysis = await analyseMatch(matchData, false, false);
 
       let oddsData = null;

@@ -26,6 +26,7 @@ const {
   setState,
 } = require('./_shared/agent');
 const { createAgentAlert } = require('./_shared/alerts');
+const { cyprusDateStr, cyprusMonday } = require('./_shared/dates');
 
 const SCHEDULE = '*/30 * * * *';
 const PER_RUN_LEAGUE_BUDGET = 1; // MLS-only — only one league exists to scan
@@ -44,9 +45,12 @@ function isAuthorised(event) {
   return !!process.env.ADMIN_PASSWORD && provided === process.env.ADMIN_PASSWORD;
 }
 
+// Cyprus-local "today" so the scanner queues today/tomorrow fixture
+// fetches against the dates the Cyprus user actually sees. Server-side
+// UTC would skip a 2:30 AM Sunday Cyprus kickoff when it's already
+// "Sunday" in UTC for half the day.
 function todayDateStr() {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  return cyprusDateStr(new Date());
 }
 
 async function processFixture(fixture, league, oddsBundle, report) {
@@ -175,13 +179,12 @@ async function processFixture(fixture, league, oddsBundle, report) {
   }
 }
 
-// Monday of the week containing `date` (UTC), YYYY-MM-DD.
+// Monday of the week containing `date`, in Asia/Nicosia. Must match
+// the same helper in predictions.js — otherwise the cron and the
+// frontend disagree on which week is "this week" and the weekly scan
+// either re-fires the same week or skips one entirely.
 function mondayOf(date) {
-  const d = new Date(date);
-  const day = d.getUTCDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setUTCDate(d.getUTCDate() + diff);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  return cyprusMonday(date);
 }
 
 // Trigger the weekly scan if the predictions table is empty for the
