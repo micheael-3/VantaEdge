@@ -130,18 +130,30 @@ function h2hAverageString(h2hList) {
   return `${avg.toFixed(1)} G/M`;
 }
 
-async function fetchFixtureDetail(fx, leagueId) {
+async function fetchFixtureDetail(fx, leagueId, season) {
   const homeId = fx.teams.home.id;
   const awayId = fx.teams.away.id;
+  // Referee name comes from the fixture envelope when API-Football has
+  // appointed one. Often empty until ~48h before kickoff, in which case
+  // we leave the field null and the UI surfaces "Unknown". When present,
+  // we layer the per-ref goals/game tendency so the stats grid can show
+  // a real "This referee averages 2.8 goals per game" line.
+  const refName = fx && fx.fixture && typeof fx.fixture.referee === 'string'
+    ? fx.fixture.referee.trim() || null
+    : null;
   // 5 parallel calls per fixture: last home, last away, both team stats,
   // plus H2H. The H2H call lets the dashboard render a real "H2H 3.2 G/M"
-  // figure instead of an em-dash.
-  const [homeLast, awayLast, homeStats, awayStats, h2hList] = await Promise.all([
-    football.getTeamLastHomeGames(homeId, leagueId),
-    football.getTeamLastAwayGames(awayId, leagueId),
+  // figure instead of an em-dash. Season is threaded in explicitly so
+  // last-N games are pulled from the SAME season as the upcoming fixture
+  // — without it the env-default SEASON would silently pull the previous
+  // season's games and break rest-days (last played would be months ago).
+  const [homeLast, awayLast, homeStats, awayStats, h2hList, refStats] = await Promise.all([
+    football.getTeamLastHomeGames(homeId, leagueId, season),
+    football.getTeamLastAwayGames(awayId, leagueId, season),
     football.getTeamStats(homeId, leagueId),
     football.getTeamStats(awayId, leagueId),
     football.getH2H(homeId, awayId),
+    refName ? football.getRefereeStats(refName) : Promise.resolve(null),
   ]);
   return {
     homeId, awayId,
@@ -153,6 +165,14 @@ async function fetchFixtureDetail(fx, leagueId) {
     homeGpg: gpgFromStats(homeStats),
     awayGpg: gpgFromStats(awayStats),
     h2h: h2hAverageString(h2hList),
+    referee: refName
+      ? {
+          name: refName,
+          avgGoalsPerGame: refStats && typeof refStats.avgGoalsPerGame === 'number'
+            ? refStats.avgGoalsPerGame
+            : null,
+        }
+      : null,
   };
 }
 
@@ -203,6 +223,10 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
         away: matchData.away || null,
         venue: matchData.venue || null,
         h2h: matchData.h2h || null,
+        // Persist the referee block alongside the rest of match_data so
+        // /api/predictions/week can rehydrate it for the stats grid
+        // without re-fetching. Null when no ref was assigned at scan time.
+        referee: matchData.referee || null,
         reasoning: {
           over: (analysis.over && analysis.over.reasoning) || null,
           btts: (analysis.btts && analysis.btts.reasoning) || null,
@@ -255,8 +279,11 @@ async function runScan(leagueId, weekStart) {
 
   await upsertScanStatus(id, leagueId, weekStart, { status: 'scanning', total: 0, done: 0, error: null });
 
-  // 1. ONE fixtures call for the whole week.
-  const { fixtures: weekFixtures } = await fetchFixturesForWeek(leagueId, weekStart, weekEnd);
+  // 1. ONE fixtures call for the whole week. We capture the detected
+  //    season too — it's threaded down to fetchFixtureDetail so the
+  //    last-N team games come from the SAME season as the fixtures we
+  //    just resolved (rest-days correctness).
+  const { fixtures: weekFixtures, season: detectedSeason } = await fetchFixturesForWeek(leagueId, weekStart, weekEnd);
 
   // 2. Drop fixtures that already have prediction rows for this fixture_id
   //    (idempotent re-scans skip work the previous run completed).
@@ -311,7 +338,7 @@ async function runScan(leagueId, weekStart) {
     }
 
     try {
-      const detail = await fetchFixtureDetail(fx, leagueId);
+      const detail = await fetchFixtureDetail(fx, leagueId, detectedSeason);
       const matchData = {
         league: league.name,
         kickoff: fx.fixture.date,
@@ -333,6 +360,10 @@ async function runScan(leagueId, weekStart) {
           goalsPerGame: detail.awayGpg,
         },
         h2h: detail.h2h, // average goals-per-match string, e.g. "3.2 G/M"
+        // Referee + per-ref goals tendency. Null when API-Football hasn't
+        // assigned a ref yet (typical until ~48h before kickoff) — the UI
+        // surfaces "Unknown" with a soft note instead of an em-dash.
+        referee: detail.referee || null,
       };
       const analysis = await analyseMatch(matchData, false, false);
 

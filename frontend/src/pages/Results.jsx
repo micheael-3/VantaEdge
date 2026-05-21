@@ -13,11 +13,19 @@ import { history as historyApi } from '../api/client.js';
 // Calls history.get('week'). The endpoint already returns settled rows
 // in its `recent` array plus over/btts hit counts in `summary`.
 
-function dateLabel(daysAgo = 1) {
-  const d = new Date();
-  d.setDate(d.getDate() - daysAgo);
-  const weekday = d.toLocaleDateString('en-US', { weekday: 'long' });
-  const month = d.toLocaleDateString('en-US', { month: 'long' });
+// (Legacy dateLabel helper removed — the page now labels the list as a
+// 7-day window rather than implying every row is from yesterday.)
+
+// Pretty-print the row's date — history returns p.kickoff (ISO) as
+// `row.date`. Surface a readable "SUN MAY 18" header so the user can
+// see WHICH day each settled card is from (the page is a 7-day window,
+// not a single day).
+function formatRowDate(raw) {
+  if (!raw) return '';
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return String(raw);
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
+  const month = d.toLocaleDateString('en-US', { month: 'short' });
   return `${weekday} ${month} ${d.getDate()}`.toUpperCase();
 }
 
@@ -53,7 +61,7 @@ function ResultCard({ row }) {
           marginBottom: 8,
         }}
       >
-        {row.date || ''}
+        {formatRowDate(row.date)}
       </div>
       <div
         className="display"
@@ -185,7 +193,7 @@ export default function Results() {
               letterSpacing: '0.04em',
             }}
           >
-            YESTERDAY · {dateLabel(1)}
+            LAST 7 DAYS · SETTLED MATCHES
           </p>
         </div>
 

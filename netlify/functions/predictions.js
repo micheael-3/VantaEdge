@@ -350,6 +350,11 @@ function shapeForFrontend(row, adjustments) {
       asianHandicap: null,
     },
     h2h: (md && md.h2h) || null,
+    // Referee block from match_data: { name, avgGoalsPerGame } or null.
+    // The stats grid reads fixture.referee.name and .avgGoalsPerGame to
+    // render the "Referee" block — without surfacing it here the card
+    // always shows "Unknown".
+    referee: (md && md.referee) || null,
     actualResult: row.over_hit != null || row.btts_hit != null ? {
       status: 'FT',
       overHit: row.over_hit,

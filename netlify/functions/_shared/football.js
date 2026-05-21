@@ -150,8 +150,14 @@ async function getFixtureCountByDateAuto(leagueId, dateStr, ttlSeconds) {
 // Per-call TTLs are explicit so cache.js's default never silently downgrades
 // us. 3600s (1h) is the spec-mandated default for everything except live
 // fixture lookups (which already use date-aware TTLs above).
-async function getTeamLastHomeGames(teamId, leagueId) {
-  const params = { team: teamId, league: leagueId, season: SEASON, last: 10 };
+// Optional `seasonOverride` — pass the season detected for the upcoming
+// fixture's date so we don't return last-year's games for a current-year
+// fixture. Without it, restDays would always be hundreds of days (last
+// played date sits in the previous season) and the UI ends up showing
+// "Season start" forever.
+async function getTeamLastHomeGames(teamId, leagueId, seasonOverride) {
+  const season = Number.isFinite(seasonOverride) ? seasonOverride : SEASON;
+  const params = { team: teamId, league: leagueId, season, last: 10 };
   // 2h TTL — last-N results don't change between fixture refreshes, and the
   // progressive-load path hits this on every dashboard mount.
   const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 7200);
@@ -159,8 +165,9 @@ async function getTeamLastHomeGames(teamId, leagueId) {
   return all.filter((f) => f.teams && f.teams.home && f.teams.home.id === teamId).slice(0, 5);
 }
 
-async function getTeamLastAwayGames(teamId, leagueId) {
-  const params = { team: teamId, league: leagueId, season: SEASON, last: 10 };
+async function getTeamLastAwayGames(teamId, leagueId, seasonOverride) {
+  const season = Number.isFinite(seasonOverride) ? seasonOverride : SEASON;
+  const params = { team: teamId, league: leagueId, season, last: 10 };
   const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 7200);
   if (!Array.isArray(all)) return [];
   return all.filter((f) => f.teams && f.teams.away && f.teams.away.id === teamId).slice(0, 5);
