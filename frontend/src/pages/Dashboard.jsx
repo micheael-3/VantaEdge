@@ -452,7 +452,7 @@ export default function Dashboard() {
             >
               <div>
                 <h1
-                  className="display"
+                  className="display dash-page-title"
                   style={{
                     fontSize: 36,
                     fontWeight: 700,

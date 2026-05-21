@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { isAdmin, isSharp, useAuth } from '../context/AuthContext.jsx';
 import { openWhopCheckout } from '../lib/checkout.js';
@@ -18,13 +17,12 @@ const ITEMS = [
   { to: '/settings', label: 'Settings', icon: 'settings', requiresSharp: false },
 ];
 
-export default function Sidebar({ onUpgrade }) {
+export default function Sidebar({ onUpgrade, mobileOpen = false, setMobileOpen = () => {} }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const sharp = isSharp(user);
   const admin = isAdmin(user);
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -35,15 +33,9 @@ export default function Sidebar({ onUpgrade }) {
 
   return (
     <>
-      {/* Mobile hamburger — only shown on small screens via CSS */}
-      <button
-        type="button"
-        className="sb-mobile-toggle"
-        aria-label="Open menu"
-        onClick={() => setMobileOpen((v) => !v)}
-      >
-        <Icon name="menu" size={18} />
-      </button>
+      {/* Hamburger lives in AppTop now (Layout.jsx) so it sits inside
+          the sticky bar and can't overlap the brand. The Sidebar only
+          renders the drawer body + backdrop here. */}
 
       <aside className={`sb ${mobileOpen ? 'sb-open' : ''}`}>
         <div

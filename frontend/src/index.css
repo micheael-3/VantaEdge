@@ -967,21 +967,9 @@ table.tbl tr:last-child td { border-bottom: none; }
 
 .sb-upgrade { /* spacing helper handled inline */ }
 
-.sb-mobile-toggle {
-  display: none;
-  position: fixed;
-  top: 16px;
-  left: 16px;
-  width: 40px;
-  height: 40px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-  color: var(--text);
-}
+/* Legacy class kept harmless in case any other code still references
+   it; the actual hamburger now lives inside .app-top as .app-top-menu. */
+.sb-mobile-toggle { display: none; }
 
 .sb-backdrop {
   display: none;
@@ -989,7 +977,6 @@ table.tbl tr:last-child td { border-bottom: none; }
 
 /* Mobile sidebar */
 @media (max-width: 720px) {
-  .sb-mobile-toggle { display: inline-flex; }
   .sb {
     position: fixed;
     top: 0;
@@ -1009,7 +996,7 @@ table.tbl tr:last-child td { border-bottom: none; }
     z-index: 35;
   }
   .app-main {
-    padding: 70px 16px 24px;
+    padding: 56px 16px 24px;
   }
 }
 
@@ -1103,16 +1090,36 @@ table.tbl tr:last-child td { border-bottom: none; }
 }
 
 /* App top bar — hidden on desktop, sticky to top on mobile.
-   Shows logo · today's date · plan badge. */
+   Shows hamburger · logo · today's date · plan badge. The hamburger
+   used to be a floating fixed button (.sb-mobile-toggle) that landed
+   on top of the logo; it now lives inline as the first child of the
+   bar so the whole header is one solid row. */
 .app-top { display: none; }
+.app-top-menu {
+  width: 32px;
+  height: 32px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  flex-shrink: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.app-top-menu:active { transform: scale(0.96); }
 @media (max-width: 767px) {
+  /* Header sits in a 52px sticky strip. Bottom safe-area is handled
+     by .bottom-nav's own padding-bottom rule below. */
   .app-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 12px 16px;
-    margin: -70px -16px 16px;  /* offset the .app-main top padding */
+    gap: 10px;
+    padding: 10px 14px;
+    margin: -56px -16px 14px;  /* offset the .app-main top padding */
     border-bottom: 1px solid var(--border-soft);
     position: sticky;
     top: 0;
@@ -1129,7 +1136,15 @@ table.tbl tr:last-child td { border-bottom: none; }
     text-align: center;
   }
   /* Reclaim mobile main padding now that we have a sticky bar at top */
-  .app-main { padding-top: 70px; }
+  .app-main { padding-top: 56px; }
+
+  /* Tighten dashboard typography on mobile. The inline h1 fontSize:36
+     was eating the top half of the viewport — override via class so
+     the page feels more solid. Also collapses the redundant
+     "Last scanned" sub-line on small screens; it's surfaced in
+     desktop / can be re-introduced as a chip if needed. */
+  .dash-page-title { font-size: 26px !important; line-height: 1.15 !important; }
+  .dash-page-sub { font-size: 11px !important; }
 }
 
 /* Upgrade modal — centered card on desktop, bottom sheet on mobile. */
