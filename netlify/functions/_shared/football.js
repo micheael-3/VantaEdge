@@ -178,8 +178,13 @@ async function getH2H(homeId, awayId) {
   return getOrFetch('/fixtures/headtohead', params, () => apiGet('/fixtures/headtohead', params), 3600);
 }
 
-async function getTeamStats(teamId, leagueId) {
-  const params = { team: teamId, league: leagueId, season: SEASON };
+// Optional `seasonOverride` — same pattern as the team-last-games helpers.
+// Without it we'd return the env-default SEASON's aggregate, so an MLS 2026
+// fixture would read 2024 stats and surface stale (often identical-looking)
+// scored/conceded averages across every card.
+async function getTeamStats(teamId, leagueId, seasonOverride) {
+  const season = Number.isFinite(seasonOverride) ? seasonOverride : SEASON;
+  const params = { team: teamId, league: leagueId, season };
   // 2h TTL — season-aggregate stats move slowly enough that an hour is
   // overkill on the dashboard hot path.
   return getOrFetch('/teams/statistics', params, async () => {
@@ -188,8 +193,9 @@ async function getTeamStats(teamId, leagueId) {
   }, 7200);
 }
 
-async function getTeamFixtures(teamId, leagueId) {
-  const params = { team: teamId, league: leagueId, season: SEASON, last: 2 };
+async function getTeamFixtures(teamId, leagueId, seasonOverride) {
+  const season = Number.isFinite(seasonOverride) ? seasonOverride : SEASON;
+  const params = { team: teamId, league: leagueId, season, last: 2 };
   // 2h TTL — kept defined for the rest-days fallback in the lean
   // /quick path even though the spec'd 4-call minimum doesn't use it.
   return getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 7200);

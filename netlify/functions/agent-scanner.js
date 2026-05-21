@@ -246,6 +246,74 @@ async function ensureWeeklyScanReady() {
   }
 }
 
+// Late-ref refetch — API-Football only publishes referee appointments
+// ~24–48 hours before kickoff, but the weekly Claude scan runs at the
+// start of the week, so most predictions are stored with referee=null.
+// Every cron tick we walk the predictions whose kickoff is in the next
+// 48h AND still don't have a ref in match_data, refetch the fixture by
+// id, and patch match_data.referee in place. Bounded to PER_RUN_REF_BUDGET
+// per run so a backlog doesn't blow the function's time budget.
+const PER_RUN_REF_BUDGET = 8;
+async function refreshLateReferees(report) {
+  // Predictions in the next 48h whose match_data has no ref (either the
+  // field is missing entirely or the .name is null/empty). One row per
+  // fixture_id — the most recent.
+  let rows = [];
+  try {
+    rows = await sql()`
+      SELECT DISTINCT ON (fixture_id) id, fixture_id, kickoff, match_data
+      FROM predictions
+      WHERE kickoff >= NOW()
+        AND kickoff <  NOW() + INTERVAL '48 hours'
+        AND (
+          match_data IS NULL
+          OR match_data->'referee' IS NULL
+          OR match_data->'referee'->>'name' IS NULL
+          OR (match_data->'referee'->>'name') = ''
+        )
+      ORDER BY fixture_id, created_at DESC
+      LIMIT ${PER_RUN_REF_BUDGET}`;
+  } catch (e) {
+    console.error('[agent-scanner] ref backfill query failed:', e.message);
+    return;
+  }
+  if (!rows || rows.length === 0) return;
+
+  for (const row of rows) {
+    try {
+      const fx = await football.getFixtureById(row.fixture_id);
+      const refName = fx && fx.fixture && typeof fx.fixture.referee === 'string'
+        ? fx.fixture.referee.trim()
+        : '';
+      if (!refName) continue; // still not assigned — try again next tick
+
+      const refStats = await football.getRefereeStats(refName).catch(() => null);
+      const refBlock = {
+        name: refName,
+        avgGoalsPerGame:
+          refStats && typeof refStats.avgGoalsPerGame === 'number'
+            ? refStats.avgGoalsPerGame
+            : null,
+      };
+      // jsonb_set merges into match_data. Coalesce so a NULL match_data
+      // becomes a fresh object instead of staying NULL.
+      await sql()`
+        UPDATE predictions
+        SET match_data = jsonb_set(
+              COALESCE(match_data, '{}'::jsonb),
+              '{referee}',
+              ${JSON.stringify(refBlock)}::jsonb,
+              true
+            )
+        WHERE fixture_id = ${row.fixture_id}`;
+      report.refereesBackfilled = (report.refereesBackfilled || 0) + 1;
+    } catch (e) {
+      console.error(`[agent-scanner] ref backfill fixture ${row.fixture_id} failed:`, e.message);
+      report.errors += 1;
+    }
+  }
+}
+
 async function runScan({ leaguesArg } = {}) {
   const report = {
     leaguesProcessed: 0,
@@ -255,6 +323,7 @@ async function runScan({ leaguesArg } = {}) {
     valueAlerts: 0,
     errors: 0,
     weeklyScanTriggered: false,
+    refereesBackfilled: 0,
     durationMs: 0,
   };
   const t0 = Date.now();
@@ -265,6 +334,13 @@ async function runScan({ leaguesArg } = {}) {
     report.weeklyScanTriggered = await ensureWeeklyScanReady();
   } catch (e) {
     console.error('[agent-scanner] ensureWeeklyScanReady failed:', e.message);
+  }
+
+  // Second: fill in late-assigned referees. Cheap when there are none.
+  try {
+    await refreshLateReferees(report);
+  } catch (e) {
+    console.error('[agent-scanner] refreshLateReferees failed:', e.message);
   }
 
   // Either an explicit list (manual trigger) or the next round-robin batch.

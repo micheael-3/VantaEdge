@@ -150,8 +150,10 @@ async function fetchFixtureDetail(fx, leagueId, season) {
   const [homeLast, awayLast, homeStats, awayStats, h2hList, refStats] = await Promise.all([
     football.getTeamLastHomeGames(homeId, leagueId, season),
     football.getTeamLastAwayGames(awayId, leagueId, season),
-    football.getTeamStats(homeId, leagueId),
-    football.getTeamStats(awayId, leagueId),
+    // Same-season aggregates: scored/conceded averages, BTTS rate, etc.
+    // Without this the card would read last year's numbers.
+    football.getTeamStats(homeId, leagueId, season),
+    football.getTeamStats(awayId, leagueId, season),
     football.getH2H(homeId, awayId),
     refName ? football.getRefereeStats(refName) : Promise.resolve(null),
   ]);

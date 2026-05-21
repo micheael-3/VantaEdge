@@ -189,9 +189,15 @@ export function analysisText(fixture) {
 // Referee display split into name + per-ref goals/game so the stats
 // grid can render them in separate visual slots. Use refereeName() for
 // the value line and refereeGoalsPerGame() for the explanation.
+//
+// "Awaiting assignment" is the fallback (NOT "Unknown") — API-Football
+// only publishes referee appointments ~24–48 hours before kickoff, so a
+// missing ref isn't a data quality issue, it's normal for fixtures more
+// than two days out. The 30-min agent-scanner pass refetches the
+// fixture to fill the name in once it's announced.
 export function refereeName(fixture) {
   const n = fixture?.referee?.name || fixture?.fixture?.referee?.name;
-  return n && String(n).trim() ? n : 'Unknown';
+  return n && String(n).trim() ? n : 'Awaiting assignment';
 }
 
 export function refereeGoalsPerGame(fixture) {
