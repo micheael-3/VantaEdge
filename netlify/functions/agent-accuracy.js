@@ -9,6 +9,7 @@ const { sql } = require('./_shared/db');
 const { json, error } = require('./_shared/response');
 const { confidenceBucket, markRun, setState } = require('./_shared/agent');
 const { createAgentAlert } = require('./_shared/alerts');
+const { bucketFor, bucketCenter, BUCKET_LABELS } = require('./_shared/calibration');
 
 const SCHEDULE = '0 3 * * *';
 
@@ -91,6 +92,65 @@ async function rebuild() {
       VALUES (${e.dimension}, ${e.value}, ${e.total}, ${e.hits}, ${accuracy}, ${weight}, NOW())`;
     report.dimensionsUpdated += 1;
     if (e.dimension === 'LEAGUE') leagueAcc[e.value] = { accuracy, total: e.total };
+  }
+
+  // ---------- Calibration buckets per market ----------
+  //
+  // The 'CONFIDENCE_BUCKET' dimension above lumps both markets together with
+  // bucket labels '<50' / '50-60' / etc. and treats `weight_adjustment` as a
+  // signed offset added to raw confidence. The dashboard's live calibration
+  // system instead wants per-market multipliers stored under
+  // CONFIDENCE_BUCKET_OVER / CONFIDENCE_BUCKET_BTTS with the standard
+  // 50-60 / 60-70 / 70-80 / 80-90 / 90-100 labels from calibration.js.
+  //
+  // Both schemes live in accuracy_model side-by-side under different
+  // dimension names, so neither overrides the other.
+  const calibCounts = { over: {}, btts: {} };
+  function bumpCalib(market, label, hit) {
+    if (!label) return;
+    const bucket = calibCounts[market];
+    if (!bucket[label]) bucket[label] = { total: 0, hits: 0 };
+    bucket[label].total += 1;
+    if (hit) bucket[label].hits += 1;
+  }
+  for (const r of overRows) {
+    bumpCalib('over', bucketFor(Number(r.over_confidence)), r.over_hit);
+  }
+  for (const r of bttsRows) {
+    bumpCalib('btts', bucketFor(Number(r.btts_confidence)), r.btts_hit);
+  }
+
+  // Helper: clamp the multiplier to [0.5, 1.5] so a single noisy bucket
+  // can't wildly skew the displayed confidence.
+  function clampAdj(a) {
+    if (!Number.isFinite(a)) return 1;
+    return Math.max(0.5, Math.min(1.5, a));
+  }
+
+  for (const market of ['over', 'btts']) {
+    const dim = market === 'over' ? 'CONFIDENCE_BUCKET_OVER' : 'CONFIDENCE_BUCKET_BTTS';
+    for (const label of BUCKET_LABELS) {
+      const stat = calibCounts[market][label] || { total: 0, hits: 0 };
+      const total = stat.total;
+      const hits = stat.hits;
+      const hitRate = total ? hits / total : 0;
+      const center = bucketCenter(label) || 0;
+      // Under-sampled buckets: don't tune yet — emit a 1.0 multiplier so the
+      // frontend treats raw == calibrated.
+      const adj = total < 10 || !center ? 1 : clampAdj(hitRate / center);
+      const accuracyPct = total ? Math.round(hitRate * 1000) / 10 : 0;
+      await sql()`
+        INSERT INTO accuracy_model
+          (dimension, dimension_value, total_predictions, hits, accuracy, weight_adjustment, last_updated)
+        VALUES (${dim}, ${label}, ${total}, ${hits}, ${accuracyPct}, ${adj}, NOW())
+        ON CONFLICT (dimension, dimension_value) DO UPDATE SET
+          total_predictions = EXCLUDED.total_predictions,
+          hits              = EXCLUDED.hits,
+          accuracy          = EXCLUDED.accuracy,
+          weight_adjustment = EXCLUDED.weight_adjustment,
+          last_updated      = NOW()`;
+      report.dimensionsUpdated += 1;
+    }
   }
 
   // Identify best / worst leagues (min 8 samples).

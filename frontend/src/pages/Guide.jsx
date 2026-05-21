@@ -154,6 +154,18 @@ export default function Guide({ openUpgrade }) {
               working. Anyone telling you they're profitable without showing
               their tracker is lying.
             </Step>
+            <Step n={8} title="The model learns from its mistakes">
+              FastScore tracks every prediction's outcome. Once enough have
+              settled (≈30 per market), the system computes a calibration
+              adjustment per confidence bucket and applies it to future
+              predictions. Example: if the model historically calls "75%
+              confidence" but those actually hit 62% of the time, future 75%
+              calls get displayed as 62%. The EV calculator uses the
+              calibrated number, so green +EV signals reflect real edge — not
+              the model's gut feel. Check{' '}
+              <strong style={{ color: 'var(--text)' }}>Model Calibration</strong>{' '}
+              on the History page to see the drift live.
+            </Step>
           </Section>
 
           {!sharp && (

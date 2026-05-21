@@ -8,6 +8,7 @@ const { analyseMatch } = require('./_shared/claude');
 const { calculateEV, calculateKelly } = require('./_shared/ev');
 const oddsService = require('./_shared/odds');
 const weatherService = require('./_shared/weather');
+const { loadAdjustments, calibrate } = require('./_shared/calibration');
 
 // Hardcoded for this MLS-only build. Every code path that used to take a
 // league id now ignores anything other than 253.
@@ -286,7 +287,7 @@ function mondayOf(date) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
-function shapeForFrontend(row) {
+function shapeForFrontend(row, adjustments) {
   // Shape a `predictions` row into the same fixture object the dashboard
   // MatchCard reads. Predictions are stored as integers/strings; we
   // wrap them in the legacy { line, confidence, prediction } objects.
@@ -330,11 +331,19 @@ function shapeForFrontend(row) {
       over: {
         line: row.over_line,
         confidence: row.over_confidence,
+        calibratedConfidence:
+          adjustments && row.over_confidence != null
+            ? calibrate(row.over_confidence, 'over', adjustments)
+            : null,
         reasoning: reasoning.over || null,
       },
       btts: {
         prediction: row.btts,
         confidence: row.btts_confidence,
+        calibratedConfidence:
+          adjustments && row.btts_confidence != null
+            ? calibrate(row.btts_confidence, 'btts', adjustments)
+            : null,
         reasoning: reasoning.btts || null,
       },
       firstHalf: null,
@@ -410,6 +419,9 @@ async function handleWeek(event) {
       AND league = 'MLS'
     ORDER BY kickoff ASC`;
 
+  // Load calibration adjustments once for the whole week response.
+  const adjustments = await loadAdjustments();
+
   // 2. Group by date (YYYY-MM-DD via kickoff UTC date).
   const dates = {};
   for (const r of rows) {
@@ -420,7 +432,7 @@ async function handleWeek(event) {
       continue;
     }
     if (!dates[dateKey]) dates[dateKey] = [];
-    dates[dateKey].push(shapeForFrontend(r));
+    dates[dateKey].push(shapeForFrontend(r, adjustments));
   }
 
   // 3. scan_status for this week. Resilient to the table not existing yet —
@@ -792,12 +804,34 @@ async function handleAnalyze(event) {
     // Non-fatal — still return the AI prediction to the client.
   }
 
+  // Calibration: enrich the returned predictions with calibratedConfidence
+  // so the dashboard MatchCard can show "raw 78% / calibrated 64%" when the
+  // model is mis-calibrated. Errors here are non-fatal.
+  let analyzeAdjustments = null;
+  try {
+    analyzeAdjustments = await loadAdjustments();
+  } catch {
+    analyzeAdjustments = null;
+  }
+  const overOut = {
+    ...analysis.over,
+    calibratedConfidence: analyzeAdjustments
+      ? calibrate(analysis.over.confidence, 'over', analyzeAdjustments)
+      : null,
+  };
+  const bttsOut = {
+    ...analysis.btts,
+    calibratedConfidence: analyzeAdjustments
+      ? calibrate(analysis.btts.confidence, 'btts', analyzeAdjustments)
+      : null,
+  };
+
   return json(200, {
     id: insertedId,
     fixtureId: fx.fixture.id,
     predictions: {
-      over: analysis.over,
-      btts: analysis.btts,
+      over: overOut,
+      btts: bttsOut,
       firstHalf: null,
       asianHandicap: null,
     },

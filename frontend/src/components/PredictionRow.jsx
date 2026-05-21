@@ -8,9 +8,17 @@ import LockedOverlay from './LockedOverlay.jsx';
 // For FREE users, the odds/EV row is locked behind an overlay.
 // When `pending` is true, renders a shimmering skeleton row instead so the
 // card can sit there waiting for /api/predictions/analyze to resolve.
+//
+// EV / Kelly math intentionally uses `conf` (the EFFECTIVE/calibrated
+// confidence passed by MatchCard). The bettor cares about the calibrated
+// probability — if the model says 80% but historically those hit 60%,
+// the +EV that matters is the 60%-based one. The raw badge above shows
+// what the model originally claimed for transparency.
 export default function PredictionRow({
   label,
   conf,
+  rawConf,
+  calibratedConf,
   isSharp,
   odds,
   onOdds,
@@ -78,6 +86,15 @@ export default function PredictionRow({
 
   const tier = ev ? valueTier(ev.ev) : null;
 
+  // Show the small calibrated chip only when the model is materially mis-
+  // calibrated (gap >= 3 points). Differences smaller than that aren't worth
+  // the visual noise.
+  const displayRaw = rawConf != null ? rawConf : conf || 0;
+  const showCalibrated =
+    calibratedConf != null &&
+    calibratedConf !== rawConf &&
+    Math.abs(calibratedConf - displayRaw) >= 3;
+
   return (
     <div>
       <div
@@ -88,9 +105,28 @@ export default function PredictionRow({
           marginBottom: 6,
         }}
       >
-        <span className="badge badge-mint">
-          {label} · <span className="mono">{conf || 0}%</span>
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span className="badge badge-mint">
+            {label} · <span className="mono">{displayRaw}%</span>
+          </span>
+          {showCalibrated && (
+            <span
+              className="mono"
+              title="Adjusted based on the model's actual hit rate at this confidence level."
+              style={{
+                fontSize: 10,
+                color: 'var(--text-3)',
+                background: 'var(--bg-2)',
+                border: '1px solid var(--border-soft)',
+                borderRadius: 4,
+                padding: '2px 6px',
+                letterSpacing: '0.04em',
+              }}
+            >
+              CALIBRATED {calibratedConf}%
+            </span>
+          )}
+        </div>
         <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>
           AI conf
         </span>

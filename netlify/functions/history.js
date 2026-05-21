@@ -2,6 +2,7 @@ const { sql } = require('./_shared/db');
 const { json, error, notFound, subPath } = require('./_shared/response');
 const { requireUser } = require('./_shared/auth-mw');
 const { requireTier } = require('./_shared/tier');
+const { bucketFor, bucketCenter, BUCKET_LABELS } = require('./_shared/calibration');
 
 function daysAgo(n) {
   const d = new Date();
@@ -149,6 +150,74 @@ async function getHistory(event) {
   });
 }
 
+// GET /api/history/calibration
+//
+// Returns the per-bucket hit rate for both markets from the SETTLED rows of
+// the calling user. The History page charts the gap between each bucket's
+// claimed confidence (bucket centre, 55/65/75/85/95) and the bucket's actual
+// hit rate, so the bettor can see where the model is over- or
+// under-confident.
+async function getCalibration(event) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+  const gate = requireTier(user, 'ANALYST');
+  if (gate) return gate;
+
+  const rows = await sql()`
+    SELECT over_confidence, over_hit, btts_confidence, btts_hit
+    FROM predictions
+    WHERE user_id = ${user.id}
+      AND (over_hit IS NOT NULL OR btts_hit IS NOT NULL)`;
+
+  // Build empty bucket scaffolds so the chart always renders five bars
+  // (including ones with zero samples — they just render as 0%).
+  function emptyBuckets() {
+    return BUCKET_LABELS.map((label) => ({
+      label,
+      predicted: 0,
+      hits: 0,
+      hitRate: 0,
+      expected: Math.round((bucketCenter(label) || 0) * 100),
+    }));
+  }
+  const over = emptyBuckets();
+  const btts = emptyBuckets();
+  const overByLabel = Object.fromEntries(over.map((b) => [b.label, b]));
+  const bttsByLabel = Object.fromEntries(btts.map((b) => [b.label, b]));
+
+  let samples = 0;
+  for (const r of rows) {
+    if (r.over_hit !== null && r.over_confidence != null) {
+      const lbl = bucketFor(Number(r.over_confidence));
+      if (lbl && overByLabel[lbl]) {
+        overByLabel[lbl].predicted += 1;
+        if (r.over_hit === true) overByLabel[lbl].hits += 1;
+        samples += 1;
+      }
+    }
+    if (r.btts_hit !== null && r.btts_confidence != null) {
+      const lbl = bucketFor(Number(r.btts_confidence));
+      if (lbl && bttsByLabel[lbl]) {
+        bttsByLabel[lbl].predicted += 1;
+        if (r.btts_hit === true) bttsByLabel[lbl].hits += 1;
+        samples += 1;
+      }
+    }
+  }
+  for (const b of over) {
+    b.hitRate = b.predicted ? Math.round((b.hits / b.predicted) * 1000) / 10 : 0;
+  }
+  for (const b of btts) {
+    b.hitRate = b.predicted ? Math.round((b.hits / b.predicted) * 1000) / 10 : 0;
+  }
+
+  return json(200, {
+    samples,
+    over: { buckets: over },
+    btts: { buckets: btts },
+  });
+}
+
 async function getAccuracy(event) {
   const { res, user } = await requireUser(event);
   if (res) return res;
@@ -170,6 +239,7 @@ exports.handler = async (event) => {
     const path = subPath(event, 'history');
     if (path === '/' || path === '') return await getHistory(event);
     if (path === '/accuracy') return await getAccuracy(event);
+    if (path === '/calibration' || path === '/calibration/') return await getCalibration(event);
     return notFound();
   } catch (err) {
     console.error('history handler error:', err);

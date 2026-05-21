@@ -9,6 +9,8 @@
 //     },
 //     actualResult: { homeGoals, awayGoals, overHit, bttsHit } | undefined }
 
+// Raw model confidence. Used for the prediction badge on each card so the
+// bettor can see what the model originally claimed.
 export function overConf(fixture) {
   const v = fixture?.predictions?.over?.confidence;
   return typeof v === 'number' ? Math.round(v) : 0;
@@ -19,17 +21,48 @@ export function bttsConf(fixture) {
   return typeof v === 'number' ? Math.round(v) : 0;
 }
 
+// Calibrated confidence pulled from the backend (null when the calibration
+// engine hasn't produced an adjustment for this bucket yet, e.g. <10
+// settled samples). Used by the small "Calibrated NN%" chip below the
+// raw badge.
+export function overCalibrated(fixture) {
+  const v = fixture?.predictions?.over?.calibratedConfidence;
+  return typeof v === 'number' ? Math.round(v) : null;
+}
+
+export function bttsCalibrated(fixture) {
+  const v = fixture?.predictions?.btts?.calibratedConfidence;
+  return typeof v === 'number' ? Math.round(v) : null;
+}
+
+// Effective confidence — prefer calibrated when present, fall back to raw.
+// This is what EV / Kelly / value-tier math should use because the bettor
+// cares about the calibrated probability, not the model's gut feel. If the
+// model says 80% but historically that bucket hits at 60%, +EV is the
+// 60%-based EV — anything else is garbage-in-garbage-out.
+export function effectiveOverConf(fixture) {
+  const c = overCalibrated(fixture);
+  return c != null ? c : overConf(fixture);
+}
+
+export function effectiveBttsConf(fixture) {
+  const c = bttsCalibrated(fixture);
+  return c != null ? c : bttsConf(fixture);
+}
+
 export function bttsLabel(fixture) {
   const p = (fixture?.predictions?.btts?.prediction || 'YES').toUpperCase();
   return `BTTS ${p}`;
 }
 
+// Strong-value flag uses CALIBRATED confidence — a raw 80% that actually
+// hits 55% of the time should not be highlighted as "strong value".
 export function isStrongValue(fixture) {
-  return Math.max(overConf(fixture), bttsConf(fixture)) >= 70;
+  return Math.max(effectiveOverConf(fixture), effectiveBttsConf(fixture)) >= 70;
 }
 
 export function agentScore(fixture) {
-  return Math.max(overConf(fixture), bttsConf(fixture));
+  return Math.max(effectiveOverConf(fixture), effectiveBttsConf(fixture));
 }
 
 // Format kickoff "Sat 7:30 PM" — match the design's kickoff line.

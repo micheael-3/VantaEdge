@@ -7,11 +7,15 @@ import {
   analysisText,
   avgConceded,
   avgScored,
+  bttsCalibrated,
   bttsConf,
   bttsLabel,
+  effectiveBttsConf,
+  effectiveOverConf,
   formatKickoffShort,
   h2hDisplay,
   isStrongValue,
+  overCalibrated,
   overConf,
   restDaysDisplay,
 } from '../lib/fixture.js';
@@ -65,8 +69,15 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
   const aiPending = fixture.aiStatus === 'pending';
   const aiErrored = fixture.aiStatus === 'error';
   const strongValue = !aiPending && isStrongValue(fixture);
-  const ouConf = overConf(fixture);
-  const btsConf = bttsConf(fixture);
+  // Raw confidence drives the badge text. EV math (inside PredictionRow)
+  // uses the EFFECTIVE (calibrated) number so a model that historically
+  // over-confidence-d shows realistic edges instead of inflated ones.
+  const ouConfRaw = overConf(fixture);
+  const btsConfRaw = bttsConf(fixture);
+  const ouConfEff = effectiveOverConf(fixture);
+  const btsConfEff = effectiveBttsConf(fixture);
+  const ouCalibrated = overCalibrated(fixture);
+  const btsCalibratedV = bttsCalibrated(fixture);
   const overLine = fixture?.predictions?.over?.line ?? 2.5;
 
   const result = fixture.actualResult;
@@ -211,7 +222,9 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
       <div style={{ display: 'grid', gap: 14, marginBottom: 14 }}>
         <PredictionRow
           label={aiPending ? 'OVER —' : `OVER ${overLine}`}
-          conf={ouConf}
+          conf={ouConfEff}
+          rawConf={ouConfRaw}
+          calibratedConf={ouCalibrated}
           isSharp={isSharp}
           odds={oddsOU}
           onOdds={setOddsOU}
@@ -220,7 +233,9 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
         />
         <PredictionRow
           label={aiPending ? 'BTTS —' : bttsLabel(fixture)}
-          conf={btsConf}
+          conf={btsConfEff}
+          rawConf={btsConfRaw}
+          calibratedConf={btsCalibratedV}
           isSharp={isSharp}
           odds={oddsBTTS}
           onOdds={setOddsBTTS}

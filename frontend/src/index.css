@@ -992,6 +992,7 @@ table.tbl tr:last-child td { border-bottom: none; }
   .aff-calc-grid { grid-template-columns: 1fr !important; }
   .aff-link-grid { grid-template-columns: 1fr !important; }
   .bk-stats-grid { grid-template-columns: 1fr 1fr !important; }
+  .calibration-grid { grid-template-columns: 1fr !important; }
 }
 
 /* Public landing — Hero, How It Works, and Pricing grids stack on phones.
