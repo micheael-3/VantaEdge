@@ -19,20 +19,9 @@ const { requireUser } = require('./_shared/auth-mw');
 const VALID_TIERS = new Set(['FREE', 'ANALYST', 'EDGE']);
 
 // Same helpers as predictions.handleWeek — duplicated locally to avoid a
-// cross-function import. mondayOf returns the Monday of the week containing
-// the given date as YYYY-MM-DD UTC; addDaysStr shifts by N days.
-function mondayOf(date) {
-  const d = new Date(date);
-  const day = d.getUTCDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setUTCDate(d.getUTCDate() + diff);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-}
-function addDaysStr(baseDateStr, days) {
-  const d = new Date(`${baseDateStr}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-}
+// Cyprus-aware mondayOf / addDaysStr are defined further down so they
+// can share the same Asia/Nicosia helper as the rest of the pipeline.
+// Hoisted via function declarations — referenced by forceRescan above.
 
 async function requireAdmin(event) {
   const { res, user } = await requireUser(event);
@@ -154,6 +143,164 @@ async function forceRescan(leagueId) {
   return json(200, { ok: true, leagueId, weekStart, weekEnd });
 }
 
+// POST /api/admin/clear-all
+//
+// Cookie-authed admin version of /api/admin/clear-history (which uses
+// ?key=<ADMIN_PASSWORD>). Wipes the same 10 tables and triggers a
+// fresh background scan. Used by the AdminPanel "Clear All & Rescan"
+// button so admins don't need to construct URLs or type their
+// password into a browser address bar.
+async function clearAllAndRescan() {
+  const TARGETS = [
+    'bankroll_entries',
+    'odds_snapshots',
+    'odds_movements',
+    'user_alerts',
+    'agent_alerts',
+    'accuracy_model',
+    'best_bet',
+    'prediction_history',
+    'predictions',
+    'scan_status',
+  ];
+
+  // Run each DELETE inside its own try/catch so a missing table on an
+  // older schema doesn't abort the rest. Mirrors admin-clear-history.js.
+  const results = [];
+  let totalDeleted = 0;
+  for (const table of TARGETS) {
+    try {
+      const sqlFn = sql();
+      const parts = [`DELETE FROM ${table}`];
+      parts.raw = [`DELETE FROM ${table}`];
+      const r = await sqlFn(parts);
+      const rows = r && r.rowCount != null ? Number(r.rowCount) : null;
+      if (Number.isFinite(rows)) totalDeleted += rows;
+      results.push({ ok: true, table, rowsDeleted: rows });
+    } catch (e) {
+      results.push({ ok: false, table, error: e.message });
+    }
+  }
+
+  // Fire the background scan immediately so the dashboard doesn't sit
+  // empty waiting for the cron tick.
+  let scanTriggered = false;
+  try {
+    const base = process.env.URL || process.env.DEPLOY_URL || '';
+    const secret = process.env.JWT_SECRET || '';
+    if (base && secret) {
+      const weekStart = mondayOf(new Date());
+      const axios = require('axios');
+      axios.post(`${base}/.netlify/functions/predictions-scan-background`,
+        { leagueId: 253, weekStart },
+        {
+          headers: { 'x-internal-scan-secret': secret, 'content-type': 'application/json' },
+          timeout: 5000,
+          validateStatus: () => true,
+        }).catch((err) => {
+          console.error('[admin/clear-all] bg trigger failed:', err.message);
+        });
+      scanTriggered = true;
+    }
+  } catch (err) {
+    console.warn('[admin/clear-all] background scan trigger failed:', err.message);
+  }
+
+  return json(200, { ok: true, totalDeleted, scanTriggered, results });
+}
+
+// GET /api/admin/debug-fixture/:fixtureId
+//
+// Cookie-authed alias for /api/predictions/debug/:fixtureId. Same data,
+// but uses admin JWT instead of ?key= so the UI can link straight to
+// it. Forwards the actual work to the predictions debug handler by
+// calling it directly (we already wrote the inspector logic there).
+async function debugFixture(fixtureId) {
+  if (!Number.isFinite(fixtureId) || fixtureId <= 0) {
+    return error(400, 'fixtureId must be a positive integer');
+  }
+  const football = require('./_shared/football');
+
+  let rawFixture;
+  try {
+    rawFixture = await football.getFixtureById(fixtureId);
+  } catch (e) {
+    return json(500, { stage: 'getFixtureById', error: e.message, fixtureId });
+  }
+  if (!rawFixture) {
+    return json(404, { stage: 'getFixtureById', error: 'fixture not found', fixtureId });
+  }
+  const homeId = rawFixture.teams && rawFixture.teams.home && rawFixture.teams.home.id;
+  const awayId = rawFixture.teams && rawFixture.teams.away && rawFixture.teams.away.id;
+  const leagueId = rawFixture.league && rawFixture.league.id;
+  const seasonHint = rawFixture.league && rawFixture.league.season;
+
+  async function safe(label, p) {
+    try { return { ok: true, label, data: await p }; }
+    catch (e) { return { ok: false, label, error: e.message }; }
+  }
+  const [homeLastR, awayLastR, homeStatsR, awayStatsR, h2hR, standingsR] = await Promise.all([
+    safe('homeLast', football.getTeamLastHomeGames(homeId, leagueId, seasonHint)),
+    safe('awayLast', football.getTeamLastAwayGames(awayId, leagueId, seasonHint)),
+    safe('homeStats', football.getTeamStats(homeId, leagueId, seasonHint)),
+    safe('awayStats', football.getTeamStats(awayId, leagueId, seasonHint)),
+    safe('h2h', football.getH2H(homeId, awayId)),
+    safe('standings', football.getLeagueStandings(leagueId, seasonHint)),
+  ]);
+
+  const homeForm = homeLastR.ok ? football.extractFormForTeam(homeLastR.data, homeId) : null;
+  const awayForm = awayLastR.ok ? football.extractFormForTeam(awayLastR.data, awayId) : null;
+  const homeStanding = standingsR.ok ? football.pickStandingForTeam(standingsR.data, homeId) : null;
+  const awayStanding = standingsR.ok ? football.pickStandingForTeam(standingsR.data, awayId) : null;
+  const refNameRaw = rawFixture.fixture && typeof rawFixture.fixture.referee === 'string'
+    ? rawFixture.fixture.referee.trim() : '';
+
+  return json(200, {
+    fixtureId,
+    fetchedAt: new Date().toISOString(),
+    rawFixture,
+    raw: {
+      homeLast: homeLastR,
+      awayLast: awayLastR,
+      homeStats: homeStatsR,
+      awayStats: awayStatsR,
+      h2h: h2hR,
+      standings: standingsR.ok ? { teams: standingsR.data && standingsR.data.byTeamId ? standingsR.data.byTeamId.size : 0, season: standingsR.data && standingsR.data.season } : standingsR,
+    },
+    extracted: {
+      homeForm,
+      awayForm,
+      homeStanding,
+      awayStanding,
+      refereeName: refNameRaw || null,
+    },
+  });
+}
+
+// mondayOf — re-uses the same Cyprus-aware Monday helper the scan uses,
+// so clear-all-and-rescan picks the same weekStart key the scan will
+// write to. Requiring it locally keeps the admin function self-contained.
+function mondayOf(date) {
+  try {
+    const { cyprusMonday } = require('./_shared/dates');
+    return cyprusMonday(date);
+  } catch {
+    // Fallback to UTC math if the dates module isn't bundled for some
+    // reason (shouldn't happen — netlify.toml includes _shared/**).
+    const d = new Date(date);
+    const day = d.getUTCDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    d.setUTCDate(d.getUTCDate() + diff);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+}
+
+function addDaysStr(baseDateStr, days) {
+  const d = new Date(`${baseDateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
 // POST /api/admin/users/:id/tier  body { tier }
 async function setUserTier(event, userId) {
   const body = parseBody(event);
@@ -188,6 +335,19 @@ exports.handler = async (event) => {
     // --- POST /rescan/:leagueId ---
     const rescanMatch = path.match(/^\/rescan\/(\d+)\/?$/);
     if (rescanMatch && method === 'POST') return await forceRescan(parseInt(rescanMatch[1], 10));
+
+    // --- POST /clear-all --- cookie-authed wipe + rescan. The legacy
+    //     /api/admin/clear-history endpoint (uses ?key=) still works
+    //     for direct hits; this is the in-app version.
+    if (method === 'POST' && (path === '/clear-all' || path === '/clear-all/')) {
+      return await clearAllAndRescan();
+    }
+
+    // --- GET /debug-fixture/:fixtureId --- cookie-authed inspector.
+    //     Mirrors /api/predictions/debug/:fixtureId?key= but uses the
+    //     admin JWT cookie so the UI can link straight to it.
+    const debugMatch = path.match(/^\/debug-fixture\/(\d+)\/?$/);
+    if (debugMatch && method === 'GET') return await debugFixture(parseInt(debugMatch[1], 10));
 
     if (method === 'GET' && (path === '/users' || path === '/users/')) return await listUsers();
     if (method === 'GET' && (path === '/stats' || path === '/stats/')) return await getStats();

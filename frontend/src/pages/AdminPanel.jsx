@@ -88,6 +88,11 @@ function StatsTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [rescanState, setRescanState] = useState({ busy: false, message: '' });
+  // Two pieces of state for the new admin tools. Kept inline with the
+  // stats tab so they sit next to "Force Rescan" — same mental model.
+  const [clearState, setClearState] = useState({ busy: false, message: '' });
+  const [debugId, setDebugId] = useState('');
+  const [debugState, setDebugState] = useState({ busy: false, message: '', result: null });
 
   const loadStats = (cancelledRef) => {
     setLoading(true);
@@ -131,6 +136,52 @@ function StatsTab() {
       setRescanState({
         busy: false,
         message: err?.response?.data?.error || err.message || 'Rescan failed',
+      });
+    }
+  };
+
+  // Wipe ALL prediction tables and trigger a fresh scan with the new
+  // pipeline. Confirms first — this is destructive across 10 tables.
+  const onClearAll = async () => {
+    if (clearState.busy) return;
+    if (!window.confirm(
+      'Wipe ALL predictions, accuracy model, best-bet, agent alerts, odds snapshots and bankroll-entry links, then trigger a fresh scan?\n\nThis cannot be undone.',
+    )) return;
+    setClearState({ busy: true, message: 'Wiping tables & triggering rescan…' });
+    try {
+      const r = await adminApi.clearAll();
+      setClearState({
+        busy: false,
+        message: `Wiped ${r.totalDeleted ?? 0} rows across ${(r.results || []).length} tables. Scan ${r.scanTriggered ? 'triggered' : 'NOT triggered'} — refresh dashboard in ~1 min.`,
+      });
+      setTimeout(() => loadStats({ cancelled: false }), 5000);
+    } catch (err) {
+      setClearState({
+        busy: false,
+        message: err?.response?.data?.error || err.message || 'Clear failed',
+      });
+    }
+  };
+
+  // Inspect a single fixture's raw data. Opens nothing — we render the
+  // result inline as JSON so the admin can scan it and confirm the
+  // form/stats/standings match what the dashboard shows.
+  const onDebug = async () => {
+    if (debugState.busy) return;
+    const id = parseInt(String(debugId).trim(), 10);
+    if (!Number.isFinite(id) || id <= 0) {
+      setDebugState({ busy: false, message: 'Enter a numeric fixture id', result: null });
+      return;
+    }
+    setDebugState({ busy: true, message: 'Fetching raw fixture data…', result: null });
+    try {
+      const r = await adminApi.debugFixture(id);
+      setDebugState({ busy: false, message: '', result: r });
+    } catch (err) {
+      setDebugState({
+        busy: false,
+        message: err?.response?.data?.error || err.message || 'Debug failed',
+        result: null,
       });
     }
   };
@@ -233,6 +284,129 @@ function StatsTab() {
         >
           {rescanState.busy ? 'Rescanning…' : 'Force Rescan'}
         </button>
+      </div>
+
+      {/* Destructive: wipe every prediction-related table + trigger scan.
+          Lives next to "Force Rescan" but does much more — wipes 10
+          tables (predictions, accuracy_model, best_bet, agent_alerts,
+          odds snapshots, etc.) before kicking the background scanner. */}
+      <div
+        className="card"
+        style={{
+          marginTop: 16,
+          padding: 16,
+          display: 'flex',
+          gap: 18,
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          borderColor: 'rgba(239,68,68,0.3)',
+        }}
+      >
+        <div>
+          <div
+            className="mono"
+            style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em' }}
+          >
+            CLEAR ALL & RESCAN
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>
+            Wipe every prediction-related table (10 tables) and force a fresh scan with the latest pipeline. Use after a model or prompt change.
+          </div>
+          {clearState.message && (
+            <div
+              className="mono"
+              style={{ marginTop: 8, fontSize: 11, color: clearState.busy ? 'var(--mint)' : 'var(--text-3)' }}
+            >
+              {clearState.message}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={onClearAll}
+          disabled={clearState.busy}
+          style={{ borderColor: 'rgba(239,68,68,0.4)' }}
+        >
+          {clearState.busy ? 'Wiping…' : 'Clear All & Rescan'}
+        </button>
+      </div>
+
+      {/* Per-fixture inspector. Paste a fixtureId, see exactly what the
+          scan would fetch + send to Claude. Renders the JSON inline so
+          you can verify form/standings/refs before trusting a card. */}
+      <div
+        className="card"
+        style={{
+          marginTop: 16,
+          padding: 16,
+        }}
+      >
+        <div
+          className="mono"
+          style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em' }}
+        >
+          DEBUG FIXTURE
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>
+          Inspect the raw API-Football data and the extracted form / stats / standings / referee for a single fixture id.
+        </div>
+        <div
+          style={{
+            marginTop: 10,
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <input
+            className="input"
+            type="text"
+            inputMode="numeric"
+            placeholder="Fixture id (e.g. 1318755)"
+            value={debugId}
+            onChange={(e) => setDebugId(e.target.value)}
+            style={{ flex: '1 1 220px', minHeight: 36 }}
+            disabled={debugState.busy}
+          />
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onDebug}
+            disabled={debugState.busy}
+          >
+            {debugState.busy ? 'Fetching…' : 'Debug'}
+          </button>
+        </div>
+        {debugState.message && (
+          <div
+            className="mono"
+            style={{ marginTop: 10, fontSize: 11, color: 'var(--text-3)' }}
+          >
+            {debugState.message}
+          </div>
+        )}
+        {debugState.result && (
+          <pre
+            style={{
+              marginTop: 12,
+              padding: 12,
+              background: 'var(--bg-2)',
+              border: '1px solid var(--border-soft)',
+              borderRadius: 8,
+              fontSize: 11,
+              lineHeight: 1.5,
+              maxHeight: 480,
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {JSON.stringify(debugState.result, null, 2)}
+          </pre>
+        )}
       </div>
     </>
   );

@@ -103,6 +103,15 @@ export const admin = {
   // predictions + scan_status, then fires the background scanner.
   forceRescan: (leagueId) =>
     api.post(`/api/admin/rescan/${leagueId}`).then((r) => r.data),
+  // Wipe ALL prediction-related tables (10 of them) and trigger a
+  // fresh background scan. Same operation as /api/admin/clear-history
+  // but cookie-authed so we don't need ADMIN_PASSWORD in the URL.
+  clearAll: () => api.post('/api/admin/clear-all').then((r) => r.data),
+  // Per-fixture inspector. Returns raw API-Football responses, the
+  // extracted form/stats/standings, and the matchData that would be
+  // sent to Claude. Used by the "Debug Fixture" UI in the admin panel.
+  debugFixture: (fixtureId) =>
+    api.get(`/api/admin/debug-fixture/${fixtureId}`).then((r) => r.data),
 };
 
 export const affiliate = {
