@@ -138,3 +138,13 @@ export function analysisText(fixture) {
   if (o && b) return `${o}\n\n${b}`;
   return o || b || 'No analysis available for this match yet.';
 }
+
+// Referee display: "M. Jones" or "M. Jones · avg 2.6 G/G" when the
+// per-ref goals/game number is available. Em-dash for missing.
+export function refereeDisplay(fixture) {
+  const name = fixture?.referee?.name || fixture?.fixture?.referee?.name;
+  if (!name) return '—';
+  const avg = fixture?.referee?.avgGoalsPerGame;
+  if (typeof avg === 'number') return `${name} · avg ${avg.toFixed(1)} G/G`;
+  return name;
+}

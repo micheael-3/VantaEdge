@@ -71,7 +71,7 @@ export default function Login() {
             margin: '0 0 20px',
           }}
         >
-          Log in to see today's edge.
+          Log in to see today's picks.
         </p>
         <form
           onSubmit={onSubmit}

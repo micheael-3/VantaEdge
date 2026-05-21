@@ -78,8 +78,9 @@ export const history = {
     api
       .get('/api/history', { params: window && window !== 'default' ? { window } : {} })
       .then((r) => r.data),
-  // Per-bucket settled-prediction hit rate vs claimed model confidence. Used
-  // by the "Model Calibration" section on the History page.
+  // Per-bucket settled-prediction hit rate vs claimed model confidence. Kept
+  // running on the backend so confidence numbers shown on the dashboard are
+  // already calibrated transparently — UI no longer surfaces the chart.
   calibration: () => api.get('/api/history/calibration').then((r) => r.data),
 };
 

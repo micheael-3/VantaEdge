@@ -162,7 +162,7 @@ export default function Dashboard() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('checkout') !== 'success') return undefined;
 
-    setCheckoutToast({ kind: 'pending', message: 'Payment successful — activating your SHARP plan…' });
+    setCheckoutToast({ kind: 'pending', message: 'Payment successful — activating your PRO plan…' });
 
     let cancelled = false;
     let attempts = 0;
@@ -174,7 +174,7 @@ export default function Dashboard() {
         const updated = await refreshUser();
         if (cancelled) return;
         if (updated && (updated.tier === 'ANALYST' || updated.tier === 'EDGE')) {
-          setCheckoutToast({ kind: 'success', message: 'SHARP plan activated! 🎉' });
+          setCheckoutToast({ kind: 'success', message: 'PRO plan activated! 🎉' });
           const url = new URL(window.location.href);
           url.searchParams.delete('checkout');
           window.history.replaceState({}, '', url.pathname + url.search + url.hash);
@@ -376,7 +376,7 @@ export default function Dashboard() {
                     letterSpacing: '-0.025em',
                   }}
                 >
-                  This Week's Edge
+                  This Week's Picks
                 </h1>
                 <p
                   className="mono"
@@ -470,7 +470,7 @@ export default function Dashboard() {
               style={{ padding: '48px 24px', textAlign: 'center' }}
             >
               <p className="mono" style={{ color: 'var(--text-3)', fontSize: 13 }}>
-                Loading this week's edge…
+                Loading this week's picks…
               </p>
             </div>
           ) : error ? (
@@ -520,12 +520,6 @@ export default function Dashboard() {
                 >
                   All matches
                 </h2>
-                <span
-                  className="mono"
-                  style={{ fontSize: 11, color: 'var(--text-3)' }}
-                >
-                  SORTED BY CONFIDENCE
-                </span>
               </div>
 
               <div

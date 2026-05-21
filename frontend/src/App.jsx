@@ -8,12 +8,11 @@ import Dashboard from './pages/Dashboard.jsx';
 import History from './pages/History.jsx';
 import Settings from './pages/Settings.jsx';
 import Affiliate from './pages/Affiliate.jsx';
-import EVCalculator from './pages/EVCalculator.jsx';
-import KellySizer from './pages/KellySizer.jsx';
 import Bankroll from './pages/Bankroll.jsx';
 import Guide from './pages/Guide.jsx';
 import Landing from './pages/Landing.jsx';
 import AdminPanel from './pages/AdminPanel.jsx';
+import Results from './pages/Results.jsx';
 
 export default function App() {
   return (
@@ -48,26 +47,18 @@ export default function App() {
         }
       />
       <Route
+        path="/results"
+        element={
+          <Protected>
+            <Results />
+          </Protected>
+        }
+      />
+      <Route
         path="/history"
         element={
           <Protected>
             <History />
-          </Protected>
-        }
-      />
-      <Route
-        path="/tools/ev"
-        element={
-          <Protected>
-            <EVCalculator />
-          </Protected>
-        }
-      />
-      <Route
-        path="/tools/kelly"
-        element={
-          <Protected>
-            <KellySizer />
           </Protected>
         }
       />

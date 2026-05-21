@@ -77,7 +77,7 @@ export default function Register() {
             margin: '0 0 16px',
           }}
         >
-          Free to start — SHARP adds EV + Kelly.
+          Free to start — PRO adds full AI reasoning + Bet Tracker.
         </p>
         {referralCode && (
           <div

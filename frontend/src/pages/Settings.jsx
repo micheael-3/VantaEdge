@@ -331,7 +331,8 @@ export default function Settings() {
             {sharp ? (
               <>
                 <p style={{ margin: '0 0 12px', color: 'var(--text-2)', fontSize: 13 }}>
-                  You're on SHARP — EV + Kelly + Tracker are unlocked.
+                  You're on PRO — full AI reasoning, Bet Tracker, and accuracy
+                  history are unlocked.
                 </p>
                 <a
                   href="https://whop.com/hub"
@@ -356,21 +357,21 @@ export default function Settings() {
             ) : (
               <>
                 <p style={{ margin: '0 0 12px', color: 'var(--text-2)', fontSize: 13 }}>
-                  Upgrade to unlock EV %, Kelly stakes, AI reasoning, and the
-                  full bet tracker.
+                  Upgrade to unlock full AI reasoning, the Bet Tracker, and
+                  accuracy history.
                 </p>
                 <button
                   type="button"
                   className="btn btn-primary"
                   onClick={openWhopCheckout}
                 >
-                  Upgrade to SHARP — $9.99/mo
+                  Upgrade to PRO — $4.99/mo
                 </button>
               </>
             )}
           </div>
 
-          <div className="card" style={{ padding: 24 }}>
+          <div className="card" style={{ padding: 24, marginBottom: 16 }}>
             <h3
               className="display"
               style={{ margin: '0 0 12px', fontSize: 18, fontWeight: 600 }}
@@ -383,6 +384,38 @@ export default function Settings() {
             <button type="button" className="btn btn-ghost" onClick={onLogout}>
               Sign out
             </button>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 18,
+              flexWrap: 'wrap',
+              padding: '8px 4px 0',
+            }}
+          >
+            <Link
+              to="/affiliate"
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: 'var(--text-3)',
+                letterSpacing: '0.04em',
+              }}
+            >
+              Affiliates
+            </Link>
+            <Link
+              to="/guide"
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: 'var(--text-3)',
+                letterSpacing: '0.04em',
+              }}
+            >
+              How It Works
+            </Link>
           </div>
         </div>
       )}

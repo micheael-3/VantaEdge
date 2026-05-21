@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import Icon from './Icon.jsx';
 import { openWhopCheckout } from '../lib/checkout.js';
 
-// SHARP upgrade modal. Ported from the design's app.jsx UpgradeModal.
+// PRO upgrade modal. Centered card on desktop; on mobile it slides up
+// from the bottom (see .upgrade-modal-* in index.css).
 // Triggered when FREE users hit a locked overlay or click an upgrade CTA.
 export default function UpgradeModal({ onClose }) {
   // ESC to close.
@@ -15,40 +16,17 @@ export default function UpgradeModal({ onClose }) {
   }, [onClose]);
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 200,
-        background: 'rgba(0,0,0,0.75)',
-        backdropFilter: 'blur(8px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 20,
-      }}
-    >
+    <div className="upgrade-modal-backdrop" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="card scale-in"
-        style={{
-          padding: 36,
-          width: 520,
-          maxWidth: '100%',
-          borderColor: 'rgba(110,231,183,0.35)',
-          background:
-            'linear-gradient(180deg, rgba(110,231,183,0.05), transparent), var(--card)',
-          boxShadow:
-            '0 30px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(110,231,183,0.2)',
-        }}
+        className="upgrade-modal-content card scale-in"
       >
         <div
           style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'flex-start',
-            marginBottom: 24,
+            marginBottom: 20,
           }}
         >
           <span
@@ -59,7 +37,7 @@ export default function UpgradeModal({ onClose }) {
               borderColor: 'var(--mint)',
             }}
           >
-            SHARP
+            PRO
           </span>
           <button
             type="button"
@@ -79,99 +57,49 @@ export default function UpgradeModal({ onClose }) {
         <h2
           className="display"
           style={{
-            margin: '0 0 12px',
-            fontSize: 32,
+            margin: '0 0 10px',
+            fontSize: 26,
             fontWeight: 700,
             letterSpacing: '-0.025em',
-            lineHeight: 1.1,
+            lineHeight: 1.15,
           }}
         >
-          Unlock the{' '}
-          <em style={{ color: 'var(--mint)', fontStyle: 'italic' }}>full edge</em>.
+          Unlock PRO — $4.99/month
         </h2>
         <p
           style={{
-            margin: '0 0 24px',
+            margin: '0 0 20px',
             color: 'var(--text-2)',
-            fontSize: 15,
+            fontSize: 14,
             lineHeight: 1.55,
           }}
         >
-          See EV %, Kelly stakes, AI reasoning, and full bet history. Cancel
-          anytime.
+          Cancel anytime.
         </p>
 
-        <div
+        <ul
           style={{
-            padding: 20,
-            borderRadius: 10,
-            background: 'var(--bg-2)',
-            border: '1px solid var(--border-soft)',
-            marginBottom: 20,
+            listStyle: 'none',
+            padding: 0,
+            margin: '0 0 24px',
+            display: 'grid',
+            gap: 10,
           }}
         >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              justifyContent: 'space-between',
-              marginBottom: 14,
-            }}
-          >
-            <span
-              className="display"
+          {['Full AI reasoning', 'Bet Tracker', 'Accuracy history'].map((f) => (
+            <li
+              key={f}
               style={{
-                fontSize: 38,
-                fontWeight: 700,
-                letterSpacing: '-0.03em',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                fontSize: 14,
               }}
             >
-              $9.99
-              <span
-                className="mono"
-                style={{ fontSize: 13, color: 'var(--text-3)' }}
-              >
-                /mo
-              </span>
-            </span>
-            <span
-              className="mono"
-              style={{ fontSize: 11, color: 'var(--text-3)' }}
-            >
-              CANCEL ANYTIME
-            </span>
-          </div>
-          <ul
-            style={{
-              listStyle: 'none',
-              padding: 0,
-              margin: 0,
-              display: 'grid',
-              gap: 8,
-            }}
-          >
-            {[
-              'Live EV Calculator',
-              'Kelly Stake % per bet',
-              'Bet Tracker with P&L',
-              'Full Accuracy History',
-              'AI reasoning unlocked',
-              'CSV Export',
-            ].map((f) => (
-              <li
-                key={f}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  fontSize: 13.5,
-                }}
-              >
-                <Icon name="check" size={13} color="var(--mint)" /> {f}
-              </li>
-            ))}
-          </ul>
-        </div>
+              <Icon name="check" size={14} color="var(--mint)" /> {f}
+            </li>
+          ))}
+        </ul>
 
         <button
           type="button"
@@ -179,7 +107,7 @@ export default function UpgradeModal({ onClose }) {
           style={{ width: '100%', padding: '14px 20px', fontSize: 15 }}
           onClick={openWhopCheckout}
         >
-          Get SHARP — $9.99/mo <Icon name="arrow-right" size={15} />
+          Get PRO <Icon name="arrow-right" size={15} />
         </button>
         <p
           className="mono"

@@ -132,7 +132,7 @@ export default function Affiliate() {
     }
   };
 
-  const monthly = refs * 4.0;
+  const monthly = refs * 2.0;
   const yearly = monthly * 12;
 
   return (
@@ -251,7 +251,7 @@ export default function Affiliate() {
                     alignItems: 'center',
                   }}
                 >
-                  <CommBlock label="SHARP plan" value="$9.99" unit="/mo" />
+                  <CommBlock label="PRO plan" value="$4.99" unit="/mo" />
                   <span
                     className="display"
                     style={{
@@ -264,7 +264,7 @@ export default function Affiliate() {
                   </span>
                   <CommBlock
                     label="You earn"
-                    value="$4.00"
+                    value="$2.00"
                     unit="/mo per ref"
                     highlight
                   />
@@ -570,7 +570,7 @@ export default function Affiliate() {
                         b: 'Drop it in Reddit threads, Discord, Twitter — anywhere bettors gather.',
                       },
                       {
-                        t: 'They subscribe to SHARP',
+                        t: 'They subscribe to PRO',
                         b: 'Your cookie tracks them for 60 days.',
                       },
                       {

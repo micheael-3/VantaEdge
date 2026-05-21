@@ -6,14 +6,13 @@ import Logo from './Logo.jsx';
 import Icon from './Icon.jsx';
 
 // Sidebar nav for authed pages.
-// 230px wide, sticky to viewport, full-height. On mobile (≤720px),
-// it collapses behind a hamburger and slides in when toggled.
+// 230px wide, sticky to viewport, full-height. On mobile it's hidden
+// entirely — the bottom-nav takes over (see BottomNav.jsx).
 const ITEMS = [
-  { to: '/dashboard', label: "Today's Edge", icon: 'trending', requiresSharp: false },
-  { to: '/history', label: 'History', icon: 'history', requiresSharp: false },
-  { to: '/tools/ev', label: 'EV Calculator', icon: 'calc', requiresSharp: true },
-  { to: '/tools/kelly', label: 'Kelly Sizer', icon: 'kelly', requiresSharp: true },
+  { to: '/dashboard', label: 'Home', icon: 'trending', requiresSharp: false },
+  { to: '/results', label: 'Results', icon: 'history', requiresSharp: false },
   { to: '/bankroll', label: 'Bet Tracker', icon: 'tracker', requiresSharp: true },
+  { to: '/history', label: 'Accuracy', icon: 'history', requiresSharp: false },
   { to: '/guide', label: 'How It Works', icon: 'brain', requiresSharp: false },
   { to: '/affiliate', label: 'Affiliates', icon: 'affiliate', requiresSharp: false },
   { to: '/settings', label: 'Settings', icon: 'settings', requiresSharp: false },
@@ -117,13 +116,13 @@ export default function Sidebar({ onUpgrade }) {
               className="display"
               style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}
             >
-              Unlock EV + Kelly
+              Unlock PRO
             </div>
             <div
               className="mono"
               style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 12 }}
             >
-              $9.99/mo · Cancel anytime
+              $4.99/mo · Cancel anytime
             </div>
             <button
               type="button"
@@ -131,7 +130,7 @@ export default function Sidebar({ onUpgrade }) {
               style={{ width: '100%' }}
               onClick={openWhopCheckout}
             >
-              Get SHARP
+              Get PRO
             </button>
           </div>
         )}
@@ -177,7 +176,7 @@ export default function Sidebar({ onUpgrade }) {
                   className={sharp ? 'badge badge-mint' : 'badge badge-soft'}
                   style={{ fontSize: 9, padding: '2px 6px' }}
                 >
-                  {sharp ? 'SHARP' : 'FREE'}
+                  {sharp ? 'PRO' : 'FREE'}
                 </span>
                 {admin && (
                   <span

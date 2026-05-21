@@ -94,24 +94,10 @@ function AddBetModal({ onClose, onAdd }) {
   };
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 100,
-        background: 'rgba(0,0,0,0.7)',
-        backdropFilter: 'blur(6px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 20,
-      }}
-    >
+    <div className="addbet-backdrop" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="card scale-in"
-        style={{ padding: 28, width: 460, maxWidth: '100%' }}
+        className="addbet-content card scale-in"
       >
         <div
           style={{
@@ -156,13 +142,11 @@ function AddBetModal({ onClose, onAdd }) {
               value={betType}
               onChange={(e) => setBetType(e.target.value)}
             >
-              <option>Over 0.5</option>
-              <option>Over 1.5</option>
               <option>Over 2.5</option>
-              <option>Over 3.5</option>
               <option>Under 2.5</option>
               <option>BTTS Yes</option>
               <option>BTTS No</option>
+              <option>Other</option>
             </select>
           </Field>
           <div
@@ -341,7 +325,7 @@ export default function Bankroll() {
                   letterSpacing: '0.04em',
                 }}
               >
-                EVERY BET. EVERY RESULT. NO LIES.
+                EVERY BET. EVERY RESULT.
               </p>
             </div>
             <button
@@ -550,7 +534,7 @@ export default function Bankroll() {
                     className="display"
                     style={{ fontSize: 22, fontWeight: 600, marginBottom: 8 }}
                   >
-                    Bet Tracker is SHARP-only
+                    Bet Tracker is PRO-only
                   </div>
                   <p
                     style={{
@@ -559,10 +543,10 @@ export default function Bankroll() {
                       fontSize: 14,
                     }}
                   >
-                    Track every bet automatically. Real P&amp;L, real ROI.
+                    Track every bet automatically. Real profit, real win rate.
                   </p>
                   <button type="button" className="btn btn-primary">
-                    Get SHARP <Icon name="arrow-right" size={14} />
+                    Get PRO <Icon name="arrow-right" size={14} />
                   </button>
                 </div>
               </div>

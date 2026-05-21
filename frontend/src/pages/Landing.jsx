@@ -92,10 +92,10 @@ function Hero() {
               margin: 0,
             }}
           >
-            The Edge<br />
-            Bookmakers{' '}
-            <em style={{ color: 'var(--mint)', fontStyle: 'italic' }}>Don't Want</em><br />
-            You To Have
+            AI picks for{' '}
+            <em style={{ color: 'var(--mint)', fontStyle: 'italic' }}>MLS</em>.<br />
+            Track your bets.<br />
+            See if you're winning.
           </h1>
 
           <p
@@ -107,9 +107,8 @@ function Hero() {
               color: 'var(--text-2)',
             }}
           >
-            AI analyses every MLS match — form, goals data, rest days, head-to-head
-            — then finds where the bookmaker's odds are wrong. That gap is your
-            profit.
+            Get AI predictions before kickoff. Track your bets. See if you're
+            winning.
           </p>
 
           <div style={{ display: 'flex', gap: 12, marginTop: 36, flexWrap: 'wrap' }}>
@@ -180,22 +179,24 @@ function DemoMatchCard() {
       <div
         className="mono"
         style={{
-          display: 'flex',
-          gap: 14,
           fontSize: 11,
           color: 'var(--text-2)',
           padding: '10px 0',
           borderTop: '1px solid var(--border-soft)',
           borderBottom: '1px solid var(--border-soft)',
           marginBottom: 16,
-          flexWrap: 'wrap',
+          lineHeight: 1.6,
         }}
       >
-        <span>AVG GOALS <span style={{ color: 'var(--text)' }}>2.4</span> / <span style={{ color: 'var(--text)' }}>1.6</span></span>
-        <span style={{ color: 'var(--text-faint)' }}>·</span>
-        <span>REST <span style={{ color: 'var(--text)' }}>5d</span></span>
-        <span style={{ color: 'var(--text-faint)' }}>·</span>
-        <span>H2H <span style={{ color: 'var(--text)' }}>3.2 G/M</span></span>
+        <div>
+          Goals avg: <span style={{ color: 'var(--text)' }}>2.4</span> scored /{' '}
+          <span style={{ color: 'var(--text)' }}>1.2</span> conceded
+        </div>
+        <div style={{ color: 'var(--text-3)' }}>
+          H2H: <span style={{ color: 'var(--text-2)' }}>3.1 G/M</span> · Ref:{' '}
+          <span style={{ color: 'var(--text-2)' }}>M. Jones</span> · Rest:{' '}
+          <span style={{ color: 'var(--text-2)' }}>5d</span>
+        </div>
       </div>
 
       <PredictionDemo label="OVER 2.5" conf={81} />
@@ -216,7 +217,7 @@ function PredictionDemo({ label, conf, delay = 0 }) {
         <span className="badge badge-mint">
           {label} · <span className="mono">{conf}%</span>
         </span>
-        <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>AI conf</span>
+        <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>Confidence</span>
       </div>
       <div className="conf-bar">
         <div
@@ -233,17 +234,17 @@ function HowItWorks() {
     {
       n: 1,
       title: 'Weekly AI scan',
-      body: 'Every Monday we pull all of next week\'s MLS fixtures and score them with a large language model fed on form, goals data, rest days, and last-5 head-to-head.',
+      body: 'Every Monday we pull all of next week\'s MLS fixtures and score them with an AI fed on form, goals data, rest days, head-to-head, and referee history.',
     },
     {
       n: 2,
-      title: 'See where the bookie is wrong',
-      body: 'Each card shows a confidence % for Over/Under and BTTS. Type your bookmaker\'s odds and the EV calculator surfaces the edge — green when the price is wrong in your favour.',
+      title: 'See the AI\'s picks',
+      body: 'Each card shows a confidence % for Over/Under and BTTS. Tap Show Analysis to read why the AI thinks what it thinks.',
     },
     {
       n: 3,
-      title: 'Bet your edge with Kelly sizing',
-      body: 'The built-in Kelly Sizer tells you exactly what percentage of your bankroll to wager. Track every bet through the Bet Tracker. Watch your real ROI emerge over 50–100 bets.',
+      title: 'Track your bets',
+      body: 'Log every bet in the Bet Tracker. Real win rate, real profit, real accuracy history. No spreadsheets, no spin.',
     },
   ];
   return (
@@ -302,7 +303,7 @@ function Pricing() {
         Two plans. Pick one.
       </h2>
       <p style={{ color: 'var(--text-2)', fontSize: 16, marginBottom: 40, textAlign: 'center' }}>
-        Start free. Upgrade the moment you want EV + Kelly on your bets.
+        Start free. Upgrade when you want the full AI reasoning and Bet Tracker.
       </p>
 
       <div className="lp-pricing-grid">
@@ -319,19 +320,16 @@ function Pricing() {
           cta={<Link to="/register" className="btn btn-ghost" style={{ width: '100%', padding: '12px 18px' }}>Start free</Link>}
         />
         <PlanCard
-          name="SHARP"
-          price="$9.99"
+          name="PRO"
+          price="$4.99"
           per="/mo"
           accent
-          tagline="Bet with the math on your side."
+          tagline="The full AI take, plus a place to track your bets."
           features={[
             'Everything in Free',
-            'Live EV calculator on every card',
-            'Kelly Stake % per bet',
-            'Bet Tracker with P&L',
-            'Full accuracy history',
-            'AI reasoning paragraphs unlocked',
-            'CSV export · Full betting guide',
+            'Full AI reasoning',
+            'Bet Tracker',
+            'Accuracy history',
           ]}
           cta={
             <button
@@ -340,7 +338,7 @@ function Pricing() {
               onClick={openWhopCheckout}
               style={{ width: '100%', padding: '12px 18px' }}
             >
-              Get SHARP — $9.99/mo
+              Get PRO — $4.99/mo
             </button>
           }
         />
@@ -420,10 +418,12 @@ function Footer() {
           gap: 20,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexDirection: 'column' }}>
           <Logo size="sm" />
-          <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', letterSpacing: '0.04em' }}>
-            © 2026 FastScore · 18+ BET RESPONSIBLY
+          <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', letterSpacing: '0.04em', textAlign: 'center' }}>
+            AI predictions for MLS. fastscore.eu
+            <br />
+            Not financial advice. 18+ Bet responsibly.
           </span>
         </div>
         <div style={{ display: 'flex', gap: 18 }}>
