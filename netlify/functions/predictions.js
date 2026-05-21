@@ -321,6 +321,11 @@ function shapeForFrontend(row, adjustments) {
       form: mdHome.form || null,
       restDays: mdHome.restDays != null ? mdHome.restDays : null,
       goalsPerGame: mdHome.goalsPerGame || null,
+      // New: last-5 actual scorelines + league position object.
+      // Populated by scans from the data-quality fix forward; will be
+      // null for rows from the previous prompt/storage shape.
+      lastFiveScores: mdHome.lastFiveScores || null,
+      standing: mdHome.standing || null,
     },
     away: {
       id: mdAway.id || null,
@@ -328,6 +333,8 @@ function shapeForFrontend(row, adjustments) {
       form: mdAway.form || null,
       restDays: mdAway.restDays != null ? mdAway.restDays : null,
       goalsPerGame: mdAway.goalsPerGame || null,
+      lastFiveScores: mdAway.lastFiveScores || null,
+      standing: mdAway.standing || null,
     },
     predictions: {
       over: {

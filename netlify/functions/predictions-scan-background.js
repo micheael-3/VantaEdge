@@ -15,11 +15,23 @@
 
 const { sql } = require('./_shared/db');
 const football = require('./_shared/football');
-const { analyseMatch } = require('./_shared/claude');
+const { analyseMatch, ClaudeAnalysisError } = require('./_shared/claude');
 const { calculateEV, calculateKelly } = require('./_shared/ev');
 const oddsService = require('./_shared/odds');
 const { LEAGUES } = require('./_shared/tier');
 const { cyprusDateStr, addDaysStr } = require('./_shared/dates');
+
+// MIN_DATA_QUALITY env knob. Two modes:
+//   'partial' (default) — full + partial rows are saved; invalid rows
+//     hard-skip. Partial rows carry dataConfidence: 'partial' + dataIssues.
+//   'full' — only fully-validated rows are saved. Partial rows are
+//     skipped. Use this if you want to be aggressive about hiding any
+//     thin-data picks; the cost is empty dashboards at season start or
+//     for promoted/cup teams.
+function minDataQuality() {
+  const raw = (process.env.MIN_DATA_QUALITY || 'partial').toLowerCase();
+  return raw === 'full' ? 'full' : 'partial';
+}
 
 const MLS_LEAGUE_ID = 253;
 
@@ -30,12 +42,43 @@ function todayDateStr() {
   return cyprusDateStr(new Date());
 }
 
-function restDaysFromForm(formFixtures) {
-  if (!Array.isArray(formFixtures) || formFixtures.length === 0) return null;
-  const sorted = formFixtures.slice().sort((a, b) => new Date(b.fixture.date) - new Date(a.fixture.date));
+// Rest days based on the team's last games AT ANY VENUE. Previously
+// this received a home-only or away-only fixtures array, so a team
+// that played away 2 days ago and is hosting tomorrow would show
+// ~14 days rest (the gap to their previous home match). Now we pass
+// in the any-venue array so the calculation reflects reality.
+function restDaysFromAnyVenue(anyVenueFixtures) {
+  if (!Array.isArray(anyVenueFixtures) || anyVenueFixtures.length === 0) return null;
+  // Only count finished matches as "rest" anchor — a postponed fixture
+  // shouldn't count as "last played".
+  const FINISHED = new Set(['FT', 'AET', 'PEN']);
+  const finished = anyVenueFixtures.filter(
+    (f) => f && f.fixture && FINISHED.has(f.fixture.status && f.fixture.status.short),
+  );
+  if (finished.length === 0) return null;
+  const sorted = finished.slice().sort((a, b) => new Date(b.fixture.date) - new Date(a.fixture.date));
   const lastPlayed = sorted.find((f) => new Date(f.fixture.date) < new Date());
   if (!lastPlayed) return null;
   return Math.max(0, Math.floor((Date.now() - new Date(lastPlayed.fixture.date).getTime()) / 86400000));
+}
+
+// Extract last-5 actual scorelines (oldest → newest) for the prompt.
+// Sending real "2-1, 3-0, 1-1, 2-2, 0-1" gives Sonnet variance signal
+// the W/D/L dots can't convey. Only finished matches.
+function lastFiveScores(fixtures, teamId) {
+  if (!Array.isArray(fixtures)) return [];
+  const FINISHED = new Set(['FT', 'AET', 'PEN']);
+  return fixtures
+    .filter((f) => f && f.fixture && f.teams && f.goals && FINISHED.has(f.fixture.status && f.fixture.status.short))
+    .sort((a, b) => new Date(a.fixture.date) - new Date(b.fixture.date))
+    .slice(-5)
+    .map((f) => {
+      // Always orient as "us-them" regardless of home/away.
+      const isHome = f.teams.home && f.teams.home.id === teamId;
+      const my = isHome ? f.goals.home : f.goals.away;
+      const their = isHome ? f.goals.away : f.goals.home;
+      return `${my}-${their}`;
+    });
 }
 
 // Pull goals-per-game from API-Football's /teams/statistics shape.
@@ -44,22 +87,37 @@ function restDaysFromForm(formFixtures) {
 // every prediction Under and poison the calibration buckets. The
 // scan's validation step downstream lets us mark these rows with a
 // statsConfidence flag instead of pretending the data is complete.
+// Pull goals-per-game from API-Football's /teams/statistics shape,
+// keeping the per-venue splits (.home / .away) as well as .total.
+// Home/away splits are more predictive than overall averages — we
+// were throwing them away before. Still returns null (not 0) on
+// missing data; the validation layer downstream flags it as partial.
+function num(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 function gpgFromStats(stats, teamLabel) {
   if (!stats || !stats.goals) {
     console.log(`[scan-bg gpg] ${teamLabel || ''} stats=null/missing — returning null GPG`);
     return null;
   }
-  const fAvg = stats.goals.for && stats.goals.for.average;
-  const aAvg = stats.goals.against && stats.goals.against.average;
-  const f = fAvg && fAvg.total;
-  const a = aAvg && aAvg.total;
+  const fAvg = (stats.goals.for && stats.goals.for.average) || {};
+  const aAvg = (stats.goals.against && stats.goals.against.average) || {};
   console.log(
     `[scan-bg gpg] ${teamLabel || ''} raw goals.for.average=${JSON.stringify(fAvg)} ` +
-      `goals.against.average=${JSON.stringify(aAvg)} -> for=${f} against=${a}`,
+      `goals.against.average=${JSON.stringify(aAvg)}`,
   );
   return {
-    avgFor: f != null && f !== '' ? Number(f) : null,
-    avgAgainst: a != null && a !== '' ? Number(a) : null,
+    // Overall season averages.
+    avgFor: num(fAvg.total),
+    avgAgainst: num(aAvg.total),
+    // Per-venue. avgForHome = goals scored when playing at home.
+    // avgForAway = goals scored when playing away.
+    avgForHome: num(fAvg.home),
+    avgForAway: num(fAvg.away),
+    avgAgainstHome: num(aAvg.home),
+    avgAgainstAway: num(aAvg.away),
   };
 }
 
@@ -190,43 +248,69 @@ function h2hAverageString(h2hList) {
   return `${avg.toFixed(1)} G/M`;
 }
 
-async function fetchFixtureDetail(fx, leagueId, season) {
+// Extract last-5 H2H actual scorelines (oldest → newest) from the
+// home team's perspective. "3-2" means home won 3-2 in that meeting.
+function h2hLastFiveScores(h2hList, homeId) {
+  if (!Array.isArray(h2hList)) return [];
+  const FINISHED = new Set(['FT', 'AET', 'PEN']);
+  return h2hList
+    .filter((f) => f && f.fixture && f.goals && FINISHED.has(f.fixture.status && f.fixture.status.short))
+    .sort((a, b) => new Date(a.fixture.date) - new Date(b.fixture.date))
+    .slice(-5)
+    .map((f) => {
+      const isHomeAtHome = f.teams && f.teams.home && f.teams.home.id === homeId;
+      const homeG = isHomeAtHome ? f.goals.home : f.goals.away;
+      const awayG = isHomeAtHome ? f.goals.away : f.goals.home;
+      return `${homeG}-${awayG}`;
+    });
+}
+
+async function fetchFixtureDetail(fx, leagueId, season, standings) {
   const homeId = fx.teams.home.id;
   const awayId = fx.teams.away.id;
   // Referee name comes from the fixture envelope when API-Football has
   // appointed one. Often empty until ~48h before kickoff, in which case
-  // we leave the field null and the UI surfaces "Unknown". When present,
-  // we layer the per-ref goals/game tendency so the stats grid can show
-  // a real "This referee averages 2.8 goals per game" line.
+  // we leave the field null and the UI surfaces "Not announced".
   const refName = fx && fx.fixture && typeof fx.fixture.referee === 'string'
     ? fx.fixture.referee.trim() || null
     : null;
-  // 5 parallel calls per fixture: last home, last away, both team stats,
-  // plus H2H. The H2H call lets the dashboard render a real "H2H 3.2 G/M"
-  // figure instead of an em-dash. Season is threaded in explicitly so
-  // last-N games are pulled from the SAME season as the upcoming fixture
-  // — without it the env-default SEASON would silently pull the previous
-  // season's games and break rest-days (last played would be months ago).
-  const [homeLast, awayLast, homeStats, awayStats, h2hList, refStats] = await Promise.all([
+  // Parallel fetch: last home, last away, both team stats, H2H, ref,
+  // PLUS any-venue last-N for rest-days correctness. The any-venue
+  // call hits the same upstream cache key as getTeamStats's caller
+  // since we pass last=10 — so it's effectively free after the first
+  // hit. Season is threaded into every per-team helper so the data
+  // aligns with the upcoming fixture's season, not the env default.
+  const [homeLast, awayLast, homeAnyVenue, awayAnyVenue, homeStats, awayStats, h2hList, refStats] = await Promise.all([
     football.getTeamLastHomeGames(homeId, leagueId, season),
     football.getTeamLastAwayGames(awayId, leagueId, season),
-    // Same-season aggregates: scored/conceded averages, BTTS rate, etc.
-    // Without this the card would read last year's numbers.
+    football.getTeamLastGamesAnyVenue(homeId, leagueId, season),
+    football.getTeamLastGamesAnyVenue(awayId, leagueId, season),
     football.getTeamStats(homeId, leagueId, season),
     football.getTeamStats(awayId, leagueId, season),
     football.getH2H(homeId, awayId),
     refName ? football.getRefereeStats(refName) : Promise.resolve(null),
   ]);
+
+  const homeStanding = football.pickStandingForTeam(standings, homeId);
+  const awayStanding = football.pickStandingForTeam(standings, awayId);
+
   return {
     homeId, awayId,
     homeForm: football.extractFormForTeam(homeLast, homeId),
     awayForm: football.extractFormForTeam(awayLast, awayId),
-    homeRest: restDaysFromForm(homeLast),
-    awayRest: restDaysFromForm(awayLast),
+    // Rest days from ANY-VENUE games — the real fix to the "7 days rest
+    // when they played 2 days ago at the other ground" bug.
+    homeRest: restDaysFromAnyVenue(homeAnyVenue),
+    awayRest: restDaysFromAnyVenue(awayAnyVenue),
     homeStats, awayStats,
     homeGpg: gpgFromStats(homeStats, `home(${fx.teams.home.name})`),
     awayGpg: gpgFromStats(awayStats, `away(${fx.teams.away.name})`),
     h2h: h2hAverageString(h2hList),
+    h2hScores: h2hLastFiveScores(h2hList, homeId),
+    // Last-5 actual scorelines per team, home/away splits.
+    homeLastFiveHomeScores: lastFiveScores(homeLast, homeId),
+    awayLastFiveAwayScores: lastFiveScores(awayLast, awayId),
+    homeStanding, awayStanding,
     referee: refName
       ? {
           name: refName,
@@ -396,7 +480,25 @@ async function runScan(leagueId, weekStart) {
     console.error('[scan-bg] odds fetch failed:', err.message);
   }
 
+  // 5. League standings — ONE call, reused for every fixture in this
+  //    scan. Adds position / record / season points to each side's
+  //    matchData so Sonnet can factor "2nd vs 12th" mismatches.
+  let standings = null;
+  try {
+    standings = await football.getLeagueStandings(leagueId, detectedSeason);
+    if (standings && standings.byTeamId) {
+      console.log(`[scan-bg] standings loaded — ${standings.byTeamId.size} teams in table (season ${standings.season})`);
+    } else {
+      console.log('[scan-bg] standings unavailable for this league/season — predictions will run without position context');
+    }
+  } catch (err) {
+    console.error('[scan-bg] standings fetch failed:', err.message);
+  }
+
+  const strictMode = minDataQuality() === 'full';
   let done = 0;
+  let skippedPartial = 0;
+  let skippedClaude = 0;
   for (let i = 0; i < todoFixtures.length; i++) {
     const fx = todoFixtures[i];
 
@@ -406,7 +508,64 @@ async function runScan(leagueId, weekStart) {
     }
 
     try {
-      const detail = await fetchFixtureDetail(fx, leagueId, detectedSeason);
+      const detail = await fetchFixtureDetail(fx, leagueId, detectedSeason, standings);
+
+      const homeGpg = detail.homeGpg || {};
+      const awayGpg = detail.awayGpg || {};
+
+      // Clean payload Sonnet 4.5 sees. This matches the shape referenced
+      // by the new system prompt: home/away splits, last-5 scorelines,
+      // league position, season record. Nothing else — no legacy fields,
+      // no internal IDs, no raw API objects.
+      const claudePayload = {
+        match: `${fx.teams.home.name} vs ${fx.teams.away.name}`,
+        league: league.name,
+        kickoff: fx.fixture.date,
+        homeTeam: {
+          name: fx.teams.home.name,
+          form: detail.homeForm,
+          avgScoredHome: homeGpg.avgForHome,
+          avgScoredTotal: homeGpg.avgFor,
+          avgConcededHome: homeGpg.avgAgainstHome,
+          avgConcededTotal: homeGpg.avgAgainst,
+          lastFiveHomeScores: detail.homeLastFiveHomeScores,
+          leaguePosition: detail.homeStanding && detail.homeStanding.position,
+          seasonRecord: detail.homeStanding && detail.homeStanding.record,
+          seasonPoints: detail.homeStanding && detail.homeStanding.points,
+          seasonGoalsFor: detail.homeStanding && detail.homeStanding.goalsFor,
+          seasonGoalsAgainst: detail.homeStanding && detail.homeStanding.goalsAgainst,
+        },
+        awayTeam: {
+          name: fx.teams.away.name,
+          form: detail.awayForm,
+          avgScoredAway: awayGpg.avgForAway,
+          avgScoredTotal: awayGpg.avgFor,
+          avgConcededAway: awayGpg.avgAgainstAway,
+          avgConcededTotal: awayGpg.avgAgainst,
+          lastFiveAwayScores: detail.awayLastFiveAwayScores,
+          leaguePosition: detail.awayStanding && detail.awayStanding.position,
+          seasonRecord: detail.awayStanding && detail.awayStanding.record,
+          seasonPoints: detail.awayStanding && detail.awayStanding.points,
+          seasonGoalsFor: detail.awayStanding && detail.awayStanding.goalsFor,
+          seasonGoalsAgainst: detail.awayStanding && detail.awayStanding.goalsAgainst,
+        },
+        h2h: {
+          avgGoalsPerGame: detail.h2h,
+          lastFiveResults: detail.h2hScores,
+        },
+        referee: detail.referee || null,
+        restDays: {
+          home: detail.homeRest,
+          away: detail.awayRest,
+        },
+      };
+
+      // Storage shape — what we persist to match_data JSONB so the
+      // dashboard's shapeForFrontend (in predictions.js) can rehydrate
+      // every field it needs without re-querying API-Football. Keeps
+      // the legacy home/away shape the existing shaper reads, AND
+      // tacks on the new homeTeam/awayTeam blocks so we can surface
+      // standings/scorelines in the UI later without another scan.
       const matchData = {
         league: league.name,
         kickoff: fx.fixture.date,
@@ -418,6 +577,8 @@ async function runScan(leagueId, weekStart) {
           restDays: detail.homeRest,
           stats: detail.homeStats,
           goalsPerGame: detail.homeGpg,
+          lastFiveScores: detail.homeLastFiveHomeScores,
+          standing: detail.homeStanding,
         },
         away: {
           id: detail.awayId,
@@ -426,17 +587,17 @@ async function runScan(leagueId, weekStart) {
           restDays: detail.awayRest,
           stats: detail.awayStats,
           goalsPerGame: detail.awayGpg,
+          lastFiveScores: detail.awayLastFiveAwayScores,
+          standing: detail.awayStanding,
         },
-        h2h: detail.h2h, // average goals-per-match string, e.g. "3.2 G/M"
-        // Referee + per-ref goals tendency. Null when API-Football hasn't
-        // assigned a ref yet (typical until ~48h before kickoff) — the UI
-        // surfaces "Not announced" with a soft note instead of an em-dash.
+        h2h: detail.h2h,
+        h2hScores: detail.h2hScores,
         referee: detail.referee || null,
       };
-      // Validate BEFORE calling Claude — burning tokens on a row we're
-      // going to throw away is wasteful, and a hard validation failure
-      // (missing team name / unparseable kickoff) means the upstream
-      // fetch returned garbage. Skip and move on.
+
+      // Validate BEFORE calling Claude. invalid → hard skip. partial →
+      // also skip in strict mode (MIN_DATA_QUALITY=full); otherwise
+      // save with flag.
       const validation = classifyMatchData(matchData, fx);
       if (validation.confidence === 'invalid') {
         console.error(
@@ -444,9 +605,36 @@ async function runScan(leagueId, weekStart) {
         );
         continue;
       }
+      if (strictMode && validation.confidence !== 'full') {
+        console.warn(
+          `[scan-bg] STRICT MODE: skipping ${fx.fixture && fx.fixture.id} — confidence=${validation.confidence} issues=${validation.issues.join(',')}`,
+        );
+        skippedPartial += 1;
+        continue;
+      }
       matchData.dataConfidence = validation.confidence;
       matchData.dataIssues = validation.issues;
-      const analysis = await analyseMatch(matchData, false, false);
+
+      // Claude call. A ClaudeAnalysisError (auth/rate-limit/non-JSON/
+      // missing-required-fields) is now a HARD SKIP — we no longer
+      // silently save a synthetic 50% row. The user sees fewer rows
+      // when OpenRouter is unhealthy; they don't see fake picks
+      // disguised as real ones. We hand Claude the CLEAN payload
+      // (no internal IDs, no raw API objects); matchData is what we
+      // persist for the dashboard.
+      let analysis;
+      try {
+        analysis = await analyseMatch(claudePayload, false, false);
+      } catch (claudeErr) {
+        if (claudeErr instanceof ClaudeAnalysisError) {
+          console.error(
+            `[scan-bg] CLAUDE FAIL fixture=${fx.fixture && fx.fixture.id} — ${claudeErr.reason}. Skipping insert.`,
+          );
+          skippedClaude += 1;
+          continue;
+        }
+        throw claudeErr;
+      }
 
       let oddsData = null;
       try {
@@ -470,7 +658,11 @@ async function runScan(leagueId, weekStart) {
   }
 
   await setFinalStatus(id, 'complete', null);
-  console.log(`[scan-bg] complete league=${leagueId} week=${weekStart}..${weekEnd} processed=${done}`);
+  console.log(
+    `[scan-bg] complete league=${leagueId} week=${weekStart}..${weekEnd} ` +
+      `processed=${done} skippedPartial=${skippedPartial} skippedClaude=${skippedClaude} ` +
+      `strictMode=${strictMode}`,
+  );
 }
 
 exports.handler = async (event) => {

@@ -173,6 +173,86 @@ async function getTeamLastAwayGames(teamId, leagueId, seasonOverride) {
   return all.filter((f) => f.teams && f.teams.away && f.teams.away.id === teamId).slice(0, 5);
 }
 
+// Last N games regardless of venue. Used for rest-days calculation —
+// previously the scan was passing a home-only or away-only array to
+// restDaysFromForm, which meant a team that played AWAY 2 days ago
+// then is HOSTING tomorrow showed up as ~14 days rest (the gap to
+// their previous HOME match). This fixer returns the genuine last
+// games across both home AND away venues.
+async function getTeamLastGamesAnyVenue(teamId, leagueId, seasonOverride, last = 10) {
+  const season = Number.isFinite(seasonOverride) ? seasonOverride : SEASON;
+  const params = { team: teamId, league: leagueId, season, last };
+  // Reuses the same cache key as the home/away helpers above (same
+  // upstream call), so this is effectively free when those have already
+  // populated the cache for this team in this scan.
+  const all = await getOrFetch('/fixtures', params, () => apiGet('/fixtures', params), 7200);
+  return Array.isArray(all) ? all : [];
+}
+
+// League standings table. API-Football returns:
+//   /standings?league=X&season=Y →
+//     response[0].league.standings: [[{ rank, team, points, all: { played, win, draw, lose }, goalsDiff, ... }, ...]]
+// (standings is an array of groups — most leagues have one group;
+// some cup formats have multiple. We flatten.)
+//
+// Returns: { byTeamId: Map<teamId, row>, season } or null on failure.
+// 6h cache — standings move only when matches finish, not minute-to-minute.
+async function getLeagueStandings(leagueId, seasonOverride) {
+  const season = Number.isFinite(seasonOverride) ? seasonOverride : SEASON;
+  const params = { league: leagueId, season };
+  const raw = await getOrFetch('/standings', params, async () => {
+    try {
+      const res = await client().get('/standings', { params });
+      const data = res.data && Array.isArray(res.data.response) ? res.data.response : [];
+      if (!data.length) return null;
+      const groups = (data[0].league && data[0].league.standings) || [];
+      // Flatten group arrays into a single list, then index by team id.
+      const rows = [];
+      for (const group of groups) {
+        if (Array.isArray(group)) rows.push(...group);
+      }
+      return rows;
+    } catch (err) {
+      console.error('[football] standings fetch failed:', err.message);
+      return null;
+    }
+  }, 6 * 3600);
+  if (!Array.isArray(raw)) return null;
+  const byTeamId = new Map();
+  for (const row of raw) {
+    const id = row && row.team && row.team.id;
+    if (id != null) byTeamId.set(id, row);
+  }
+  return { byTeamId, season };
+}
+
+// Extract a clean per-team standing object from a standings row.
+// Returns null when the team isn't found in the table (preseason,
+// promoted side not yet seeded, etc.) so the prompt-builder can omit
+// the field cleanly rather than send garbage.
+function pickStandingForTeam(standings, teamId) {
+  if (!standings || !standings.byTeamId || teamId == null) return null;
+  const row = standings.byTeamId.get(teamId);
+  if (!row) return null;
+  const all = row.all || {};
+  const goals = all.goals || {};
+  return {
+    position: typeof row.rank === 'number' ? row.rank : null,
+    points: typeof row.points === 'number' ? row.points : null,
+    played: typeof all.played === 'number' ? all.played : null,
+    wins: typeof all.win === 'number' ? all.win : null,
+    draws: typeof all.draw === 'number' ? all.draw : null,
+    losses: typeof all.lose === 'number' ? all.lose : null,
+    goalsFor: typeof goals.for === 'number' ? goals.for : null,
+    goalsAgainst: typeof goals.against === 'number' ? goals.against : null,
+    // Convenience string for the prompt — e.g. "9W-2D-2L".
+    record:
+      typeof all.win === 'number' && typeof all.draw === 'number' && typeof all.lose === 'number'
+        ? `${all.win}W-${all.draw}D-${all.lose}L`
+        : null,
+  };
+}
+
 async function getH2H(homeId, awayId) {
   const params = { h2h: `${homeId}-${awayId}`, last: 5 };
   return getOrFetch('/fixtures/headtohead', params, () => apiGet('/fixtures/headtohead', params), 3600);
@@ -392,6 +472,9 @@ module.exports = {
   getFixtureCountByDateAuto,
   getTeamLastHomeGames,
   getTeamLastAwayGames,
+  getTeamLastGamesAnyVenue,
+  getLeagueStandings,
+  pickStandingForTeam,
   getH2H,
   getTeamStats,
   getTeamFixtures,
