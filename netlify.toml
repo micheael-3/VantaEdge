@@ -36,7 +36,11 @@
 
 [build.environment]
   NODE_VERSION           = "20"
-  SECRETS_SCAN_OMIT_KEYS = "NODE_ENV,FOOTBALL_DEFAULT_SEASON,WHOP_CHECKOUT_URL,VITE_WHOP_CHECKOUT_URL"
+  # FRONTEND_URL is the public site URL (e.g. https://fastscore.eu) — used in
+  # share links and OAuth redirects, intentionally embedded in client bundles
+  # and docs. It is not a secret; omit it from the secrets scanner so the
+  # build doesn't fail when the value appears in ShareButtons / docs.
+  SECRETS_SCAN_OMIT_KEYS = "NODE_ENV,FOOTBALL_DEFAULT_SEASON,WHOP_CHECKOUT_URL,VITE_WHOP_CHECKOUT_URL,FRONTEND_URL"
 
 # Frontend calls /api/* — rewrite to the matching Netlify Function (same origin, no CORS).
 [[redirects]]
