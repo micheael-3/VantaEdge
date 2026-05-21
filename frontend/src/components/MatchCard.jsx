@@ -13,7 +13,8 @@ import {
   formatKickoffShort,
   h2hDisplay,
   overPlainEnglish,
-  refereeDisplay,
+  refereeGoalsPerGame,
+  refereeName,
   restDaysDisplay,
 } from '../lib/fixture.js';
 
@@ -177,28 +178,46 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
         </div>
       )}
 
+      {/* 2x2 stats grid — one block per stat with icon, label, value, and a
+          plain-English explanation. Even on mobile we keep 2 columns so the
+          card stays compact; explanations are always visible (no tap-to-reveal
+          needed). Replaces the old dense one-line stats row. */}
       <div
-        className="mono"
         style={{
-          fontSize: 12,
-          color: 'var(--text-2)',
-          padding: '10px 0',
-          borderTop: '1px solid var(--border-soft)',
-          borderBottom: '1px solid var(--border-soft)',
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 8,
           marginBottom: 14,
-          lineHeight: 1.6,
         }}
       >
-        <div>
-          Goals avg:{' '}
-          <span style={{ color: 'var(--text)' }}>{avgScored(fixture)}</span> scored /{' '}
-          <span style={{ color: 'var(--text)' }}>{avgConceded(fixture)}</span> conceded
-        </div>
-        <div style={{ color: 'var(--text-3)' }}>
-          H2H: <span style={{ color: 'var(--text-2)' }}>{h2hDisplay(fixture)}</span>{' · '}
-          Ref: <span style={{ color: 'var(--text-2)' }}>{refereeDisplay(fixture)}</span>{' · '}
-          Rest: <span style={{ color: 'var(--text-2)' }}>{restDaysDisplay(fixture)}</span>
-        </div>
+        <StatBlock
+          icon="⚽"
+          label="Goals per game"
+          value={`${avgScored(fixture)} scored · ${avgConceded(fixture)} conceded`}
+          explanation="How many goals each team scores and lets in on average"
+        />
+        <StatBlock
+          icon="⚔️"
+          label="Last meetings"
+          value={h2hDisplay(fixture)}
+          explanation="Average goals when these two teams play each other"
+        />
+        <StatBlock
+          icon="🟨"
+          label="Referee"
+          value={refereeName(fixture)}
+          explanation={
+            refereeGoalsPerGame(fixture) != null
+              ? `This referee averages ${refereeGoalsPerGame(fixture).toFixed(1)} goals per game officiated`
+              : 'Referee not yet assigned for this match'
+          }
+        />
+        <StatBlock
+          icon="😴"
+          label="Days since last game"
+          value={restDaysDisplay(fixture)}
+          explanation="Teams with more rest tend to perform better"
+        />
       </div>
 
       {weakSignal ? (
@@ -359,6 +378,70 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
         }}
       >
         <ShareButtons fixture={fixture} />
+      </div>
+    </div>
+  );
+}
+
+// Single stat block used inside the 2x2 grid above. Icon sits top-left next
+// to a muted label; the value renders bold below, and a tiny muted line of
+// plain-English context anchors the bottom so casual bettors actually
+// understand what they're looking at.
+function StatBlock({ icon, label, value, explanation }) {
+  return (
+    <div
+      style={{
+        padding: '10px 12px',
+        borderRadius: 8,
+        border: '1px solid var(--border-soft)',
+        background: 'var(--bg-2)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+        minHeight: 78,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
+        <span style={{ fontSize: 13, lineHeight: 1 }} aria-hidden="true">
+          {icon}
+        </span>
+        <span
+          className="mono"
+          style={{
+            fontSize: 10,
+            color: 'var(--text-3)',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+          }}
+        >
+          {label}
+        </span>
+      </div>
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          color: 'var(--text)',
+          lineHeight: 1.3,
+        }}
+      >
+        {value}
+      </div>
+      <div
+        style={{
+          fontSize: 10,
+          color: 'var(--text-3)',
+          lineHeight: 1.4,
+          marginTop: 'auto',
+        }}
+      >
+        {explanation}
       </div>
     </div>
   );

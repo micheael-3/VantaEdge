@@ -143,6 +143,10 @@ export function avgConceded(fixture) {
   return (typeof h === 'number' ? h : a).toFixed(1);
 }
 
+// Rest days — clean human-readable version. Returns "5 days rest",
+// "1 day rest" (singular), or "Season start" when the gap is so large
+// (>30 days) it almost certainly means the season hasn't begun yet
+// rather than the team genuinely resting that long. Em-dash for missing.
 export function restDaysDisplay(fixture) {
   const h = fixture?.home?.restDays;
   const a = fixture?.away?.restDays;
@@ -151,17 +155,27 @@ export function restDaysDisplay(fixture) {
     typeof h === 'number' ? h : Infinity,
     typeof a === 'number' ? a : Infinity,
   );
-  return Number.isFinite(v) ? `${v}d` : '—';
+  if (!Number.isFinite(v)) return '—';
+  if (v > 30) return 'Season start';
+  if (v === 1) return '1 day rest';
+  return `${v} days rest`;
 }
 
 // h2h goals/match. Backend stores a pre-formatted display string in
 // fixture.h2h ("3.2 G/M") populated by the weekly scan from the last-5
-// H2H meetings. Legacy shapes used fixture.h2h.goalsPerMatch — keep
-// that branch for back-compat.
+// H2H meetings. We strip the cryptic "G/M" suffix here so the stats
+// grid can render a clean "2.5 goals per game" string.
 export function h2hDisplay(fixture) {
-  if (typeof fixture?.h2h === 'string' && fixture.h2h.trim()) return fixture.h2h;
-  const v = fixture?.h2h?.goalsPerMatch;
-  return typeof v === 'number' ? `${v.toFixed(1)} G/M` : '—';
+  let raw = null;
+  if (typeof fixture?.h2h === 'string' && fixture.h2h.trim()) raw = fixture.h2h;
+  else if (typeof fixture?.h2h?.goalsPerMatch === 'number') raw = fixture.h2h.goalsPerMatch;
+  if (raw == null) return '—';
+  // Coerce to a number whether we got "3.2 G/M", "3.2", or 3.2.
+  const m = String(raw).match(/-?\d+(?:\.\d+)?/);
+  if (!m) return '—';
+  const n = parseFloat(m[0]);
+  if (!Number.isFinite(n)) return '—';
+  return `${n.toFixed(1)} goals per game`;
 }
 
 // Combined "AI analysis" paragraph for the expandable section.
@@ -172,12 +186,24 @@ export function analysisText(fixture) {
   return o || b || 'No analysis available for this match yet.';
 }
 
-// Referee display: "M. Jones" or "M. Jones · avg 2.6 G/G" when the
-// per-ref goals/game number is available. Em-dash for missing.
-export function refereeDisplay(fixture) {
-  const name = fixture?.referee?.name || fixture?.fixture?.referee?.name;
-  if (!name) return '—';
+// Referee display split into name + per-ref goals/game so the stats
+// grid can render them in separate visual slots. Use refereeName() for
+// the value line and refereeGoalsPerGame() for the explanation.
+export function refereeName(fixture) {
+  const n = fixture?.referee?.name || fixture?.fixture?.referee?.name;
+  return n && String(n).trim() ? n : 'Unknown';
+}
+
+export function refereeGoalsPerGame(fixture) {
   const avg = fixture?.referee?.avgGoalsPerGame;
-  if (typeof avg === 'number') return `${name} · avg ${avg.toFixed(1)} G/G`;
-  return name;
+  return typeof avg === 'number' ? avg : null;
+}
+
+// Legacy combined display kept for the (now-removed) dense stats row
+// and for any unit tests / call sites that still want a one-liner.
+export function refereeDisplay(fixture) {
+  const name = refereeName(fixture);
+  if (name === 'Unknown') return '—';
+  const avg = refereeGoalsPerGame(fixture);
+  return avg != null ? `${name} · avg ${avg.toFixed(1)} G/G` : name;
 }
