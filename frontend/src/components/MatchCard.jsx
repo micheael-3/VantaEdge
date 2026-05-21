@@ -2,24 +2,27 @@ import { useState } from 'react';
 import FormDots from './FormDots.jsx';
 import Icon from './Icon.jsx';
 import PredictionRow from './PredictionRow.jsx';
+import ShareButtons from './ShareButtons.jsx';
 import {
   analysisText,
   avgConceded,
   avgScored,
-  bttsLabel,
+  bttsPlainEnglish,
   effectiveBttsConf,
   effectiveOverConf,
   formatKickoffShort,
   h2hDisplay,
+  overPlainEnglish,
   refereeDisplay,
   restDaysDisplay,
 } from '../lib/fixture.js';
 
 // Centrepiece card. Pared back for the casual bettor: header line,
 // teams row with form dots, plain-English stats row, two prediction
-// rows showing the calibrated confidence, and an expandable AI
-// analysis section. No odds inputs, no EV chips, no Kelly, no
-// "strong value" badge.
+// rows showing the calibrated confidence, expandable analysis, and a
+// pair of share buttons. When BOTH calibrated confidences are <60 we
+// render a muted card with a single "AI not confident" neutral chip
+// instead of the prediction block.
 export default function MatchCard({ fixture, isSharp, onUpgrade }) {
   const [showAnalysis, setShowAnalysis] = useState(false);
 
@@ -65,9 +68,16 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
   const ouConf = effectiveOverConf(fixture);
   const btsConf = effectiveBttsConf(fixture);
   const overLine = fixture?.predictions?.over?.line ?? 2.5;
+  const bttsPred = fixture?.predictions?.btts?.prediction || 'YES';
 
   const result = fixture.actualResult;
   const isPast = !!result;
+
+  // Hide weak predictions: when BOTH calibrated confidences are below 60
+  // we don't show the prediction block at all — we admit "the AI's not
+  // confident" rather than pollute the page with a low-confidence guess.
+  // Stats row + form dots still render (still informational).
+  const weakSignal = !aiPending && ouConf < 60 && btsConf < 60;
 
   const handleAnalysisToggle = () => {
     if (!isSharp) {
@@ -77,6 +87,11 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
     setShowAnalysis((v) => !v);
   };
 
+  const overExplainer = `This means the AI thinks both teams combined will score ${Math.floor(overLine) + 1} or more goals in this match.`;
+  const bttsExplainer = String(bttsPred).toUpperCase() === 'NO'
+    ? 'This means the AI thinks one of the two teams will fail to score.'
+    : 'This means the AI thinks both teams will score at least one goal each.';
+
   return (
     <div
       className="card"
@@ -85,6 +100,7 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
         position: 'relative',
         borderColor: 'var(--border)',
         overflow: 'hidden',
+        opacity: weakSignal ? 0.6 : 1,
       }}
     >
       <div
@@ -185,19 +201,46 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gap: 14, marginBottom: 14 }}>
-        <PredictionRow
-          label={aiPending ? 'OVER —' : `OVER ${overLine}`}
-          conf={ouConf}
-          pending={aiPending}
-        />
-        <PredictionRow
-          label={aiPending ? 'BTTS —' : bttsLabel(fixture)}
-          conf={btsConf}
-          delay={200}
-          pending={aiPending}
-        />
-      </div>
+      {weakSignal ? (
+        <div
+          className="mono"
+          style={{
+            padding: '12px 14px',
+            borderRadius: 8,
+            background: 'var(--bg-2)',
+            border: '1px solid var(--border-soft)',
+            fontSize: 12,
+            color: 'var(--text-2)',
+            textAlign: 'center',
+            letterSpacing: '0.02em',
+            marginBottom: 14,
+          }}
+        >
+          AI not confident — skip this match
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 14, marginBottom: 14 }}>
+          {/* Key tied to fixture id so the ✓ animation replays exactly when
+              the user navigates between fixtures, not on every re-render. */}
+          <PredictionRow
+            key={`over-${fixture.id || fixture.fixtureId}`}
+            plainLabel={aiPending ? 'Loading…' : overPlainEnglish(overLine)}
+            conf={ouConf}
+            pending={aiPending}
+            explainer={overExplainer}
+            hit={isPast ? !!result.overHit : null}
+          />
+          <PredictionRow
+            key={`btts-${fixture.id || fixture.fixtureId}`}
+            plainLabel={aiPending ? 'Loading…' : bttsPlainEnglish(bttsPred)}
+            conf={btsConf}
+            delay={200}
+            pending={aiPending}
+            explainer={bttsExplainer}
+            hit={isPast ? !!result.bttsHit : null}
+          />
+        </div>
+      )}
 
       {aiErrored && (
         <div
@@ -218,87 +261,104 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
         </div>
       )}
 
-      <div
-        style={{
-          borderTop: '1px solid var(--border-soft)',
-          paddingTop: 12,
-          marginTop: 4,
-        }}
-      >
-        <button
-          type="button"
-          onClick={handleAnalysisToggle}
+      {/* Analysis toggle hidden on weak-signal cards — there's nothing
+          meaningful to expand to when the AI declined to call it. */}
+      {!weakSignal && (
+        <div
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            color: 'var(--text-2)',
-            fontSize: 12,
-            fontWeight: 500,
+            borderTop: '1px solid var(--border-soft)',
+            paddingTop: 12,
+            marginTop: 4,
           }}
         >
-          <span
+          <button
+            type="button"
+            onClick={handleAnalysisToggle}
             style={{
-              transform: showAnalysis ? 'rotate(180deg)' : 'rotate(0)',
-              transition: 'transform 0.2s',
-              display: 'inline-flex',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              color: 'var(--text-2)',
+              fontSize: 12,
+              fontWeight: 500,
             }}
           >
-            <Icon name="chevron-down" size={14} />
-          </span>
-          {showAnalysis ? 'Hide' : 'Show'} Analysis
-          {!isSharp && (
-            <Icon name="lock" size={11} color="var(--text-faint)" />
-          )}
-        </button>
-        {isSharp && (
-          <div
-            style={{
-              maxHeight: showAnalysis ? 400 : 0,
-              overflow: 'hidden',
-              transition: 'max-height 0.35s ease, opacity 0.25s',
-              opacity: showAnalysis ? 1 : 0,
-            }}
-          >
-            <div
+            <span
               style={{
-                marginTop: 12,
-                padding: 12,
-                background: 'var(--bg-2)',
-                borderRadius: 8,
-                border: '1px solid var(--border-soft)',
+                transform: showAnalysis ? 'rotate(180deg)' : 'rotate(0)',
+                transition: 'transform 0.2s',
+                display: 'inline-flex',
               }}
             >
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <Icon name="brain" size={14} color="var(--indigo)" />
-                <span
-                  className="mono"
-                  style={{
-                    fontSize: 10,
-                    color: 'var(--indigo)',
-                    letterSpacing: '0.08em',
-                  }}
-                >
-                  THE AI THINKS:
-                </span>
-              </div>
-              <p
+              <Icon name="chevron-down" size={14} />
+            </span>
+            {showAnalysis ? 'Hide' : 'Show'} Analysis
+            {!isSharp && (
+              <Icon name="lock" size={11} color="var(--text-faint)" />
+            )}
+          </button>
+          {isSharp && (
+            <div
+              style={{
+                maxHeight: showAnalysis ? 400 : 0,
+                overflow: 'hidden',
+                transition: 'max-height 0.35s ease, opacity 0.25s',
+                opacity: showAnalysis ? 1 : 0,
+              }}
+            >
+              <div
                 style={{
-                  margin: 0,
-                  fontSize: 13,
-                  lineHeight: 1.55,
-                  color: 'var(--text-2)',
-                  whiteSpace: 'pre-line',
+                  marginTop: 12,
+                  padding: 12,
+                  background: 'var(--bg-2)',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-soft)',
                 }}
               >
-                {analysisText(fixture)}
-              </p>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <Icon name="brain" size={14} color="var(--indigo)" />
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 10,
+                      color: 'var(--indigo)',
+                      letterSpacing: '0.08em',
+                    }}
+                  >
+                    THE AI THINKS:
+                  </span>
+                </div>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                    color: 'var(--text-2)',
+                    whiteSpace: 'pre-line',
+                  }}
+                >
+                  {analysisText(fixture)}
+                </p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      )}
+
+      {/* Share row — both before kickoff (promo) and after (celebrate/honest). */}
+      <div
+        style={{
+          marginTop: 14,
+          paddingTop: 12,
+          borderTop: '1px solid var(--border-soft)',
+          display: 'flex',
+          justifyContent: 'flex-end',
+        }}
+      >
+        <ShareButtons fixture={fixture} />
       </div>
     </div>
   );

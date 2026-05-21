@@ -65,6 +65,39 @@ export function agentScore(fixture) {
   return Math.max(effectiveOverConf(fixture), effectiveBttsConf(fixture));
 }
 
+// Confidence label — null when confidence is too low to surface at all.
+// Used to render a small mono uppercase chip next to the confidence %.
+//   80+ → 'Very Strong Pick'
+//   70-79 → 'Strong Pick'
+//   60-69 → 'Good Pick'
+//   <60  → null  (the whole match is hidden by MatchCard)
+export function confidenceLabel(conf) {
+  if (typeof conf !== 'number' || conf < 60) return null;
+  if (conf >= 80) return 'Very Strong Pick';
+  if (conf >= 70) return 'Strong Pick';
+  return 'Good Pick';
+}
+
+// Translate "Over X.5" → "More than X goals" plain English. Used in the
+// prediction badge so casual bettors never see the betting-market jargon.
+export function overPlainEnglish(line) {
+  const n = typeof line === 'number' ? line : parseFloat(line);
+  if (!Number.isFinite(n)) return 'More than 2 goals';
+  // Over 0.5 → "At least 1 goal", Over 1.5 → "More than 1 goal",
+  // Over 2.5 → "More than 2 goals", etc.
+  const whole = Math.floor(n);
+  if (whole === 0) return 'At least 1 goal';
+  if (whole === 1) return 'More than 1 goal';
+  return `More than ${whole} goals`;
+}
+
+// BTTS plain English. 'YES' → both score, 'NO' → at least one blanks.
+export function bttsPlainEnglish(pred) {
+  return String(pred || 'YES').toUpperCase() === 'NO'
+    ? 'One team fails to score'
+    : 'Both teams score';
+}
+
 // Format kickoff "Sat 7:30 PM" — match the design's kickoff line.
 export function formatKickoffShort(iso) {
   if (!iso) return '';

@@ -3,9 +3,11 @@ import Layout from '../components/Layout.jsx';
 import CalendarStrip from '../components/CalendarStrip.jsx';
 import MatchCard from '../components/MatchCard.jsx';
 import BestBetBanner from '../components/BestBetBanner.jsx';
+import OnboardingOverlay from '../components/OnboardingOverlay.jsx';
+import SettledMatchMini from '../components/SettledMatchMini.jsx';
 import Icon from '../components/Icon.jsx';
 import { isSharp, useAuth } from '../context/AuthContext.jsx';
-import { predictions } from '../api/client.js';
+import { predictions, history as historyApi } from '../api/client.js';
 import { agentScore } from '../lib/fixture.js';
 
 // Small inline toast used by the post-checkout polling flow.
@@ -153,6 +155,51 @@ export default function Dashboard() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [error, setError] = useState('');
   const [hydratedFromCache, setHydratedFromCache] = useState(false);
+  const [streak, setStreak] = useState(0);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [recentSettled, setRecentSettled] = useState([]);
+
+  // Onboarding overlay: backend `onboardingCompleted` is authoritative.
+  // The localStorage flag is just a cheap belt-and-braces guard for the
+  // current session; if a user clears it, the server still says
+  // onboardingCompleted=true and we don't re-show.
+  useEffect(() => {
+    if (!user) return;
+    if (user.onboardingCompleted) return;
+    if (typeof window !== 'undefined') {
+      try {
+        if (window.localStorage.getItem('fastscore_onboarded') === '1') return;
+      } catch { /* ignore */ }
+    }
+    setShowOnboarding(true);
+  }, [user]);
+
+  // Streak banner fetch (FREE tier accessible).
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    historyApi
+      .streak()
+      .then((r) => { if (!cancelled) setStreak(Number(r?.streak || 0)); })
+      .catch(() => { /* silent — streak is decorative */ });
+    return () => { cancelled = true; };
+  }, [user]);
+
+  // Recent settled fixtures for the rich "No matches today" empty state.
+  // Pulls the last 7 days of settled predictions and keeps up to 5.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    historyApi
+      .get('week')
+      .then((r) => {
+        if (cancelled) return;
+        const rows = Array.isArray(r?.recent) ? r.recent.slice(0, 5) : [];
+        setRecentSettled(rows);
+      })
+      .catch(() => { /* silent — empty state has its own fallback */ });
+    return () => { cancelled = true; };
+  }, [user]);
 
   const pollTimerRef = useRef(null);
 
@@ -337,6 +384,20 @@ export default function Dashboard() {
     return dateHeading(nextMonday);
   }, [weekData]);
 
+  // Next-non-empty-date lookup for the empty-state "next matches" pill.
+  const nextFixturesDay = useMemo(() => {
+    if (!weekData || !weekData.dates) return null;
+    const keys = Object.keys(weekData.dates).sort();
+    for (const k of keys) {
+      if (k <= today) continue;
+      const arr = weekData.dates[k] || [];
+      if (arr.length > 0) {
+        return { date: k, count: arr.length };
+      }
+    }
+    return null;
+  }, [weekData, today]);
+
   const onSelectDay = (date) => {
     if (date < today) return; // never select past dates
     setSelectedDate(date);
@@ -354,6 +415,29 @@ export default function Dashboard() {
               message={checkoutToast.message}
               onClose={() => setCheckoutToast(null)}
             />
+          )}
+          {showOnboarding && (
+            <OnboardingOverlay onClose={() => setShowOnboarding(false)} />
+          )}
+          {streak > 0 && (
+            <div
+              className="card mono"
+              style={{
+                padding: '10px 14px',
+                marginBottom: 16,
+                fontSize: 12,
+                color: 'var(--mint)',
+                borderColor: 'rgba(110,231,183,0.3)',
+                background:
+                  'linear-gradient(180deg, rgba(110,231,183,0.06), transparent), var(--card)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <span aria-hidden>🔥</span>
+              You're on a {streak}-pick winning streak
+            </div>
           )}
           <div style={{ marginBottom: 24 }}>
             <div
@@ -492,10 +576,71 @@ export default function Dashboard() {
               <p>Next scan: {nextMondayLabel}</p>
             </div>
           ) : fixturesForDay.length === 0 ? (
-            <div className="empty-state">
-              <h3>No matches on this day</h3>
-              <p>Pick a different day from the strip above.</p>
-            </div>
+            selectedDate === today ? (
+              // Rich empty state for today specifically: yesterday recap +
+              // next-fixtures pill. FREE-tier accessible — no paywall.
+              <div>
+                <div
+                  className="card"
+                  style={{
+                    padding: 24,
+                    marginBottom: 16,
+                    textAlign: 'left',
+                  }}
+                >
+                  <h3
+                    className="display"
+                    style={{ fontSize: 22, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.02em' }}
+                  >
+                    No matches today
+                  </h3>
+                  <p
+                    className="mono"
+                    style={{ margin: 0, color: 'var(--text-3)', fontSize: 12, letterSpacing: '0.04em' }}
+                  >
+                    HERE'S HOW THE AI DID YESTERDAY
+                  </p>
+                </div>
+                {recentSettled.length > 0 ? (
+                  <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
+                    {recentSettled.map((row) => (
+                      <SettledMatchMini key={row.id || `${row.date}-${row.match}`} row={row} />
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    className="card mono"
+                    style={{ padding: 14, color: 'var(--text-3)', fontSize: 12, marginBottom: 16 }}
+                  >
+                    No settled matches yet. Check back after the next matchday.
+                  </div>
+                )}
+                {nextFixturesDay && (
+                  <div
+                    className="mono"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 14px',
+                      borderRadius: 999,
+                      background: 'rgba(110,231,183,0.08)',
+                      border: '1px solid rgba(110,231,183,0.25)',
+                      color: 'var(--mint)',
+                      fontSize: 11,
+                      letterSpacing: '0.06em',
+                    }}
+                  >
+                    NEXT MATCHES: {dateHeading(nextFixturesDay.date)} — {nextFixturesDay.count} GAMES ANALYSED
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <h3>No matches on this day</h3>
+                <p>Pick a different day from the strip above.</p>
+              </div>
+            )
           ) : (
             <>
               {bestBet && (

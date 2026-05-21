@@ -1,4 +1,6 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const axios = require('axios');
 const { sql } = require('./_shared/db');
 const { json, error, notFound, parseBody, subPath } = require('./_shared/response');
 const { readCookies, makeSetCookie, makeClearCookie } = require('./_shared/cookies');
@@ -254,6 +256,147 @@ async function grantAdmin(event) {
   }
 }
 
+// ---------------------------------------------------------------
+// Google OAuth — "Continue with Google"
+//
+// Flow:
+//   1. /api/auth/google  → redirect user to Google's consent screen
+//   2. /api/auth/google-callback → exchange code → tokens → ID token
+//      → find or create user → set JWT cookies → 302 /dashboard
+//
+// If GOOGLE_OAUTH_CLIENT_ID is unset we return a friendly 503 so the
+// page renders without crashing — the operator simply hasn't set up
+// OAuth yet. The button on the frontend still appears so they can
+// see what's available.
+// ---------------------------------------------------------------
+function googleRedirectUri() {
+  const base = (process.env.URL || 'http://localhost:8888').replace(/\/+$/, '');
+  return `${base}/api/auth/google-callback`;
+}
+
+function googleConfigured() {
+  return !!process.env.GOOGLE_OAUTH_CLIENT_ID && !!process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+}
+
+async function googleStart() {
+  if (!googleConfigured()) {
+    return {
+      statusCode: 503,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      body: `<!doctype html><meta charset="utf-8"><title>Google sign-in not configured</title>
+<body style="background:#0a0a0f;color:#e8e8ec;font-family:system-ui,sans-serif;padding:60px 24px;text-align:center">
+<h1>Google sign-in not configured</h1>
+<p style="color:#9696a3">The operator hasn't set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET yet. Email/password sign-in still works.</p>
+<a href="/login" style="display:inline-block;margin-top:24px;padding:10px 18px;background:#6ee7b7;color:#052e1f;border-radius:8px;text-decoration:none;font-weight:600">Back to login</a>
+</body>`,
+    };
+  }
+  // Random state for CSRF. Round-trip via cookie so the callback can
+  // confirm it (cheap, no DB).
+  const state = crypto.randomBytes(16).toString('hex');
+  const params = new URLSearchParams({
+    client_id: process.env.GOOGLE_OAUTH_CLIENT_ID,
+    redirect_uri: googleRedirectUri(),
+    response_type: 'code',
+    scope: 'openid email profile',
+    state,
+    access_type: 'online',
+    prompt: 'select_account',
+  });
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  return {
+    statusCode: 302,
+    multiValueHeaders: {
+      'Set-Cookie': [`google_oauth_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`],
+    },
+    headers: { Location: url },
+    body: '',
+  };
+}
+
+async function googleCallback(event) {
+  if (!googleConfigured()) {
+    return error(503, 'Google sign-in not configured');
+  }
+  const qs = event.queryStringParameters || {};
+  const code = qs.code;
+  const state = qs.state;
+  if (!code) return error(400, 'Missing code');
+  const cookieState = (readCookies(event) || {}).google_oauth_state;
+  if (!state || !cookieState || state !== cookieState) {
+    return error(400, 'Invalid state');
+  }
+
+  // Exchange code → tokens.
+  let tokens;
+  try {
+    const res = await axios.post(
+      'https://oauth2.googleapis.com/token',
+      new URLSearchParams({
+        code,
+        client_id: process.env.GOOGLE_OAUTH_CLIENT_ID,
+        client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+        redirect_uri: googleRedirectUri(),
+        grant_type: 'authorization_code',
+      }).toString(),
+      {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 10000,
+        validateStatus: () => true,
+      },
+    );
+    if (res.status >= 400) {
+      console.error('Google token exchange failed:', res.status, res.data);
+      return error(401, 'Google sign-in failed');
+    }
+    tokens = res.data;
+  } catch (err) {
+    console.error('Google token exchange threw:', err.message);
+    return error(500, 'Google sign-in failed');
+  }
+
+  // Decode ID token (payload only — Google's signing isn't verified here
+  // because we just got the token over TLS straight from Google's
+  // endpoint with our client_secret. Good enough for v1; harden later
+  // with jose if needed).
+  let email;
+  try {
+    const id = tokens.id_token;
+    if (!id) throw new Error('no id_token');
+    const payload = JSON.parse(Buffer.from(id.split('.')[1], 'base64').toString('utf-8'));
+    email = (payload.email || '').toLowerCase();
+    if (!email) throw new Error('no email in id_token');
+  } catch (err) {
+    console.error('Google ID token parse failed:', err.message);
+    return error(401, 'Google sign-in failed');
+  }
+
+  // Find or create user.
+  let userRow;
+  const existing = await sql()`SELECT id, email, tier FROM users WHERE email = ${email}`;
+  if (existing.length) {
+    userRow = existing[0];
+  } else {
+    // Random unusable password — Google users authenticate only via OAuth.
+    const placeholder = await bcrypt.hash(crypto.randomBytes(24).toString('hex'), 10);
+    const rows = await sql()`
+      INSERT INTO users (email, password_hash, tier)
+      VALUES (${email}, ${placeholder}, 'FREE')
+      RETURNING id, email, tier`;
+    userRow = rows[0];
+  }
+
+  const cookies = await setAuthCookies(userRow);
+  cookies.push('google_oauth_state=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+  const base = (process.env.URL || '').replace(/\/+$/, '');
+  return {
+    statusCode: 302,
+    multiValueHeaders: { 'Set-Cookie': cookies },
+    headers: { Location: `${base}/dashboard` || '/dashboard' },
+    body: '',
+  };
+}
+
 exports.handler = async (event) => {
   try {
     const path = subPath(event, 'auth');
@@ -267,6 +410,8 @@ exports.handler = async (event) => {
     if (method === 'GET' && path === '/me') return await me(event);
     if (method === 'GET' && path === '/whoami') return await whoami(event);
     if (method === 'GET' && path === '/grant-admin') return await grantAdmin(event);
+    if (method === 'GET' && path === '/google') return await googleStart();
+    if ((method === 'GET' || method === 'POST') && path === '/google-callback') return await googleCallback(event);
 
     return notFound();
   } catch (err) {

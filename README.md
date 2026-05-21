@@ -100,6 +100,8 @@ All on the Netlify site (one place). See [NETLIFY-DEPLOY.md](NETLIFY-DEPLOY.md) 
 | `RESEND_API_KEY`            | _Optional._ For daily-digest email (Resend.com). Functions ship but won't send mail until set. |
 | `OPENWEATHER_API_KEY`       | _Optional._ For weather-aware predictions. Falls back gracefully when absent. |
 | `ODDS_API_KEY`              | _Optional._ Auto-fetch real bookmaker odds from the-odds-api.com. Manual odds entry stays as fallback. |
+| `GOOGLE_OAUTH_CLIENT_ID`    | _Optional._ Enables "Continue with Google" on /login and /register. Configure in Google Cloud Console — see NETLIFY-DEPLOY.md §5. |
+| `GOOGLE_OAUTH_CLIENT_SECRET`| _Optional._ Pair with `GOOGLE_OAUTH_CLIENT_ID`. Both must be set, otherwise the endpoint returns a friendly 503 and the email/password form remains the only way in. |
 
 `URL` is set automatically by Netlify (used for the OpenRouter `HTTP-Referer` header).
 

@@ -49,6 +49,19 @@
   to     = "/.netlify/functions/admin-clear-history"
   status = 200
 
+# Google OAuth — explicit redirects above the wildcard for clear routing
+# intent. (The wildcard below would catch these too, but listing them by
+# name makes the OAuth surface area obvious to operators.)
+[[redirects]]
+  from   = "/api/auth/google"
+  to     = "/.netlify/functions/auth/google"
+  status = 200
+
+[[redirects]]
+  from   = "/api/auth/google-callback"
+  to     = "/.netlify/functions/auth/google-callback"
+  status = 200
+
 [[redirects]]
   from   = "/api/auth/*"
   to     = "/.netlify/functions/auth/:splat"

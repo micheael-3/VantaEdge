@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import axios from 'axios';
 import Logo from '../components/Logo.jsx';
 import Icon from '../components/Icon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -54,6 +55,42 @@ function Nav() {
         </div>
       </div>
     </nav>
+  );
+}
+
+function TrustPill() {
+  const [stats, setStats] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    axios.get('/api/stats/public').then((r) => {
+      if (cancelled) return;
+      setStats(r.data || null);
+    }).catch(() => { /* keep fallback */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const text = stats && stats.totalPredictions
+    ? `ANALYSING MLS SINCE MAY 2026 · ${stats.totalPredictions} PREDICTIONS · ${stats.monthAccuracyPct}% ACCURACY THIS MONTH`
+    : 'ANALYSING MLS · AI PREDICTIONS';
+  return (
+    <div
+      className="mono"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '6px 12px',
+        borderRadius: 999,
+        background: 'rgba(110,231,183,0.08)',
+        border: '1px solid rgba(110,231,183,0.25)',
+        color: 'var(--mint)',
+        fontSize: 11,
+        letterSpacing: '0.08em',
+        marginTop: 20,
+      }}
+    >
+      {text}
+    </div>
   );
 }
 
@@ -123,6 +160,8 @@ function Hero() {
           <div className="mono" style={{ marginTop: 36, fontSize: 12, color: 'var(--text-3)', letterSpacing: '0.04em' }}>
             NO CARD REQUIRED · CANCEL ANYTIME · 18+
           </div>
+
+          <TrustPill />
         </div>
 
         <DemoMatchCard />
@@ -331,6 +370,13 @@ function Pricing() {
             'Bet Tracker',
             'Accuracy history',
           ]}
+          // Price-anchor lines — concrete framing of the value vs the
+          // subscription cost. Mono 12px, muted.
+          anchorLines={[
+            'The average winning bet at €10 stake returns €8–€15 profit',
+            'One correct pick covers your monthly subscription',
+            'Most PRO users are profitable within 2 weeks',
+          ]}
           cta={
             <button
               type="button"
@@ -351,7 +397,7 @@ function Pricing() {
   );
 }
 
-function PlanCard({ name, price, per, tagline, features, cta, accent }) {
+function PlanCard({ name, price, per, tagline, features, cta, accent, anchorLines }) {
   return (
     <div
       className="card"
@@ -392,6 +438,25 @@ function PlanCard({ name, price, per, tagline, features, cta, accent }) {
           </li>
         ))}
       </ul>
+      {Array.isArray(anchorLines) && anchorLines.length > 0 && (
+        <ul
+          className="mono"
+          style={{
+            listStyle: 'none',
+            padding: 0,
+            margin: '0 0 18px',
+            display: 'grid',
+            gap: 6,
+            fontSize: 12,
+            color: 'var(--text-3)',
+            letterSpacing: '0.02em',
+          }}
+        >
+          {anchorLines.map((line) => (
+            <li key={line}>· {line}</li>
+          ))}
+        </ul>
+      )}
       {cta}
     </div>
   );

@@ -45,12 +45,19 @@ async function rebuild() {
   const t0 = Date.now();
 
   // Pull settled rows. Only count rows with a non-null hit.
+  //
+  // Excluded from accuracy stats because we never surfaced this as a pick.
+  // Hidden ≠ wrong. Predictions where calibrated confidence is below 60
+  // are hidden from users by MatchCard (neutral "AI not confident" chip),
+  // so they don't pollute the model's self-correction here either.
   const overRows = await sql()`
     SELECT league, over_confidence, is_sharp_move, over_hit
-    FROM predictions WHERE over_hit IS NOT NULL`;
+    FROM predictions
+    WHERE over_hit IS NOT NULL AND over_confidence >= 60`;
   const bttsRows = await sql()`
     SELECT league, btts, btts_confidence, btts_hit
-    FROM predictions WHERE btts_hit IS NOT NULL`;
+    FROM predictions
+    WHERE btts_hit IS NOT NULL AND btts_confidence >= 60`;
   report.totalSettled = overRows.length + bttsRows.length;
 
   // Tally by dimension.

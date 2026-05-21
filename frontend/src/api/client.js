@@ -82,6 +82,7 @@ export const history = {
   // running on the backend so confidence numbers shown on the dashboard are
   // already calibrated transparently — UI no longer surfaces the chart.
   calibration: () => api.get('/api/history/calibration').then((r) => r.data),
+  streak: () => api.get('/api/history/streak').then((r) => r.data),
 };
 
 export const userApi = {

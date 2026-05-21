@@ -57,7 +57,7 @@ export default function UpgradeModal({ onClose }) {
         <h2
           className="display"
           style={{
-            margin: '0 0 10px',
+            margin: '0 0 6px',
             fontSize: 26,
             fontWeight: 700,
             letterSpacing: '-0.025em',
@@ -66,11 +66,22 @@ export default function UpgradeModal({ onClose }) {
         >
           Unlock PRO — $4.99/month
         </h2>
+        {/* Price-anchor sub-headline — concrete framing of the value. */}
+        <p
+          style={{
+            margin: '0 0 4px',
+            color: 'var(--text-2)',
+            fontSize: 13,
+            fontStyle: 'italic',
+          }}
+        >
+          One correct pick covers it.
+        </p>
         <p
           style={{
             margin: '0 0 20px',
-            color: 'var(--text-2)',
-            fontSize: 14,
+            color: 'var(--text-3)',
+            fontSize: 13,
             lineHeight: 1.55,
           }}
         >

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Logo from '../components/Logo.jsx';
+import Icon from '../components/Icon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { readReferralCode } from '../lib/referral.js';
 
@@ -79,6 +80,27 @@ export default function Register() {
         >
           Free to start — PRO adds full AI reasoning + Bet Tracker.
         </p>
+        <a
+          href="/api/auth/google"
+          className="btn btn-ghost"
+          style={{
+            width: '100%',
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            gap: 10,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textDecoration: 'none',
+            marginBottom: 14,
+          }}
+        >
+          <Icon name="google" size={16} />
+          Continue with Google
+        </a>
+        <div style={{ textAlign: 'center', color: 'var(--text-3)', fontSize: 12, margin: '0 0 14px' }}>
+          or use email
+        </div>
         {referralCode && (
           <div
             style={{

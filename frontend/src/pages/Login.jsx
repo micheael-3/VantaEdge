@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Logo from '../components/Logo.jsx';
+import Icon from '../components/Icon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function Login() {
@@ -73,6 +74,26 @@ export default function Login() {
         >
           Log in to see today's picks.
         </p>
+        <a
+          href="/api/auth/google"
+          className="btn btn-ghost"
+          style={{
+            width: '100%',
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            gap: 10,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textDecoration: 'none',
+          }}
+        >
+          <Icon name="google" size={16} />
+          Continue with Google
+        </a>
+        <div style={{ textAlign: 'center', color: 'var(--text-3)', fontSize: 12, margin: '14px 0' }}>
+          or use email
+        </div>
         <form
           onSubmit={onSubmit}
           style={{ display: 'grid', gap: 14 }}

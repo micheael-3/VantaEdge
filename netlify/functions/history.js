@@ -40,11 +40,18 @@ async function getHistory(event) {
   const qs = event.queryStringParameters || {};
   const { since, label: windowLabel } = resolveWindow(qs.window, user.tier);
 
+  // Excluded from accuracy stats because we never surfaced this as a pick.
+  // Hidden ≠ wrong. When BOTH calibrated/raw confidences are <60 the
+  // MatchCard renders a neutral "AI not confident — skip" chip and never
+  // shows a prediction badge, so it would be unfair to count those rows
+  // against (or for) the model's hit rate. We still keep the rows in the
+  // table for audit; we just filter them out here.
   const predictions = await sql()`
     SELECT id, league, fixture_id, home_team, away_team, kickoff,
            over_line, over_confidence, over_hit, btts, btts_confidence, btts_hit
     FROM predictions
     WHERE user_id = ${user.id} AND created_at >= ${since.toISOString()}
+      AND (over_confidence >= 60 OR btts_confidence >= 60)
     ORDER BY kickoff DESC`;
 
   // Settled = has a Boolean result on either side. Pending = neither yet.
@@ -163,11 +170,14 @@ async function getCalibration(event) {
   const gate = requireTier(user, 'ANALYST');
   if (gate) return gate;
 
+  // Excluded from accuracy stats because we never surfaced this as a pick.
+  // Hidden ≠ wrong. Same filter as getHistory() above.
   const rows = await sql()`
     SELECT over_confidence, over_hit, btts_confidence, btts_hit
     FROM predictions
     WHERE user_id = ${user.id}
-      AND (over_hit IS NOT NULL OR btts_hit IS NOT NULL)`;
+      AND (over_hit IS NOT NULL OR btts_hit IS NOT NULL)
+      AND (over_confidence >= 60 OR btts_confidence >= 60)`;
 
   // Build empty bucket scaffolds so the chart always renders five bars
   // (including ones with zero samples — they just render as 0%).
@@ -218,6 +228,53 @@ async function getCalibration(event) {
   });
 }
 
+// GET /api/history/streak
+//
+// Returns the user's current consecutive WIN streak across their logged
+// bankroll entries (the most concrete signal of "am I winning?"). When the
+// user hasn't logged any settled bets yet we fall back to counting
+// consecutive AI prediction hits — picks where EITHER market hit count as
+// a hit; we only break the streak when the most recent settled row
+// recorded zero hits. Auth-required, NO tier gate (FREE users still see it).
+async function getStreak(event) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+
+  // Try bankroll first — actual won/lost bets the user logged.
+  const betRows = await sql()`
+    SELECT result FROM bankroll_entries
+    WHERE user_id = ${user.id} AND type = 'BET' AND result IS NOT NULL AND result <> 'PENDING'
+    ORDER BY created_at DESC
+    LIMIT 100`;
+
+  let streak = 0;
+  if (betRows.length > 0) {
+    for (const row of betRows) {
+      if (row.result === 'WIN') streak += 1;
+      else break;
+    }
+    return json(200, { streak, source: 'bankroll' });
+  }
+
+  // Fallback: AI prediction hits for picks we actually surfaced (conf >= 60).
+  // A row counts as a "hit" if either market hit. A row breaks the streak
+  // when neither market hit (both false) — pending rows are ignored.
+  const predRows = await sql()`
+    SELECT over_hit, btts_hit, over_confidence, btts_confidence
+    FROM predictions
+    WHERE user_id = ${user.id}
+      AND (over_hit IS NOT NULL OR btts_hit IS NOT NULL)
+      AND (over_confidence >= 60 OR btts_confidence >= 60)
+    ORDER BY kickoff DESC
+    LIMIT 100`;
+  for (const r of predRows) {
+    const oneHit = r.over_hit === true || r.btts_hit === true;
+    if (oneHit) streak += 1;
+    else break;
+  }
+  return json(200, { streak, source: 'predictions' });
+}
+
 async function getAccuracy(event) {
   const { res, user } = await requireUser(event);
   if (res) return res;
@@ -238,6 +295,7 @@ exports.handler = async (event) => {
 
     const path = subPath(event, 'history');
     if (path === '/' || path === '') return await getHistory(event);
+    if (path === '/streak' || path === '/streak/') return await getStreak(event);
     if (path === '/accuracy') return await getAccuracy(event);
     if (path === '/calibration' || path === '/calibration/') return await getCalibration(event);
     return notFound();

@@ -86,6 +86,8 @@ Run that command **twice** — save one value as `JWT_SECRET`, the other as `JWT
 | `RESEND_API_KEY`            | _Optional._ Resend.com key for daily-digest email. Skip if you're not running notifications yet.            |
 | `OPENWEATHER_API_KEY`       | _Optional._ OpenWeatherMap free tier — enables weather-aware predictions when wired in.                     |
 | `ODDS_API_KEY`              | _Optional._ the-odds-api.com key for auto-fetching real bookmaker odds. Without it, the manual odds inputs on each match card stay enabled. |
+| `GOOGLE_OAUTH_CLIENT_ID`    | _Optional._ Google OAuth 2.0 client ID — enables the "Continue with Google" button on /login and /register. See "5. Google sign-in (optional)" below. |
+| `GOOGLE_OAUTH_CLIENT_SECRET`| _Optional._ Google OAuth 2.0 client secret. Both this and the client ID must be set for Google sign-in to activate. |
 
 `URL` is set automatically by Netlify to your site's primary URL, so the OpenRouter `HTTP-Referer` is filled in for you. You don't need to set it manually.
 
@@ -107,7 +109,23 @@ Site settings → **Domain management → Add a domain you already own**, or sti
 
 ---
 
-## 5. Smoke test
+## 5. Google sign-in (optional)
+
+Skip if you only want email/password auth — the rest of the app works fine without it. The "Continue with Google" buttons on `/login` and `/register` will return a friendly 503 when not configured.
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → **Create Credentials → OAuth client ID**.
+2. Application type: **Web application**.
+3. **Authorized JavaScript origins**: `https://fastscore.eu` (and `https://<your-netlify-site>.netlify.app` for testing).
+4. **Authorized redirect URIs**: `https://fastscore.eu/api/auth/google-callback` (and the same on the netlify.app URL).
+5. Copy the **Client ID** → paste as `GOOGLE_OAUTH_CLIENT_ID` in Netlify env vars.
+6. Copy the **Client Secret** → paste as `GOOGLE_OAUTH_CLIENT_SECRET` in Netlify env vars.
+7. Trigger a fresh deploy. Both buttons now open Google's consent screen and create FREE-tier accounts on first sign-in.
+
+If only one of the two env vars is set, the endpoint refuses to start the flow (returns 503) — the operator must set both.
+
+---
+
+## 6. Smoke test
 
 1. Open your Netlify URL.
 2. Click **Start Free** → register → you should land on `/dashboard`.
