@@ -150,25 +150,36 @@ async function settleBatch({ dryRun = false } = {}) {
         } catch (e) {
           console.error(`[agent-results] accuracy bump failed:`, e.message);
         }
+        // Dedupe RESULT_SETTLED alerts per fixture. If multiple
+        // prediction rows exist for the same fixture (re-scan case),
+        // emitting one alert per row would email the user N times for
+        // the same match. Check agent_alerts first; only insert if
+        // there isn't already a RESULT_SETTLED row for this fixture.
         try {
-          await createAgentAlert({
-            type: 'RESULT_SETTLED',
-            fixtureId,
-            league: p.league,
-            message: `${calc.overHit ? '✓' : '✗'} ${homeName} ${calc.home}-${calc.away} ${awayName} · Over ${p.over_line} ${calc.overHit ? 'HIT' : 'MISSED'}`,
-            severity: 'INFO',
-            data: {
-              homeTeam: homeName,
-              awayTeam: awayName,
-              homeGoals: calc.home,
-              awayGoals: calc.away,
-              overLine: p.over_line,
-              overHit: calc.overHit,
-              bttsCall: p.btts,
-              bttsHit: calc.bttsHit,
-            },
-          });
-          report.alertsEmitted += 1;
+          const existing = await sql()`
+            SELECT 1 FROM agent_alerts
+            WHERE type = 'RESULT_SETTLED' AND fixture_id = ${fixtureId}
+            LIMIT 1`;
+          if (existing.length === 0) {
+            await createAgentAlert({
+              type: 'RESULT_SETTLED',
+              fixtureId,
+              league: p.league,
+              message: `${calc.overHit ? '✓' : '✗'} ${homeName} ${calc.home}-${calc.away} ${awayName} · Over ${p.over_line} ${calc.overHit ? 'HIT' : 'MISSED'}`,
+              severity: 'INFO',
+              data: {
+                homeTeam: homeName,
+                awayTeam: awayName,
+                homeGoals: calc.home,
+                awayGoals: calc.away,
+                overLine: p.over_line,
+                overHit: calc.overHit,
+                bttsCall: p.btts,
+                bttsHit: calc.bttsHit,
+              },
+            });
+            report.alertsEmitted += 1;
+          }
         } catch (e) {
           console.error(`[agent-results] alert emit failed:`, e.message);
         }

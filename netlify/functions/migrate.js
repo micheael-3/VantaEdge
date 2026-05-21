@@ -85,6 +85,10 @@ async function execRaw(stmt) {
 }
 
 exports.handler = async (event) => {
+  // Outer try/catch: fs read failures, schema-splitter throws, or any
+  // other unexpected error becomes a real 500 with a message instead of
+  // Netlify's default 502 empty body.
+  try {
   // Auth: must pass ?key=<ADMIN_PASSWORD>
   const params = event.queryStringParameters || {};
   const supplied = params.key || '';
@@ -131,6 +135,10 @@ exports.handler = async (event) => {
     schemaPath,
     results,
   });
+  } catch (err) {
+    console.error('[migrate] fatal:', err);
+    return jsonResp(500, { error: err.message || 'Internal error' });
+  }
 };
 
 function jsonResp(statusCode, body) {

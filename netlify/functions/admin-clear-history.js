@@ -33,6 +33,10 @@ async function execRaw(stmt) {
 }
 
 exports.handler = async (event) => {
+  // Outer try/catch: any unexpected throw (bad event shape, neon import
+  // failure, AbortController fail) becomes a 500 with a real message
+  // rather than a 502 empty body from Netlify's default handler.
+  try {
   const params = event.queryStringParameters || {};
   const supplied = params.key || '';
   const expected = process.env.ADMIN_PASSWORD || '';
@@ -106,6 +110,10 @@ exports.handler = async (event) => {
     scanTriggered,
     results,
   });
+  } catch (err) {
+    console.error('[admin-clear-history] fatal:', err);
+    return jsonResp(500, { error: err.message || 'Internal error' });
+  }
 };
 
 function jsonResp(statusCode, body) {

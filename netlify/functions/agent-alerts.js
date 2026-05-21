@@ -87,6 +87,14 @@ function buildSharpMoveHtml(alert, dashboardUrl) {
 }
 
 async function processAlert(alert, report) {
+  // Mark processed FIRST. If the function crashes mid-email-loop, the
+  // alert stays marked processed — a missed email is strictly better
+  // than spamming the user with duplicates on the next cron tick.
+  // (Previously this UPDATE was at the bottom of the function, so a
+  // mid-send crash would re-process the same alert and re-email
+  // everyone on the recipient list.)
+  await sql()`UPDATE agent_alerts SET processed = TRUE WHERE id = ${alert.id}`;
+
   // Fan out to user inboxes.
   const inserted = await fanoutToUsers(alert);
   report.userAlertsCreated += inserted;
@@ -131,7 +139,8 @@ async function processAlert(alert, report) {
     }
   }
 
-  await sql()`UPDATE agent_alerts SET processed = TRUE WHERE id = ${alert.id}`;
+  // processed flag was set at the top of this function (claim-first
+  // semantics) — nothing more to do.
 }
 
 async function runFanout() {

@@ -172,17 +172,34 @@ async function pickAndEmail() {
   report.picked = true;
   report.bet = { ...bet };
 
-  await createAgentAlert({
-    type: 'BEST_BET_SELECTED',
-    fixtureId: null,
-    league: p.league,
-    message: `⭐ Best bet today: ${p.home_team} vs ${p.away_team} — OVER ${p.over_line} @ ${p.over_confidence}% confidence`,
-    severity: 'HIGH',
-    data: bet,
-  });
+  // Dedupe today's BEST_BET_SELECTED alert. Manual admin re-runs (or a
+  // schedule + manual same-day combo) would otherwise spam the alert
+  // feed and email everyone twice. We check by ISO date so the daily
+  // cron at 07:00 UTC and any manual trigger within the same UTC day
+  // collapse to one alert + one email blast.
+  const existingTodayAlert = await sql()`
+    SELECT 1 FROM agent_alerts
+    WHERE type = 'BEST_BET_SELECTED'
+      AND created_at::date = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date
+    LIMIT 1`;
+  const alreadyEmittedToday = existingTodayAlert.length > 0;
+  if (!alreadyEmittedToday) {
+    await createAgentAlert({
+      type: 'BEST_BET_SELECTED',
+      fixtureId: null,
+      league: p.league,
+      message: `⭐ Best bet today: ${p.home_team} vs ${p.away_team} — OVER ${p.over_line} @ ${p.over_confidence}% confidence`,
+      severity: 'HIGH',
+      data: bet,
+    });
+  } else {
+    console.log('[agent-best-bet] BEST_BET_SELECTED already emitted today — skipping alert + email');
+  }
+  report.alertSkipped = alreadyEmittedToday;
 
-  // Mail to all paid users with email_notifications on.
-  if (emailConfigured()) {
+  // Mail to all paid users with email_notifications on — only when we
+  // actually emitted the alert above (skip on a same-day re-run).
+  if (!alreadyEmittedToday && emailConfigured()) {
     const recipients = await sql()`
       SELECT id, email FROM users
       WHERE tier IN ('ANALYST', 'EDGE') AND email_notifications = TRUE`;
