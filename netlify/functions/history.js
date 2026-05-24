@@ -40,24 +40,57 @@ async function getHistory(event) {
   const qs = event.queryStringParameters || {};
   const { since, label: windowLabel } = resolveWindow(qs.window, user.tier);
 
-  // Excluded from accuracy stats because we never surfaced this as a pick.
-  // Hidden ≠ wrong. When BOTH calibrated/raw confidences are <60 the
-  // MatchCard renders a neutral "AI not confident — skip" chip and never
-  // shows a prediction badge, so it would be unfair to count those rows
-  // against (or for) the model's hit rate. We still keep the rows in the
-  // table for audit; we just filter them out here.
-  const predictions = await sql()`
-    SELECT id, league, fixture_id, home_team, away_team, kickoff,
-           over_line, over_confidence, over_hit, btts, btts_confidence, btts_hit
-    FROM predictions
-    WHERE user_id = ${user.id} AND created_at >= ${since.toISOString()}
-      AND (over_confidence >= 60 OR btts_confidence >= 60)
-    ORDER BY kickoff DESC`;
+  // MLS-only build: predictions are shared across all users (the scan
+  // stores them against the first admin's user_id as an owner; everyone
+  // reads the same rows). Filter by league instead of user_id so a user
+  // who DIDN'T own the scan still sees the results. Matches the
+  // /api/predictions/week shape used by Dashboard.
+  //
+  // The confidence filter has been split: we no longer drop low-confidence
+  // rows from the SELECT, because that hides recovered rows (which have
+  // confidence=0 as a "no AI prediction" sentinel) from the Results
+  // table. Instead we keep all rows here and apply the confidence floor
+  // only to the hit-rate math below — so recovered rows show up in the
+  // Recent list with their FT score but don't pollute the calibration
+  // numbers.
+  void user;
+  // Try with home_goals/away_goals (added in run-migration.sql). On
+  // 42703 fall back to the legacy column set — recovered rows still
+  // surface, the FT score chip just won't render until migration runs.
+  let predictions;
+  try {
+    predictions = await sql()`
+      SELECT id, league, fixture_id, home_team, away_team, kickoff,
+             over_line, over_confidence, over_hit, btts, btts_confidence, btts_hit,
+             match_data, home_goals, away_goals
+      FROM predictions
+      WHERE league = 'MLS' AND kickoff >= ${since.toISOString()}
+      ORDER BY kickoff DESC`;
+  } catch (err) {
+    if (err && (err.code === '42703' || /column .* does not exist/i.test(err.message || ''))) {
+      predictions = await sql()`
+        SELECT id, league, fixture_id, home_team, away_team, kickoff,
+               over_line, over_confidence, over_hit, btts, btts_confidence, btts_hit,
+               match_data
+        FROM predictions
+        WHERE league = 'MLS' AND kickoff >= ${since.toISOString()}
+        ORDER BY kickoff DESC`;
+    } else {
+      throw err;
+    }
+  }
+
+  // Rate-eligible rows: rows with a real AI prediction (confidence >= 60
+  // on at least one market). Recovered placeholder rows are excluded
+  // here so they don't fake the model's accuracy.
+  const rateEligible = predictions.filter(
+    (p) => Number(p.over_confidence) >= 60 || Number(p.btts_confidence) >= 60,
+  );
 
   // Settled = has a Boolean result on either side. Pending = neither yet.
-  const overSettled = predictions.filter((p) => p.over_hit !== null);
+  const overSettled = rateEligible.filter((p) => p.over_hit !== null);
   const overHits = overSettled.filter((p) => p.over_hit === true).length;
-  const bttsSettled = predictions.filter((p) => p.btts_hit !== null);
+  const bttsSettled = rateEligible.filter((p) => p.btts_hit !== null);
   const bttsHits = bttsSettled.filter((p) => p.btts_hit === true).length;
 
   const totalSettledRows = predictions.filter(
@@ -142,18 +175,35 @@ async function getHistory(event) {
     recent: predictions
       .filter((p) => p.over_hit !== null || p.btts_hit !== null)
       .slice(0, 50)
-      .map((p) => ({
-        id: p.id,
-        date: p.kickoff,
-        league: p.league,
-        match: `${p.home_team} vs ${p.away_team}`,
-        overLine: p.over_line,
-        overConfidence: p.over_confidence,
-        overHit: p.over_hit,
-        btts: p.btts,
-        bttsConfidence: p.btts_confidence,
-        bttsHit: p.btts_hit,
-      })),
+      .map((p) => {
+        // Detect recovered rows via the match_data.recovered flag set by
+        // /api/admin/recover-history. The frontend renders these with a
+        // distinct "RECOVERED · NO AI PREDICTION" badge so the user
+        // knows the score is real but the AI call is a placeholder.
+        let recovered = false;
+        try {
+          const md = typeof p.match_data === 'string' ? JSON.parse(p.match_data) : (p.match_data || {});
+          recovered = !!(md && md.recovered);
+        } catch { /* ignore */ }
+        return {
+          id: p.id,
+          date: p.kickoff,
+          league: p.league,
+          match: `${p.home_team} vs ${p.away_team}`,
+          overLine: p.over_line,
+          overConfidence: p.over_confidence,
+          overHit: p.over_hit,
+          btts: p.btts,
+          bttsConfidence: p.btts_confidence,
+          bttsHit: p.btts_hit,
+          // Real goal counts when available — populated by the upgraded
+          // settle path and by /api/admin/recover-history. Lets the
+          // Results card render "FT 2-1" alongside the AI verdict.
+          homeGoals: p.home_goals != null ? Number(p.home_goals) : null,
+          awayGoals: p.away_goals != null ? Number(p.away_goals) : null,
+          recovered,
+        };
+      }),
   });
 }
 
@@ -170,12 +220,16 @@ async function getCalibration(event) {
   const gate = requireTier(user, 'ANALYST');
   if (gate) return gate;
 
-  // Excluded from accuracy stats because we never surfaced this as a pick.
-  // Hidden ≠ wrong. Same filter as getHistory() above.
+  // MLS-only shared scan rows — filter by league, not user_id (matches
+  // getHistory above). Keep the >=60 confidence filter here because
+  // the calibration chart's whole point is the model's prediction
+  // accuracy vs claimed confidence; recovered placeholder rows with
+  // confidence=0 would skew the buckets.
+  void user;
   const rows = await sql()`
     SELECT over_confidence, over_hit, btts_confidence, btts_hit
     FROM predictions
-    WHERE user_id = ${user.id}
+    WHERE league = 'MLS'
       AND (over_hit IS NOT NULL OR btts_hit IS NOT NULL)
       AND (over_confidence >= 60 OR btts_confidence >= 60)`;
 
@@ -259,10 +313,11 @@ async function getStreak(event) {
   // Fallback: AI prediction hits for picks we actually surfaced (conf >= 60).
   // A row counts as a "hit" if either market hit. A row breaks the streak
   // when neither market hit (both false) — pending rows are ignored.
+  // Shared-scan model: filter by league, not user_id.
   const predRows = await sql()`
     SELECT over_hit, btts_hit, over_confidence, btts_confidence
     FROM predictions
-    WHERE user_id = ${user.id}
+    WHERE league = 'MLS'
       AND (over_hit IS NOT NULL OR btts_hit IS NOT NULL)
       AND (over_confidence >= 60 OR btts_confidence >= 60)
     ORDER BY kickoff DESC

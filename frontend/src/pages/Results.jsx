@@ -30,18 +30,26 @@ function formatRowDate(raw) {
 }
 
 function ResultCard({ row }) {
+  // Recovered rows have no real AI prediction — they're score-only
+  // placeholders from /api/admin/recover-history. Render them with a
+  // distinct chip + just the score; no "OVER 2.5 · 0%" badge because
+  // that confidence wasn't a real AI call.
+  const isRecovered = !!row.recovered;
+
   // Pick the call we have a settlement for. Prefer the one with the
   // higher confidence so we surface the AI's strongest take.
   const overConf = row.overConfidence;
   const bttsConf = row.bttsConfidence;
   let pickLabel = '—';
   let pickHit = null;
-  if (overConf != null && (bttsConf == null || overConf >= bttsConf)) {
-    pickLabel = `OVER ${row.overLine ?? 2.5} · ${overConf}%`;
-    pickHit = row.overHit;
-  } else if (bttsConf != null) {
-    pickLabel = `BTTS ${row.btts || 'YES'} · ${bttsConf}%`;
-    pickHit = row.bttsHit;
+  if (!isRecovered) {
+    if (overConf != null && (bttsConf == null || overConf >= bttsConf)) {
+      pickLabel = `OVER ${row.overLine ?? 2.5} · ${overConf}%`;
+      pickHit = row.overHit;
+    } else if (bttsConf != null) {
+      pickLabel = `BTTS ${row.btts || 'YES'} · ${bttsConf}%`;
+      pickHit = row.bttsHit;
+    }
   }
 
   const ft =
@@ -51,7 +59,13 @@ function ResultCard({ row }) {
       : null);
 
   return (
-    <div className="card" style={{ padding: 18 }}>
+    <div
+      className="card"
+      style={{
+        padding: 18,
+        opacity: isRecovered ? 0.85 : 1,
+      }}
+    >
       <div
         className="mono"
         style={{
@@ -59,9 +73,27 @@ function ResultCard({ row }) {
           color: 'var(--text-3)',
           letterSpacing: '0.08em',
           marginBottom: 8,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
         }}
       >
-        {formatRowDate(row.date)}
+        <span>{formatRowDate(row.date)}</span>
+        {isRecovered && (
+          <span
+            style={{
+              fontSize: 9,
+              padding: '2px 6px',
+              borderRadius: 3,
+              background: 'rgba(251,191,36,0.12)',
+              color: 'var(--amber)',
+              border: '1px solid rgba(251,191,36,0.3)',
+              letterSpacing: '0.08em',
+            }}
+          >
+            RECOVERED
+          </span>
+        )}
       </div>
       <div
         className="display"
@@ -82,9 +114,25 @@ function ResultCard({ row }) {
           alignItems: 'center',
         }}
       >
-        <span className="badge badge-mint" style={{ fontSize: 11 }}>
-          {pickLabel}
-        </span>
+        {isRecovered ? (
+          <span
+            className="mono"
+            style={{
+              fontSize: 11,
+              color: 'var(--text-3)',
+              padding: '4px 10px',
+              background: 'var(--bg-2)',
+              borderRadius: 6,
+              fontStyle: 'italic',
+            }}
+          >
+            no AI prediction
+          </span>
+        ) : (
+          <span className="badge badge-mint" style={{ fontSize: 11 }}>
+            {pickLabel}
+          </span>
+        )}
         {ft && (
           <span
             className="mono"
@@ -99,7 +147,7 @@ function ResultCard({ row }) {
             {ft}
           </span>
         )}
-        {pickHit === true && (
+        {!isRecovered && pickHit === true && (
           <span
             className="mono"
             style={{
@@ -113,7 +161,7 @@ function ResultCard({ row }) {
             <Icon name="check" size={13} color="var(--mint)" /> HIT
           </span>
         )}
-        {pickHit === false && (
+        {!isRecovered && pickHit === false && (
           <span
             className="mono"
             style={{
