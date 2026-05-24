@@ -56,7 +56,7 @@ const BANNERS = [
     body:
       '100+ page complete guide to profitable sports betting. EV, Kelly, value betting, bankroll management. €9.99 one-time.',
     cta: 'Get the Guide →',
-    small: 'Includes lifetime PRO access once app fully launches',
+    small: 'PDF + EPUB · 12 chapters · One-time purchase',
     accent: '#818cf8', // indigo
     bgTint: 'rgba(129,140,248,0.05)',
     action: 'route',

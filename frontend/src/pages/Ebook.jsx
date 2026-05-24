@@ -4,9 +4,11 @@ import { isSharp, useAuth } from '../context/AuthContext.jsx';
 
 // Ebook landing page — "The FastScore Betting Bible".
 // Linked from the PromoBanner (Banner #2) and from the sidebar under
-// "How It Works". Pre-launch: the Buy Now button points to # —
-// swap to the real Gumroad URL once the ebook is live.
-const EBOOK_PURCHASE_URL = '#';
+// "How It Works". Buy Now → Whop checkout — same flow as PRO so the
+// receipt + delivery email is handled by the existing webhook.
+// PRO subscribers DO still pay for the ebook (separate product, not
+// bundled with the subscription).
+const EBOOK_PURCHASE_URL = 'https://whop.com/checkout/plan_OKCKru0OMYLlY';
 
 const CHAPTERS = [
   { n: 1, t: 'Why most bettors lose', d: 'The math behind the bookmakers\' edge and why intuition fails.' },
@@ -165,24 +167,12 @@ export default function Ebook() {
                 href={EBOOK_PURCHASE_URL}
                 className="btn btn-primary"
                 style={{ textDecoration: 'none' }}
-                target={EBOOK_PURCHASE_URL.startsWith('#') ? undefined : '_blank'}
+                target="_blank"
                 rel="noopener noreferrer"
               >
                 Buy Now — €9.99 →
               </a>
-              {pro && (
-                <span
-                  className="mono"
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--mint)',
-                    letterSpacing: '0.06em',
-                  }}
-                >
-                  PRO SUBSCRIBERS GET THIS FREE — CHECK YOUR EMAIL
-                </span>
-              )}
-              {!pro && (
+              {pro ? (
                 <span
                   className="mono"
                   style={{
@@ -191,9 +181,13 @@ export default function Ebook() {
                     letterSpacing: '0.04em',
                   }}
                 >
-                  PRO subscribers get this free
+                  PRO subscriber? You still get the ebook at the same price — separate product.
                 </span>
-              )}
+              ) : null}
+              {/* Intentionally no "free with PRO" line — the ebook is
+                  a separate Whop product, not bundled with the
+                  subscription. The note above clarifies that for PRO
+                  visitors so they don't expect a freebie. */}
             </div>
           </div>
         </div>
@@ -302,7 +296,7 @@ export default function Ebook() {
             href={EBOOK_PURCHASE_URL}
             className="btn btn-primary"
             style={{ textDecoration: 'none' }}
-            target={EBOOK_PURCHASE_URL.startsWith('#') ? undefined : '_blank'}
+            target="_blank"
             rel="noopener noreferrer"
           >
             Buy Now →

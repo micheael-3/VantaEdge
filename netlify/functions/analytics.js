@@ -17,9 +17,25 @@
 const { sql } = require('./_shared/db');
 const { json, error, notFound, methodNotAllowed, parseBody, subPath } = require('./_shared/response');
 const { requireUser } = require('./_shared/auth-mw');
+const { ensureTable } = require('./_shared/ensure-table');
 
 const ALLOWED_EVENTS = new Set(['impression', 'click', 'dismiss']);
 const ALLOWED_BANNER_IDS = new Set(['pro_upgrade', 'ebook', 'affiliate', 'social_proof']);
+
+// Self-healing table guard — runs once per cold start. New deploys
+// where Neon hasn't been migrated yet still serve correctly because
+// the table materialises on first request. Idempotent (IF NOT EXISTS).
+const BANNER_EVENTS_DDL = [
+  `CREATE TABLE IF NOT EXISTS banner_events (
+     id         BIGSERIAL    PRIMARY KEY,
+     banner_id  TEXT         NOT NULL,
+     event      TEXT         NOT NULL,
+     user_tier  TEXT,
+     created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+   )`,
+  `CREATE INDEX IF NOT EXISTS banner_events_banner_event_idx ON banner_events(banner_id, event)`,
+  `CREATE INDEX IF NOT EXISTS banner_events_recent_idx ON banner_events(created_at DESC)`,
+];
 
 function isMissingTableErr(err) {
   return (
@@ -58,6 +74,9 @@ async function recordBannerEvent(event) {
   if (!ALLOWED_EVENTS.has(eventType)) return error(400, 'invalid event');
   if (!ALLOWED_BANNER_IDS.has(bannerId)) return error(400, 'invalid bannerId');
 
+  // Self-heal: create the table on first call after a deploy. Idempotent.
+  try { await ensureTable('banner_events', BANNER_EVENTS_DDL); } catch { /* fall through */ }
+
   const tier = await resolveTier(event, hint);
 
   try {
@@ -82,6 +101,8 @@ async function bannerStats(event) {
   const { res, user } = await requireUser(event);
   if (res) return res;
   if (!user || !user.is_admin) return error(403, 'Admin only');
+
+  try { await ensureTable('banner_events', BANNER_EVENTS_DDL); } catch { /* fall through */ }
 
   try {
     const rows = await sql()`

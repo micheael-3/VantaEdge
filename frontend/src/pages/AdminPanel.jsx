@@ -104,6 +104,10 @@ function StatsTab() {
   const [dedupState, setDedupState] = useState({ busy: false, message: '' });
   const [debugId, setDebugId] = useState('');
   const [debugState, setDebugState] = useState({ busy: false, message: '', result: null });
+  // Schema migration runner — POSTs /api/admin/migrate. Surfaces the
+  // per-statement results summary so the admin knows whether the new
+  // tables (banner_events, bet_tracker_blobs, etc.) actually landed.
+  const [migrateState, setMigrateState] = useState({ busy: false, message: '', summary: null });
 
   const loadStats = (cancelledRef) => {
     setLoading(true);
@@ -323,6 +327,28 @@ function StatsTab() {
     }
   };
 
+  // Run schema.sql against Neon. Safe — every statement is idempotent
+  // (IF NOT EXISTS / DO blocks). Surfaces failure counts inline so you
+  // know if something needs a manual fix.
+  const onMigrate = async () => {
+    if (migrateState.busy) return;
+    setMigrateState({ busy: true, message: 'Applying schema.sql to Neon…', summary: null });
+    try {
+      const r = await adminApi.migrate();
+      const s = r && r.summary ? r.summary : { total: 0, ok: 0, failed: 0 };
+      const detail = s.failed > 0
+        ? `Applied ${s.ok}/${s.total} statements · ${s.failed} failed — see Network tab for details.`
+        : `Applied ${s.ok}/${s.total} statements cleanly. New tables ready.`;
+      setMigrateState({ busy: false, message: detail, summary: s });
+    } catch (err) {
+      setMigrateState({
+        busy: false,
+        message: err?.response?.data?.error || err.message || 'Migration failed',
+        summary: null,
+      });
+    }
+  };
+
   if (loading) return <Loading label="Loading stats…" />;
   if (error) {
     return (
@@ -420,6 +446,57 @@ function StatsTab() {
           disabled={rescanState.busy}
         >
           {rescanState.busy ? 'Rescanning…' : 'Force Rescan'}
+        </button>
+      </div>
+
+      {/* Schema migration. POSTs schema.sql to Neon — every statement is
+          idempotent (IF NOT EXISTS / DO blocks) so this is safe to hit
+          any time a new table or column lands. Use this whenever the
+          app says "table missing — run schema.sql". */}
+      <div
+        className="card"
+        style={{
+          marginTop: 16,
+          padding: 16,
+          display: 'flex',
+          gap: 18,
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          borderColor: 'rgba(110,231,183,0.3)',
+        }}
+      >
+        <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em' }}>
+            RUN SCHEMA MIGRATION
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>
+            Apply <code>schema.sql</code> to Neon. Creates any missing tables (banner_events, bet_tracker_blobs, etc.) and adds new columns. Idempotent — safe to run every deploy.
+          </div>
+          {migrateState.message && (
+            <div
+              className="mono"
+              style={{
+                marginTop: 8,
+                fontSize: 11,
+                color: migrateState.summary && migrateState.summary.failed > 0
+                  ? 'var(--amber)'
+                  : migrateState.busy
+                    ? 'var(--mint)'
+                    : 'var(--text-3)',
+              }}
+            >
+              {migrateState.message}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          onClick={onMigrate}
+          disabled={migrateState.busy}
+        >
+          {migrateState.busy ? 'Migrating…' : 'Run Migration'}
         </button>
       </div>
 

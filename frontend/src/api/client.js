@@ -141,6 +141,11 @@ export const admin = {
   // sent to Claude. Used by the "Debug Fixture" UI in the admin panel.
   debugFixture: (fixtureId) =>
     api.get(`/api/admin/debug-fixture/${fixtureId}`).then((r) => r.data),
+  // Run the bundled schema.sql against Neon. Idempotent (every CREATE
+  // uses IF NOT EXISTS, every ALTER uses ADD COLUMN IF NOT EXISTS) so
+  // safe to hit any time a new schema lands. Powered by the existing
+  // splitter in admin.js — see runSchemaMigration there.
+  migrate: () => api.post('/api/admin/migrate').then((r) => r.data),
 };
 
 // Self-learning upgrade: AI persona + per-user feedback.

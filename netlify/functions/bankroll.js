@@ -2,6 +2,7 @@ const { sql } = require('./_shared/db');
 const { json, error, notFound, parseBody, subPath } = require('./_shared/response');
 const { requireUser } = require('./_shared/auth-mw');
 const { requireTier } = require('./_shared/tier');
+const { ensureTable } = require('./_shared/ensure-table');
 const {
   VALID_RESULTS,
   VALID_MARKETS,
@@ -10,6 +11,16 @@ const {
   shapeEntry,
   settlePendingEntry,
 } = require('./_shared/bankroll');
+
+// Self-healing DDL for the cross-device bet tracker blob. Runs once
+// per Lambda cold start the first time /bets is hit; idempotent.
+const BET_TRACKER_BLOBS_DDL = `
+  CREATE TABLE IF NOT EXISTS bet_tracker_blobs (
+    user_id    UUID         PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    bets       JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    updated_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  )
+`;
 
 const ALLOWED_CURRENCIES = new Set(['USD', 'GBP', 'EUR']);
 
@@ -269,6 +280,8 @@ async function getBets(event) {
   if (res) return res;
   const gate = requireTier(user, 'ANALYST');
   if (gate) return gate;
+  // Self-heal — first request after a deploy creates the table.
+  try { await ensureTable('bet_tracker_blobs', BET_TRACKER_BLOBS_DDL); } catch { /* fall through */ }
   try {
     const [row] = await sql()`
       SELECT bets, updated_at FROM bet_tracker_blobs WHERE user_id = ${user.id}`;
@@ -295,6 +308,7 @@ async function putBets(event) {
   const incoming = Array.isArray(body.bets) ? body.bets : null;
   if (!incoming) return error(400, 'bets must be an array');
   const bets = incoming.slice(0, MAX_BETS);
+  try { await ensureTable('bet_tracker_blobs', BET_TRACKER_BLOBS_DDL); } catch { /* fall through */ }
   try {
     await sql()`
       INSERT INTO bet_tracker_blobs (user_id, bets, updated_at)

@@ -12,6 +12,8 @@
 // wildcard /api/admin/* matches AFTER the more specific clear-history rule,
 // so this file never sees that path.
 
+const fs = require('fs');
+const path = require('path');
 const { sql } = require('./_shared/db');
 const { json, error, notFound, subPath, parseBody } = require('./_shared/response');
 const { requireUser } = require('./_shared/auth-mw');
@@ -740,6 +742,116 @@ async function setUserTier(event, userId) {
   return json(200, { user: rows[0] });
 }
 
+// ---------- POST /api/admin/migrate ----------
+//
+// Cookie-authed schema migration. Loads the bundled schema.sql and
+// applies every statement against Neon. Every CREATE/ALTER uses
+// IF NOT EXISTS and every DO block swallows duplicate_object, so this
+// is safe to run any time. Returns a summary + per-statement results
+// for the AdminPanel button.
+//
+// Why this exists alongside /api/migrate (key-authed) — that endpoint
+// requires the ADMIN_PASSWORD env var on the request URL, which is
+// awkward for a one-click admin button. This route uses the existing
+// session cookie + `is_admin` flag instead.
+function findLineCommentStart(line) {
+  let inQuote = false;
+  for (let i = 0; i < line.length - 1; i++) {
+    if (line[i] === "'") inQuote = !inQuote;
+    if (!inQuote && line[i] === '-' && line[i + 1] === '-') return i;
+  }
+  return -1;
+}
+
+// Smart SQL splitter — aware of $$...$$ PL/pgSQL blocks (so DO blocks
+// stay intact) and '...' string literals (so semicolons in comments
+// can't break statements in half). Copied from migrate.js so admin.js
+// stays self-contained.
+function splitSql(rawSql) {
+  const cleaned = rawSql
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trimStart();
+      if (trimmed.startsWith('--')) return '';
+      const idx = findLineCommentStart(line);
+      return idx >= 0 ? line.slice(0, idx) : line;
+    })
+    .join('\n');
+  const statements = [];
+  let buf = '';
+  let inDollar = false;
+  let inSingleQuote = false;
+  for (let i = 0; i < cleaned.length; i++) {
+    const c = cleaned[i];
+    const next = cleaned[i + 1];
+    if (!inSingleQuote && c === '$' && next === '$') {
+      inDollar = !inDollar;
+      buf += '$$';
+      i += 1;
+      continue;
+    }
+    if (!inDollar && c === "'") {
+      inSingleQuote = !inSingleQuote;
+      buf += c;
+      continue;
+    }
+    if (c === ';' && !inDollar && !inSingleQuote) {
+      const stmt = buf.trim();
+      if (stmt) statements.push(stmt);
+      buf = '';
+      continue;
+    }
+    buf += c;
+  }
+  const tail = buf.trim();
+  if (tail) statements.push(tail);
+  return statements;
+}
+
+async function execRawDdl(stmt) {
+  const sqlFn = sql();
+  const parts = [stmt];
+  parts.raw = [stmt];
+  return await sqlFn(parts);
+}
+
+async function runSchemaMigration() {
+  // schema.sql is bundled into the function via netlify.toml
+  // `included_files = ["netlify/functions/_shared/**", "schema.sql"]`.
+  // Probe both common paths to handle different Netlify runtime
+  // layouts (the file might land at the function root or two dirs up).
+  let schemaPath = path.join(__dirname, '..', '..', 'schema.sql');
+  if (!fs.existsSync(schemaPath)) {
+    const alt = path.join(__dirname, 'schema.sql');
+    if (fs.existsSync(alt)) {
+      schemaPath = alt;
+    } else {
+      return error(500, `schema.sql not found at ${schemaPath} or ${alt}`);
+    }
+  }
+  const rawSql = fs.readFileSync(schemaPath, 'utf8');
+  const statements = splitSql(rawSql);
+  const results = [];
+  let okCount = 0;
+  let failCount = 0;
+  for (const stmt of statements) {
+    const preview = stmt.replace(/\s+/g, ' ').slice(0, 120);
+    try {
+      await execRawDdl(stmt);
+      results.push({ ok: true, stmt: preview });
+      okCount += 1;
+    } catch (err) {
+      results.push({ ok: false, stmt: preview, error: err.message });
+      failCount += 1;
+    }
+  }
+  return json(200, {
+    summary: { total: statements.length, ok: okCount, failed: failCount },
+    schemaPath,
+    results,
+  });
+}
+
 exports.handler = async (event) => {
   try {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, body: '' };
@@ -815,6 +927,14 @@ exports.handler = async (event) => {
     if (method === 'GET' && (path === '/users' || path === '/users/')) return await listUsers();
     if (method === 'GET' && (path === '/stats' || path === '/stats/')) return await getStats();
     if (method === 'GET' && (path === '/predictions' || path === '/predictions/')) return await listPredictions();
+
+    // --- POST /migrate --- cookie-authed schema migration. Runs the
+    //     bundled schema.sql against Neon, statement by statement.
+    //     Every statement is idempotent (IF NOT EXISTS / DO blocks),
+    //     so safe to hit any time a new schema lands.
+    if (method === 'POST' && (path === '/migrate' || path === '/migrate/')) {
+      return await runSchemaMigration();
+    }
 
     return notFound();
   } catch (err) {
