@@ -25,7 +25,7 @@ const ALLOWED_PAGES = ['/results', '/history', '/affiliate', '/guide'];
 
 // Placeholder publisher ID. Mirrors the one in index.html — keep them
 // in sync when swapping in the real ca-pub-… string.
-const ADSENSE_CLIENT = 'ca-pub-XXXXXXXXXXXXXXXXX';
+const ADSENSE_CLIENT = 'ca-pub-7744414280223658';
 
 export default function AdUnit({ slot, format = 'auto' }) {
   const { user } = useAuth();
