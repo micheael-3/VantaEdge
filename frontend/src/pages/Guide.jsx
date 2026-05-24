@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
+import AdUnit from '../components/AdUnit.jsx';
 import { isSharp, useAuth } from '../context/AuthContext.jsx';
 import { openWhopCheckout } from '../lib/checkout.js';
 
@@ -66,6 +67,10 @@ export default function Guide({ openUpgrade }) {
             head-to-head, referee history) — not generic templated text.
           </Step>
         </Section>
+
+        {/* AdSense — mid-page slot between dashboard walkthrough and
+            tracker/results sections. Renders null for PRO users. */}
+        <AdUnit slot="4444444444" />
 
         <Section title="The Bet Tracker">
           <p style={p}>

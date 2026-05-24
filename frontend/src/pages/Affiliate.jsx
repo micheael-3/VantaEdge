@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Layout from '../components/Layout.jsx';
 import Icon from '../components/Icon.jsx';
 import Loading from '../components/Loading.jsx';
+import AdUnit from '../components/AdUnit.jsx';
 import { affiliate as affApi } from '../api/client.js';
 
 // Affiliate page — visual port of the design's affiliate.jsx, wired to
@@ -451,6 +452,10 @@ export default function Affiliate() {
                   </div>
                 </div>
               </div>
+
+              {/* AdSense — after the earnings calculator card, before
+                  the referral link grid. Renders null for PRO users. */}
+              <AdUnit slot="3333333333" />
 
               {/* Your link + stats */}
               <div

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout.jsx';
 import Loading from '../components/Loading.jsx';
 import Icon from '../components/Icon.jsx';
+import AdUnit from '../components/AdUnit.jsx';
 import { history as historyApi } from '../api/client.js';
 
 // Results page — the "proof it works" view. Shows the last 7 days'
@@ -282,6 +283,10 @@ export default function Results() {
                 </span>
               </div>
             )}
+
+            {/* AdSense — after the summary chip, before the match list.
+                Renders null for PRO users via isSharp() check inside. */}
+            <AdUnit slot="1111111111" />
 
             {recent.length === 0 ? (
               <div className="empty-state">

@@ -3,6 +3,7 @@ import Layout from '../components/Layout.jsx';
 import Icon from '../components/Icon.jsx';
 import LockedOverlay from '../components/LockedOverlay.jsx';
 import Loading from '../components/Loading.jsx';
+import AdUnit from '../components/AdUnit.jsx';
 import { isSharp, useAuth } from '../context/AuthContext.jsx';
 import { history as historyApi } from '../api/client.js';
 
@@ -299,6 +300,10 @@ export default function History() {
                   />
                 )}
               </div>
+
+              {/* AdSense — after the 4 stat cards, before Rolling Accuracy.
+                  PRO users see nothing; the component returns null. */}
+              <AdUnit slot="2222222222" />
 
               <div
                 className="card"
