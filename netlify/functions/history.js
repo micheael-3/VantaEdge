@@ -100,11 +100,20 @@ async function getHistory(event) {
     (a, b) => new Date(b.kickoff) - new Date(a.kickoff),
   );
 
-  // Rate-eligible rows: rows with a real AI prediction (confidence >= 60
-  // on at least one market). Recovered placeholder rows are excluded
-  // here so they don't fake the model's accuracy.
+  // Rate-eligible rows: every prediction that has a real AI verdict.
+  // The "real" filter is the confidence sentinel — recovered placeholder
+  // rows from /api/admin/recover-history have confidence = 0 and should
+  // stay out of the hit-rate math. Everything else counts, including
+  // 53-58% picks, because the dashboard renders them and they reflect
+  // real model output.
+  //
+  // (Previous filter required confidence >= 60. That was right when
+  // MatchCard hid sub-60 cards from the dashboard, so they didn't show
+  // up as "picks the AI made". MatchCard now renders down to 50, so the
+  // filter was hiding 10 of every 12 settled rows from the stats while
+  // leaving them visible in the Recent table — wildly inconsistent.)
   const rateEligible = uniquePredictions.filter(
-    (p) => Number(p.over_confidence) >= 60 || Number(p.btts_confidence) >= 60,
+    (p) => Number(p.over_confidence) > 0 || Number(p.btts_confidence) > 0,
   );
 
   // Settled = has a Boolean result on either side. Pending = neither yet.
@@ -241,17 +250,17 @@ async function getCalibration(event) {
   if (gate) return gate;
 
   // MLS-only shared scan rows — filter by league, not user_id (matches
-  // getHistory above). Keep the >=60 confidence filter here because
-  // the calibration chart's whole point is the model's prediction
-  // accuracy vs claimed confidence; recovered placeholder rows with
-  // confidence=0 would skew the buckets.
+  // getHistory above). Exclude only the recovered placeholder rows
+  // (confidence = 0) — they have no AI verdict to evaluate. Every real
+  // AI prediction counts in the calibration buckets, even 53-58% picks,
+  // so the bucket centred on "50-60" actually has samples.
   void user;
   const rows = await sql()`
     SELECT over_confidence, over_hit, btts_confidence, btts_hit
     FROM predictions
     WHERE league = 'MLS'
       AND (over_hit IS NOT NULL OR btts_hit IS NOT NULL)
-      AND (over_confidence >= 60 OR btts_confidence >= 60)`;
+      AND (over_confidence > 0 OR btts_confidence > 0)`;
 
   // Build empty bucket scaffolds so the chart always renders five bars
   // (including ones with zero samples — they just render as 0%).
@@ -330,16 +339,16 @@ async function getStreak(event) {
     return json(200, { streak, source: 'bankroll' });
   }
 
-  // Fallback: AI prediction hits for picks we actually surfaced (conf >= 60).
-  // A row counts as a "hit" if either market hit. A row breaks the streak
+  // Fallback: AI prediction hits across every real settled pick.
+  // Excludes only recovered placeholder rows (confidence = 0). A row
+  // counts as a "hit" if either market hit. A row breaks the streak
   // when neither market hit (both false) — pending rows are ignored.
-  // Shared-scan model: filter by league, not user_id.
   const predRows = await sql()`
     SELECT over_hit, btts_hit, over_confidence, btts_confidence
     FROM predictions
     WHERE league = 'MLS'
       AND (over_hit IS NOT NULL OR btts_hit IS NOT NULL)
-      AND (over_confidence >= 60 OR btts_confidence >= 60)
+      AND (over_confidence > 0 OR btts_confidence > 0)
     ORDER BY kickoff DESC
     LIMIT 100`;
   for (const r of predRows) {
