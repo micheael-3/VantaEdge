@@ -100,14 +100,20 @@ export default function PredictionRow({
   const label = confidenceLabel(pct);
 
   // Color treatment for the label chip.
+  //   70+        → mint (Strong / Very Strong)
+  //   65-69      → amber (Good)
+  //   55-64      → soft slate (Decent)
   let chipBg = 'transparent';
   let chipColor = 'var(--text-2)';
   if (pct >= 70) {
     chipBg = 'rgba(110,231,183,0.15)';
     chipColor = 'var(--mint)';
-  } else if (pct >= 60) {
+  } else if (pct >= 65) {
     chipBg = 'rgba(251,191,36,0.15)';
     chipColor = 'var(--amber)';
+  } else if (pct >= 55) {
+    chipBg = 'var(--bg-2)';
+    chipColor = 'var(--text-2)';
   }
 
   const onHelpClick = () => {
@@ -220,9 +226,17 @@ export default function PredictionRow({
               </span>
             )}
           </div>
-          {/* Middle line: % + label chip */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="mono" style={{ fontSize: 13, color: 'var(--text-2)' }}>
+          {/* Middle line: large bold % + label chip */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span
+              className="mono"
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                color: 'var(--text)',
+                lineHeight: 1,
+              }}
+            >
               {pct}%
             </span>
             {label && (

@@ -1,10 +1,17 @@
 import { useEffect, useRef } from 'react';
 
-// 11+ day pill strip. Each pill: 64px wide, weekday (9px mono) above
-// day-of-month (20px Syne) above a 4px dot (mint = has matches).
-// Selected pill: rgba(110,231,183,0.08) bg + mint border.
+// 10-pill horizontal calendar strip: 3 past + today + 6 ahead.
+// Each pill: 64px wide, weekday (9px mono) above day-of-month (20px Syne)
+// above a 4px dot. Auto-scrolls to centre today on mount.
 //
-// Accepts the backend shape from /api/predictions/upcoming/253:
+// State visual treatment (spec: mobile UI polish round):
+//   - selected            → mint border + mint-tinted fill, mint text/dot
+//   - today (unselected)  → solid card bg, mint text + mint dot
+//   - past (clickable)    → muted opacity, grey text
+//   - future no matches   → grey text, no dot
+//   - future has matches  → muted grey dot accent below date
+//
+// Accepts:
 //   days: [{ date: 'YYYY-MM-DD', count, label, isToday, isPast }]
 export default function CalendarStrip({ days, activeDate, onSelect }) {
   const stripRef = useRef(null);
@@ -30,9 +37,10 @@ export default function CalendarStrip({ days, activeDate, onSelect }) {
       role="tablist"
       aria-label="Match calendar"
     >
-      {days.slice(0, 15).map((d) => {
+      {days.map((d) => {
         const isActive = activeDate === d.date;
-        const sel = isActive || (!activeDate && d.isToday);
+        const isToday = !!d.isToday;
+        const isPast = !!d.isPast;
         const hasMatches = (d.count || 0) > 0;
         let weekday = '';
         let dayNum = '';
@@ -45,29 +53,54 @@ export default function CalendarStrip({ days, activeDate, onSelect }) {
         } catch {
           dayNum = (d.date || '').slice(-2);
         }
+
+        // Background / border state machine.
+        const background = isActive
+          ? 'rgba(110,231,183,0.10)'
+          : isToday
+            ? 'rgba(110,231,183,0.04)'
+            : 'transparent';
+        const borderColor = isActive
+          ? 'rgba(110,231,183,0.5)'
+          : isToday
+            ? 'rgba(110,231,183,0.35)'
+            : 'var(--border-soft)';
+
+        // Text colours.
+        const weekdayColor = isActive || isToday
+          ? 'var(--mint)'
+          : isPast
+            ? 'var(--text-faint)'
+            : 'var(--text-3)';
+        const dayNumColor = isActive || isToday
+          ? 'var(--text)'
+          : isPast
+            ? 'var(--text-3)'
+            : 'var(--text-2)';
+
+        // Dot colour: mint on today/active when matches exist, grey when
+        // matches exist on any other day, transparent placeholder when none.
+        const dotBg = hasMatches
+          ? isActive || isToday
+            ? 'var(--mint)'
+            : 'var(--text-faint)'
+          : 'transparent';
+
         return (
           <button
             key={d.date}
             type="button"
-            ref={d.isToday ? todayRef : undefined}
+            ref={isToday ? todayRef : undefined}
             onClick={() => onSelect && onSelect(d.date)}
             role="tab"
-            aria-selected={sel}
+            aria-selected={isActive}
             title={`${d.count || 0} matches on ${d.label || d.date}`}
             style={{
               flexShrink: 0,
               width: 64,
               padding: '10px 8px',
-              border:
-                '1px solid ' +
-                (sel
-                  ? 'rgba(110,231,183,0.35)'
-                  : 'var(--border-soft)'),
-              background: sel
-                ? 'rgba(110,231,183,0.08)'
-                : d.isToday
-                ? 'var(--card)'
-                : 'transparent',
+              border: `1px solid ${borderColor}`,
+              background,
               borderRadius: 10,
               display: 'flex',
               flexDirection: 'column',
@@ -75,6 +108,7 @@ export default function CalendarStrip({ days, activeDate, onSelect }) {
               gap: 4,
               transition: 'all 0.15s',
               cursor: 'pointer',
+              opacity: isPast && !isActive ? 0.65 : 1,
             }}
           >
             <span
@@ -82,23 +116,19 @@ export default function CalendarStrip({ days, activeDate, onSelect }) {
               style={{
                 fontSize: 9,
                 letterSpacing: '0.08em',
-                color: sel
-                  ? 'var(--mint)'
-                  : d.isToday
-                  ? 'var(--text)'
-                  : 'var(--text-3)',
+                color: weekdayColor,
                 whiteSpace: 'nowrap',
               }}
             >
               {weekday}
-              {d.isToday ? ' · TODAY' : ''}
             </span>
             <span
               className="display"
               style={{
                 fontSize: 20,
                 fontWeight: 600,
-                color: sel || d.isToday ? 'var(--text)' : 'var(--text-2)',
+                color: dayNumColor,
+                lineHeight: 1,
               }}
             >
               {dayNum}
@@ -108,12 +138,9 @@ export default function CalendarStrip({ days, activeDate, onSelect }) {
                 width: 4,
                 height: 4,
                 borderRadius: '50%',
-                background: hasMatches
-                  ? sel
-                    ? 'var(--mint)'
-                    : 'var(--text-3)'
-                  : 'transparent',
+                background: dotBg,
               }}
+              aria-hidden="true"
             />
           </button>
         );

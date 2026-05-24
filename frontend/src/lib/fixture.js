@@ -69,13 +69,20 @@ export function agentScore(fixture) {
 // Used to render a small mono uppercase chip next to the confidence %.
 //   80+ → 'Very Strong Pick'
 //   70-79 → 'Strong Pick'
-//   60-69 → 'Good Pick'
-//   <60  → null  (the whole match is hidden by MatchCard)
+//   65-69 → 'Good Pick'
+//   55-64 → 'Decent Pick'
+//   <55  → null  (the whole match is hidden by MatchCard)
+//
+// Threshold lowered from <60 to <55 in the mobile UI polish round so
+// borderline picks still surface with an honest "Decent" label rather
+// than being silently hidden — keeps the dashboard from looking empty
+// on quieter matchdays.
 export function confidenceLabel(conf) {
-  if (typeof conf !== 'number' || conf < 60) return null;
+  if (typeof conf !== 'number' || conf < 55) return null;
   if (conf >= 80) return 'Very Strong Pick';
   if (conf >= 70) return 'Strong Pick';
-  return 'Good Pick';
+  if (conf >= 65) return 'Good Pick';
+  return 'Decent Pick';
 }
 
 // Translate "Over X.5" → "More than X goals" plain English. Used in the

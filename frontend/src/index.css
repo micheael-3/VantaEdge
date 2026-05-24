@@ -164,22 +164,26 @@ a { color: inherit; text-decoration: none; }
   transition: width 1.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* ---------- Form dots (W / D / L) ---------- */
+/* ---------- Form dots (W / D / L) ----------
+   22px squares, 4px gap (set by parent flex container). Mono numerals
+   inside; states are W=mint, D=amber, L=red, plus an empty placeholder
+   "?" used when the feed returns fewer than 5 games. */
 .form-dot {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border-radius: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
   line-height: 1;
 }
 .form-dot.W { background: rgba(110, 231, 183, 0.15); color: var(--mint);  border: 1px solid rgba(110, 231, 183, 0.30); }
 .form-dot.D { background: rgba(251, 191,  36, 0.12); color: var(--amber); border: 1px solid rgba(251, 191,  36, 0.25); }
 .form-dot.L { background: rgba(239,  68,  68, 0.12); color: var(--red);   border: 1px solid rgba(239,  68,  68, 0.25); }
+.form-dot.empty { background: var(--bg-2); color: var(--text-faint); border: 1px solid var(--border-soft); }
 
 /* ---------- Buttons ---------- */
 .btn {
@@ -975,25 +979,15 @@ table.tbl tr:last-child td { border-bottom: none; }
   display: none;
 }
 
-/* Mobile sidebar */
-@media (max-width: 720px) {
+/* Mobile sidebar — hidden entirely below the bottom-nav breakpoint
+   (767px) since the hamburger was removed in the mobile UI polish.
+   Bottom nav handles all primary navigation; sidebar is desktop-only. */
+@media (max-width: 767px) {
   .sb {
-    position: fixed;
-    top: 0;
-    left: 0;
-    transform: translateX(-110%);
-    transition: transform 0.25s ease;
-    height: 100vh;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    display: none;
   }
-  .sb.sb-open { transform: translateX(0); }
   .sb-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(2px);
-    z-index: 35;
+    display: none;
   }
   .app-main {
     padding: 56px 16px 24px;
@@ -1055,15 +1049,18 @@ table.tbl tr:last-child td { border-bottom: none; }
   input, select, textarea { font-size: 16px; }
 }
 
-/* Bottom navigation (mobile only) */
+/* Bottom navigation (mobile only).
+   Restyled per the mobile UI polish: solid #0a0a0f bg (vs old translucent
+   var(--bg-2)), 1px hairline top border, 56px tall + iOS safe area,
+   22px icons, 10px mono caps labels, mint when active. */
 .bottom-nav {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 60px;
-  background: var(--bg-2);
-  border-top: 1px solid var(--border-soft);
+  height: 56px;
+  background: #0a0a0f;
+  border-top: 1px solid #1c1c26;
   display: flex;
   z-index: 50;
   padding-bottom: env(safe-area-inset-bottom);
@@ -1081,12 +1078,100 @@ table.tbl tr:last-child td { border-bottom: none; }
   letter-spacing: 0.05em;
   text-decoration: none;
   min-height: 48px;
+  transition: color 0.15s ease;
 }
 .bottom-nav .tab.active { color: var(--mint); }
-.bottom-nav .tab .ico { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; }
+.bottom-nav .tab .ico { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; }
 @media (min-width: 768px) { .bottom-nav { display: none; } }
 @media (max-width: 767px) {
-  .app-main { padding-bottom: calc(60px + env(safe-area-inset-bottom)) !important; }
+  /* 80px scroll bottom padding (spec) — 56 nav + safe-area + a little
+     breathing room so the last card never hides behind the bar. */
+  .app-main { padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important; }
+}
+
+/* Top progress bar (2px mint) — used by Dashboard while a background
+   scan runs. Replaces the old full-screen "Scanning…" card so cached
+   cards stay visible underneath. */
+.top-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: transparent;
+  z-index: 80;
+  overflow: hidden;
+  pointer-events: none;
+}
+.top-progress-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 30%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--mint), transparent);
+  animation: progress-slide 1.4s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* 200ms opacity fade-in for the children wrapper when the route changes.
+   Layout keys this div by location.pathname so React remounts it on every
+   nav, replaying the keyframe and giving bottom-nav tab switches a smooth
+   feel without a route-transition library. */
+@keyframes tab-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.tab-fade { animation: tab-fade-in 200ms ease-out both; }
+
+/* Subtle card shadow on every .card — makes cards feel elevated. */
+.card { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
+
+/* Pull-to-refresh indicator pill. Anchored to the top-centre of the
+   viewport and translates downward following the drag distance. The
+   parent component handles transform/opacity inline. */
+.ptr-indicator {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.ptr-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--mint);
+  border-radius: 999px;
+  animation: spin 0.9s linear infinite;
+  display: inline-block;
+}
+
+/* High-confidence card tint (≥75% on either market). Spec: barely
+   visible gradient at the top, fades to var(--card). Applied via the
+   `card-strong` class added by MatchCard when the calibrated confidence
+   on either market crosses the threshold. */
+.card-strong {
+  background:
+    linear-gradient(180deg, rgba(110, 231, 183, 0.04) 0%, transparent 40%),
+    var(--card);
 }
 
 /* App top bar — hidden on desktop, sticky to top on mobile.
@@ -1138,13 +1223,14 @@ table.tbl tr:last-child td { border-bottom: none; }
   /* Reclaim mobile main padding now that we have a sticky bar at top */
   .app-main { padding-top: 56px; }
 
-  /* Tighten dashboard typography on mobile. The inline h1 fontSize:36
-     was eating the top half of the viewport — override via class so
-     the page feels more solid. Also collapses the redundant
-     "Last scanned" sub-line on small screens; it's surfaced in
-     desktop / can be re-introduced as a chip if needed. */
-  .dash-page-title { font-size: 26px !important; line-height: 1.15 !important; }
+  /* Tighten dashboard typography on mobile. 28px Syne bold per the
+     mobile UI polish spec — the inline 36px hero size was eating the
+     top half of the viewport. */
+  .dash-page-title { font-size: 28px !important; line-height: 1.15 !important; }
   .dash-page-sub { font-size: 11px !important; }
+  /* 12px gap between cards (was 16px on desktop). The .mc-grid class
+     is what Dashboard sets on the container. */
+  .mc-grid { gap: 12px !important; }
 }
 
 /* Upgrade modal — centered card on desktop, bottom sheet on mobile. */

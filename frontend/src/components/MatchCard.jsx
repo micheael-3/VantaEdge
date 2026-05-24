@@ -74,11 +74,18 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
   const result = fixture.actualResult;
   const isPast = !!result;
 
-  // Hide weak predictions: when BOTH calibrated confidences are below 60
-  // we don't show the prediction block at all — we admit "the AI's not
-  // confident" rather than pollute the page with a low-confidence guess.
-  // Stats row + form dots still render (still informational).
-  const weakSignal = !aiPending && ouConf < 60 && btsConf < 60;
+  // Hide weak cards entirely: when BOTH calibrated confidences are below
+  // 55, the AI doesn't have a real edge — surfacing the row at all just
+  // pollutes the dashboard. We return null here so the parent grid
+  // collapses cleanly. (Settled cards bypass this so accuracy history
+  // remains complete.)
+  const weakSignal = !aiPending && !isPast && ouConf < 55 && btsConf < 55;
+  if (weakSignal) return null;
+
+  // Mint tint on high-confidence cards (≥75% on either market). Spec is
+  // "barely visible but premium feel" — the .card-strong class adds a
+  // subtle 4%-alpha mint gradient at the top of the card background.
+  const strongCard = !isPast && (ouConf >= 75 || btsConf >= 75);
 
   const handleAnalysisToggle = () => {
     if (!isSharp) {
@@ -95,13 +102,13 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
 
   return (
     <div
-      className="card"
+      className={`card${strongCard ? ' card-strong' : ''}`}
+      data-fixture-id={fixture.id || fixture.fixtureId}
       style={{
-        padding: 20,
+        padding: 16,
         position: 'relative',
         borderColor: 'var(--border)',
         overflow: 'hidden',
-        opacity: weakSignal ? 0.6 : 1,
       }}
     >
       <div
@@ -121,14 +128,24 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
           display: 'grid',
           gridTemplateColumns: '1fr auto 1fr',
           gap: 12,
-          alignItems: 'center',
-          marginBottom: 16,
+          alignItems: 'flex-start',
+          marginBottom: 14,
         }}
       >
         <div>
           <div
             className="display"
-            style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.2 }}
+            style={{
+              fontSize: 17,
+              fontWeight: 600,
+              lineHeight: 1.25,
+              wordBreak: 'break-word',
+              // 2-line clamp via standard `line-clamp` (Safari/Chrome modern).
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}
           >
             {home.name || 'Home'}
           </div>
@@ -138,14 +155,23 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
         </div>
         <div
           className="mono"
-          style={{ fontSize: 11, color: 'var(--text-3)', padding: '0 4px' }}
+          style={{ fontSize: 11, color: 'var(--text-3)', padding: '4px 4px 0' }}
         >
           VS
         </div>
         <div style={{ textAlign: 'right' }}>
           <div
             className="display"
-            style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.2 }}
+            style={{
+              fontSize: 17,
+              fontWeight: 600,
+              lineHeight: 1.25,
+              wordBreak: 'break-word',
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}
           >
             {away.name || 'Away'}
           </div>
@@ -178,29 +204,29 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
         </div>
       )}
 
-      {/* 2x2 stats grid — one block per stat with icon, label, value, and a
-          plain-English explanation. Even on mobile we keep 2 columns so the
-          card stays compact; explanations are always visible (no tap-to-reveal
-          needed). Replaces the old dense one-line stats row. */}
+      {/* 2x2 stats grid — tight per spec: 64px max block height, 10px
+          padding, label+icon on one line, value, then a single-line
+          plain-English explanation. Mobile keeps 2 columns so the card
+          stays compact. */}
       <div
         style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
           gap: 8,
-          marginBottom: 14,
+          marginBottom: 12,
         }}
       >
         <StatBlock
           icon="⚽"
-          label="Goals per game"
+          label="Goals avg"
           value={`${avgScored(fixture)} scored · ${avgConceded(fixture)} conceded`}
-          explanation="How many goals each team scores and lets in on average"
+          explanation="Per game this season"
         />
         <StatBlock
-          icon="⚔️"
+          icon="⚔"
           label="Last meetings"
           value={h2hDisplay(fixture)}
-          explanation="Average goals when these two teams play each other"
+          explanation="Historical average"
         />
         <StatBlock
           icon="🟨"
@@ -212,60 +238,41 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
             // 2. Name + per-ref goals → full data, surface the tendency
             // 3. Name but no goals/game → ref is new or limited history
             refereeName(fixture) === 'Not announced'
-              ? 'Referees are usually announced 24–48 hours before kickoff'
+              ? 'Announced 24–48h pre-kickoff'
               : refereeGoalsPerGame(fixture) != null
-                ? `This referee averages ${refereeGoalsPerGame(fixture).toFixed(1)} goals per game officiated`
-                : 'Limited history — no per-referee tendency yet'
+                ? `${refereeGoalsPerGame(fixture).toFixed(1)} avg goals/game`
+                : 'No data'
           }
         />
         <StatBlock
           icon="😴"
-          label="Days since last game"
+          label="Rest"
           value={restDaysDisplay(fixture)}
-          explanation="Teams with more rest tend to perform better"
+          explanation="Since last match"
         />
       </div>
 
-      {weakSignal ? (
-        <div
-          className="mono"
-          style={{
-            padding: '12px 14px',
-            borderRadius: 8,
-            background: 'var(--bg-2)',
-            border: '1px solid var(--border-soft)',
-            fontSize: 12,
-            color: 'var(--text-2)',
-            textAlign: 'center',
-            letterSpacing: '0.02em',
-            marginBottom: 14,
-          }}
-        >
-          AI not confident — skip this match
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gap: 14, marginBottom: 14 }}>
-          {/* Key tied to fixture id so the ✓ animation replays exactly when
-              the user navigates between fixtures, not on every re-render. */}
-          <PredictionRow
-            key={`over-${fixture.id || fixture.fixtureId}`}
-            plainLabel={aiPending ? 'Loading…' : overPlainEnglish(overLine)}
-            conf={ouConf}
-            pending={aiPending}
-            explainer={overExplainer}
-            hit={isPast ? !!result.overHit : null}
-          />
-          <PredictionRow
-            key={`btts-${fixture.id || fixture.fixtureId}`}
-            plainLabel={aiPending ? 'Loading…' : bttsPlainEnglish(bttsPred)}
-            conf={btsConf}
-            delay={200}
-            pending={aiPending}
-            explainer={bttsExplainer}
-            hit={isPast ? !!result.bttsHit : null}
-          />
-        </div>
-      )}
+      <div style={{ display: 'grid', gap: 12, marginBottom: 12 }}>
+        {/* Key tied to fixture id so the ✓ animation replays exactly when
+            the user navigates between fixtures, not on every re-render. */}
+        <PredictionRow
+          key={`over-${fixture.id || fixture.fixtureId}`}
+          plainLabel={aiPending ? 'Loading…' : overPlainEnglish(overLine)}
+          conf={ouConf}
+          pending={aiPending}
+          explainer={overExplainer}
+          hit={isPast ? !!result.overHit : null}
+        />
+        <PredictionRow
+          key={`btts-${fixture.id || fixture.fixtureId}`}
+          plainLabel={aiPending ? 'Loading…' : bttsPlainEnglish(bttsPred)}
+          conf={btsConf}
+          delay={200}
+          pending={aiPending}
+          explainer={bttsExplainer}
+          hit={isPast ? !!result.bttsHit : null}
+        />
+      </div>
 
       {aiErrored && (
         <div
@@ -286,10 +293,7 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
         </div>
       )}
 
-      {/* Analysis toggle hidden on weak-signal cards — there's nothing
-          meaningful to expand to when the AI declined to call it. */}
-      {!weakSignal && (
-        <div
+      <div
           style={{
             borderTop: '1px solid var(--border-soft)',
             paddingTop: 12,
@@ -371,7 +375,6 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
             </div>
           )}
         </div>
-      )}
 
       {/* Share row — both before kickoff (promo) and after (celebrate/honest). */}
       <div
@@ -397,14 +400,15 @@ function StatBlock({ icon, label, value, explanation }) {
   return (
     <div
       style={{
-        padding: '10px 12px',
+        padding: 10,
         borderRadius: 8,
         border: '1px solid var(--border-soft)',
         background: 'var(--bg-2)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 4,
-        minHeight: 78,
+        gap: 2,
+        maxHeight: 64,
+        overflow: 'hidden',
       }}
     >
       <div
@@ -414,7 +418,7 @@ function StatBlock({ icon, label, value, explanation }) {
           gap: 6,
         }}
       >
-        <span style={{ fontSize: 13, lineHeight: 1 }} aria-hidden="true">
+        <span style={{ fontSize: 12, lineHeight: 1 }} aria-hidden="true">
           {icon}
         </span>
         <span
@@ -431,21 +435,28 @@ function StatBlock({ icon, label, value, explanation }) {
       </div>
       <div
         style={{
-          fontSize: 13,
+          fontSize: 14,
           fontWeight: 600,
           color: 'var(--text)',
-          lineHeight: 1.3,
+          lineHeight: 1.2,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
         }}
+        title={String(value)}
       >
         {value}
       </div>
       <div
         style={{
-          fontSize: 10,
+          fontSize: 11,
           color: 'var(--text-3)',
-          lineHeight: 1.4,
-          marginTop: 'auto',
+          lineHeight: 1.25,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
         }}
+        title={String(explanation)}
       >
         {explanation}
       </div>

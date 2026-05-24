@@ -2,21 +2,32 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import { userApi } from '../api/client.js';
-import { isAdmin, isSharp, tierLabel, useAuth } from '../context/AuthContext.jsx';
+import { isAdmin, isSharp, useAuth } from '../context/AuthContext.jsx';
 import { openWhopCheckout } from '../lib/checkout.js';
 import Icon from '../components/Icon.jsx';
 
-// Settings page — restyled to use the design's card + token system.
-// The visual structure stays simple (the design bundle did not include
-// a Settings screen) but uses dark Syne/Mono typography and mint accents
-// throughout, matching the rest of the app.
+// Account page — radically simplified in the mobile UI polish round.
+//
+// Primary view (always visible):
+//   - User email
+//   - Plan badge (FREE / PRO)
+//   - Upgrade to PRO button (FREE) or Manage subscription link (PRO)
+//   - Sign out (red text, no button background)
+//
+// "Manage credentials" expander (collapsed by default) keeps the
+// email-change and password-change forms accessible without polluting
+// the casual-bettor account view. Removing them outright would have
+// taken away the only in-app way to update creds.
+//
+// Admin and footer links (How It Works / Affiliates) preserved below
+// the primary view for admins / power users who need them.
 export default function Settings() {
   const { user, logout, refreshUser } = useAuth();
   const navigate = useNavigate();
   const sharp = isSharp(user);
   const admin = isAdmin(user);
-  // Pass the whole user so admins see "Admin", not just their tier string.
-  const tier = tierLabel(user);
+
+  const [credsOpen, setCredsOpen] = useState(false);
 
   const [newEmail, setNewEmail] = useState(user ? user.email : '');
   const [emailPassword, setEmailPassword] = useState('');
@@ -79,323 +90,285 @@ export default function Settings() {
 
   return (
     <Layout>
-      {({ openUpgrade }) => (
-        <div style={{ maxWidth: 720 }}>
-          <div style={{ marginBottom: 28 }}>
-            <h1
-              className="display"
-              style={{
-                fontSize: 36,
-                fontWeight: 700,
-                margin: 0,
-                letterSpacing: '-0.025em',
-              }}
-            >
-              Settings
-            </h1>
-            <p
-              className="mono"
-              style={{
-                margin: '4px 0 0',
-                color: 'var(--text-3)',
-                fontSize: 12,
-                letterSpacing: '0.04em',
-              }}
-            >
-              ACCOUNT · SUBSCRIPTION
-            </p>
-          </div>
+      {() => (
+        <div style={{ maxWidth: 480 }}>
+          <h1
+            className="display dash-page-title"
+            style={{
+              fontSize: 36,
+              fontWeight: 700,
+              margin: 0,
+              letterSpacing: '-0.025em',
+            }}
+          >
+            Account
+          </h1>
 
-          <div className="card" style={{ padding: 24, marginBottom: 16 }}>
-            <h3
-              className="display"
-              style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 600 }}
-            >
-              Email
-            </h3>
-            <form onSubmit={submitEmail} style={{ display: 'grid', gap: 12 }}>
-              <div>
-                <label
-                  className="mono"
-                  style={{
-                    fontSize: 10,
-                    color: 'var(--text-3)',
-                    letterSpacing: '0.1em',
-                    display: 'block',
-                    marginBottom: 6,
-                  }}
-                >
-                  EMAIL ADDRESS
-                </label>
-                <input
-                  className="input"
-                  type="email"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <label
-                  className="mono"
-                  style={{
-                    fontSize: 10,
-                    color: 'var(--text-3)',
-                    letterSpacing: '0.1em',
-                    display: 'block',
-                    marginBottom: 6,
-                  }}
-                >
-                  CURRENT PASSWORD
-                </label>
-                <input
-                  className="input"
-                  type="password"
-                  autoComplete="current-password"
-                  value={emailPassword}
-                  onChange={(e) => setEmailPassword(e.target.value)}
-                  required
-                />
-              </div>
-              {emailMsg && (
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: emailMsg.ok ? 'var(--mint)' : 'var(--red)',
-                  }}
-                >
-                  {emailMsg.text}
-                </div>
-              )}
-              <div>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={emailBusy}
-                >
-                  {emailBusy ? 'Updating…' : 'Update email'}
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <div className="card" style={{ padding: 24, marginBottom: 16 }}>
-            <h3
-              className="display"
-              style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 600 }}
-            >
-              Password
-            </h3>
-            <form onSubmit={submitPassword} style={{ display: 'grid', gap: 12 }}>
-              <div>
-                <label
-                  className="mono"
-                  style={{
-                    fontSize: 10,
-                    color: 'var(--text-3)',
-                    letterSpacing: '0.1em',
-                    display: 'block',
-                    marginBottom: 6,
-                  }}
-                >
-                  CURRENT PASSWORD
-                </label>
-                <input
-                  className="input"
-                  type="password"
-                  autoComplete="current-password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <label
-                  className="mono"
-                  style={{
-                    fontSize: 10,
-                    color: 'var(--text-3)',
-                    letterSpacing: '0.1em',
-                    display: 'block',
-                    marginBottom: 6,
-                  }}
-                >
-                  NEW PASSWORD (8+ CHARS)
-                </label>
-                <input
-                  className="input"
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={8}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                />
-              </div>
-              {pwMsg && (
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: pwMsg.ok ? 'var(--mint)' : 'var(--red)',
-                  }}
-                >
-                  {pwMsg.text}
-                </div>
-              )}
-              <div>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={pwBusy}
-                >
-                  {pwBusy ? 'Changing…' : 'Change password'}
-                </button>
-              </div>
-            </form>
-          </div>
-
-          {admin && (
-            <div
-              className="card"
-              style={{
-                padding: 24,
-                marginBottom: 16,
-                borderColor: 'rgba(110,231,183,0.35)',
-                background:
-                  'linear-gradient(180deg, rgba(110,231,183,0.07), transparent), var(--card)',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: 12,
-                  gap: 12,
-                }}
-              >
-                <h3
-                  className="display"
-                  style={{ margin: 0, fontSize: 18, fontWeight: 600 }}
-                >
-                  Admin Panel
-                </h3>
-                <span className="badge badge-mint">ADMIN</span>
-              </div>
-              <p style={{ margin: '0 0 14px', color: 'var(--text-2)', fontSize: 13 }}>
-                Manage users, view system stats, and force a rescan of this
-                week's MLS predictions.
-              </p>
-              <Link
-                to="/admin-panel"
-                className="btn btn-primary"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
-              >
-                <Icon name="shield" size={14} />
-                Open Admin Panel
-              </Link>
-            </div>
-          )}
-
+          {/* Primary card — email + plan badge */}
           <div
             className="card"
             style={{
-              padding: 24,
-              marginBottom: 16,
-              borderColor: sharp ? 'rgba(110,231,183,0.3)' : 'var(--border)',
-              background: sharp
-                ? 'linear-gradient(180deg, rgba(110,231,183,0.05), transparent), var(--card)'
-                : 'var(--card)',
+              padding: 20,
+              marginTop: 18,
+              marginBottom: 14,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap',
             }}
           >
-            <div
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div
+                className="mono"
+                style={{
+                  fontSize: 10,
+                  color: 'var(--text-3)',
+                  letterSpacing: '0.1em',
+                  marginBottom: 4,
+                }}
+              >
+                SIGNED IN AS
+              </div>
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 500,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {(user && user.email) || 'guest'}
+              </div>
+            </div>
+            <span
+              className={sharp ? 'badge badge-mint' : 'badge badge-soft'}
+              style={{ flexShrink: 0 }}
+            >
+              {sharp ? 'PRO' : 'FREE'}
+            </span>
+          </div>
+
+          {/* Upgrade / Manage button — primary action */}
+          {sharp ? (
+            <a
+              href="https://whop.com/hub"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-ghost btn-block"
+              style={{ width: '100%', marginBottom: 14 }}
+            >
+              ✓ PRO Active · Manage subscription
+            </a>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              style={{ width: '100%', marginBottom: 14 }}
+              onClick={openWhopCheckout}
+            >
+              Upgrade to PRO — €4.99/mo
+            </button>
+          )}
+
+          {/* Manage credentials — collapsed by default */}
+          <div className="card" style={{ padding: 0, marginBottom: 14 }}>
+            <button
+              type="button"
+              onClick={() => setCredsOpen((v) => !v)}
               style={{
+                width: '100%',
+                background: 'none',
+                border: 'none',
+                padding: '14px 18px',
+                color: 'var(--text-2)',
+                fontSize: 13,
+                fontWeight: 500,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                marginBottom: 12,
+                cursor: 'pointer',
               }}
+              aria-expanded={credsOpen}
             >
-              <h3
-                className="display"
-                style={{ margin: 0, fontSize: 18, fontWeight: 600 }}
-              >
-                Subscription
-              </h3>
+              <span>Manage credentials</span>
               <span
-                className={sharp ? 'badge badge-mint' : 'badge badge-soft'}
+                style={{
+                  transform: credsOpen ? 'rotate(180deg)' : 'rotate(0)',
+                  transition: 'transform 0.2s',
+                  display: 'inline-flex',
+                }}
               >
-                {tier.toUpperCase()}
+                <Icon name="chevron-down" size={14} />
               </span>
-            </div>
-            {sharp ? (
-              <>
-                <p style={{ margin: '0 0 12px', color: 'var(--text-2)', fontSize: 13 }}>
-                  You're on PRO — full AI reasoning, Bet Tracker, and accuracy
-                  history are unlocked.
-                </p>
-                <a
-                  href="https://whop.com/hub"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-ghost"
-                  style={{ display: 'inline-block' }}
-                >
-                  Manage subscription
-                </a>
-                <p
-                  style={{
-                    margin: '8px 0 0',
-                    color: 'var(--text-3)',
-                    fontSize: 12,
-                  }}
-                >
-                  Manage your subscription, payment method, or cancel from your
-                  Whop hub.
-                </p>
-              </>
-            ) : (
-              <>
-                <p style={{ margin: '0 0 12px', color: 'var(--text-2)', fontSize: 13 }}>
-                  Upgrade to unlock full AI reasoning, the Bet Tracker, and
-                  accuracy history.
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={openWhopCheckout}
-                >
-                  Upgrade to PRO — $4.99/mo
-                </button>
-              </>
+            </button>
+            {credsOpen && (
+              <div
+                style={{
+                  borderTop: '1px solid var(--border-soft)',
+                  padding: 18,
+                  display: 'grid',
+                  gap: 18,
+                }}
+              >
+                {/* Email form */}
+                <form onSubmit={submitEmail} style={{ display: 'grid', gap: 10 }}>
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 10,
+                      color: 'var(--text-3)',
+                      letterSpacing: '0.1em',
+                    }}
+                  >
+                    CHANGE EMAIL
+                  </div>
+                  <input
+                    className="input"
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="New email"
+                    required
+                  />
+                  <input
+                    className="input"
+                    type="password"
+                    autoComplete="current-password"
+                    value={emailPassword}
+                    onChange={(e) => setEmailPassword(e.target.value)}
+                    placeholder="Current password"
+                    required
+                  />
+                  {emailMsg && (
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: emailMsg.ok ? 'var(--mint)' : 'var(--red)',
+                      }}
+                    >
+                      {emailMsg.text}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    className="btn btn-ghost btn-sm"
+                    disabled={emailBusy}
+                    style={{ justifySelf: 'start' }}
+                  >
+                    {emailBusy ? 'Updating…' : 'Update email'}
+                  </button>
+                </form>
+
+                {/* Password form */}
+                <form onSubmit={submitPassword} style={{ display: 'grid', gap: 10 }}>
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 10,
+                      color: 'var(--text-3)',
+                      letterSpacing: '0.1em',
+                    }}
+                  >
+                    CHANGE PASSWORD
+                  </div>
+                  <input
+                    className="input"
+                    type="password"
+                    autoComplete="current-password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Current password"
+                    required
+                  />
+                  <input
+                    className="input"
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={8}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="New password (8+ chars)"
+                    required
+                  />
+                  {pwMsg && (
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: pwMsg.ok ? 'var(--mint)' : 'var(--red)',
+                      }}
+                    >
+                      {pwMsg.text}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    className="btn btn-ghost btn-sm"
+                    disabled={pwBusy}
+                    style={{ justifySelf: 'start' }}
+                  >
+                    {pwBusy ? 'Changing…' : 'Change password'}
+                  </button>
+                </form>
+              </div>
             )}
           </div>
 
-          <div className="card" style={{ padding: 24, marginBottom: 16 }}>
-            <h3
-              className="display"
-              style={{ margin: '0 0 12px', fontSize: 18, fontWeight: 600 }}
+          {/* Admin / utility links */}
+          {admin && (
+            <Link
+              to="/admin-panel"
+              className="card"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '14px 18px',
+                marginBottom: 14,
+                textDecoration: 'none',
+                color: 'var(--mint)',
+                fontSize: 13,
+                fontWeight: 500,
+              }}
             >
-              Sign out
-            </h3>
-            <p style={{ margin: '0 0 12px', color: 'var(--text-2)', fontSize: 13 }}>
-              You can sign back in any time from the login page.
-            </p>
-            <button type="button" className="btn btn-ghost" onClick={onLogout}>
-              Sign out
-            </button>
-          </div>
+              <Icon name="shield" size={14} />
+              <span style={{ flex: 1 }}>Admin Panel</span>
+              <span className="badge badge-mint" style={{ fontSize: 9, padding: '2px 6px' }}>
+                ADMIN
+              </span>
+            </Link>
+          )}
+
+          {/* Logout — red text, no button background */}
+          <button
+            type="button"
+            onClick={onLogout}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: '12px 0',
+              color: 'var(--red)',
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            Sign out
+          </button>
 
           <div
             style={{
               display: 'flex',
               gap: 18,
               flexWrap: 'wrap',
-              padding: '8px 4px 0',
+              padding: '18px 0 0',
+              borderTop: '1px solid var(--border-soft)',
+              marginTop: 12,
             }}
           >
             <Link
-              to="/affiliate"
+              to="/history"
               className="mono"
               style={{
                 fontSize: 11,
@@ -403,7 +376,7 @@ export default function Settings() {
                 letterSpacing: '0.04em',
               }}
             >
-              Affiliates
+              Accuracy History
             </Link>
             <Link
               to="/guide"
@@ -415,6 +388,17 @@ export default function Settings() {
               }}
             >
               How It Works
+            </Link>
+            <Link
+              to="/affiliate"
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: 'var(--text-3)',
+                letterSpacing: '0.04em',
+              }}
+            >
+              Affiliates
             </Link>
           </div>
         </div>

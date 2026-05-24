@@ -5,10 +5,10 @@ import MatchCard from '../components/MatchCard.jsx';
 import BestBetBanner from '../components/BestBetBanner.jsx';
 import OnboardingOverlay from '../components/OnboardingOverlay.jsx';
 import SettledMatchMini from '../components/SettledMatchMini.jsx';
-import Icon from '../components/Icon.jsx';
 import { isSharp, useAuth } from '../context/AuthContext.jsx';
 import { predictions, history as historyApi } from '../api/client.js';
 import { agentScore } from '../lib/fixture.js';
+import usePullToRefresh from '../lib/usePullToRefresh.js';
 
 // Small inline toast used by the post-checkout polling flow.
 function CheckoutToast({ message, onClose }) {
@@ -64,14 +64,6 @@ function CheckoutToast({ message, onClose }) {
 
 const MLS_LEAGUE_ID = 253;
 
-function userTz() {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  } catch {
-    return 'UTC';
-  }
-}
-
 function todayUtcStr() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -117,21 +109,6 @@ function saveWeekCache(leagueId, weekStart, payload) {
   }
 }
 
-function formatScanDate(iso) {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric',
-      timeZone: userTz(),
-    });
-  } catch {
-    return '';
-  }
-}
-
 function dateHeading(dateStr) {
   if (!dateStr) return '';
   try {
@@ -144,6 +121,70 @@ function dateHeading(dateStr) {
   }
 }
 
+// Context-aware page title:
+//   selectedDate === today  → "Today's Picks"
+//   selectedDate >  today   → "Saturday's Picks"
+//   selectedDate <  today   → "Saturday Results"
+// Casual bettors get a clearer signal of what they're looking at than
+// the old hardcoded "This Week's Picks" string.
+function pageTitle(selectedDate, today) {
+  if (!selectedDate) return "Today's Picks";
+  if (selectedDate === today) return "Today's Picks";
+  try {
+    const d = new Date(`${selectedDate}T12:00:00Z`);
+    const weekday = d.toLocaleDateString('en-US', { weekday: 'long' });
+    return selectedDate > today ? `${weekday}'s Picks` : `${weekday} Results`;
+  } catch {
+    return "Today's Picks";
+  }
+}
+
+// Inline daily summary line shown below the calendar strip on days with
+// matches. "{count} matches · {strong} strong picks · Best: Over {line}"
+// All numbers calibrated; "strong" defined as max(over, btts) >= 70.
+function DailySummaryStrip({ fixtures }) {
+  const total = fixtures.length;
+  let strong = 0;
+  let bestLine = null;
+  let bestConf = -1;
+  fixtures.forEach((f) => {
+    const oConf =
+      typeof f?.predictions?.over?.calibratedConfidence === 'number'
+        ? f.predictions.over.calibratedConfidence
+        : typeof f?.predictions?.over?.confidence === 'number'
+          ? f.predictions.over.confidence
+          : 0;
+    const bConf =
+      typeof f?.predictions?.btts?.calibratedConfidence === 'number'
+        ? f.predictions.btts.calibratedConfidence
+        : typeof f?.predictions?.btts?.confidence === 'number'
+          ? f.predictions.btts.confidence
+          : 0;
+    if (Math.max(oConf, bConf) >= 70) strong += 1;
+    if (oConf > bestConf) {
+      bestConf = oConf;
+      bestLine = f?.predictions?.over?.line ?? null;
+    }
+  });
+  const pieces = [`${total} matches`];
+  if (strong > 0) pieces.push(`${strong} strong pick${strong === 1 ? '' : 's'}`);
+  if (bestLine != null) pieces.push(`Best: Over ${bestLine}`);
+  return (
+    <div
+      className="mono"
+      style={{
+        fontSize: 11,
+        color: 'var(--text-3)',
+        letterSpacing: '0.04em',
+        marginBottom: 16,
+        marginTop: -4,
+      }}
+    >
+      {pieces.join(' · ')}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
   const sharp = isSharp(user);
@@ -154,7 +195,6 @@ export default function Dashboard() {
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [selectedDate, setSelectedDate] = useState(null);
   const [error, setError] = useState('');
-  const [hydratedFromCache, setHydratedFromCache] = useState(false);
   const [streak, setStreak] = useState(0);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [recentSettled, setRecentSettled] = useState([]);
@@ -300,7 +340,6 @@ export default function Dashboard() {
         dates: bestCache.dates,
         lastScanned: bestCache.lastScanned,
       });
-      setHydratedFromCache(true);
     }
     fetchWeek().catch(() => { /* error stored in state */ });
   }, [fetchWeek]);
@@ -340,33 +379,27 @@ export default function Dashboard() {
     setSelectedDate(today);
   }, [weekData, selectedDate, today]);
 
-  // Build day pill list for the CalendarStrip — Monday-Sunday, today first
-  // dot, past dates hidden.
+  // Build day pill list for the CalendarStrip — 3 past days, today, and
+  // 6 ahead = 10 pills, horizontally scrollable, today centred on mount.
+  // Past pills are clickable (they show settled fixtures for that day when
+  // we have data, otherwise an empty state). Spec change from the old
+  // "future-only" strip per the mobile UI polish round.
   const days = useMemo(() => {
-    if (!weekData) return [];
     const list = [];
-    for (let i = 0; i < 7; i++) {
-      const date = addDaysStr(weekData.weekStart, i);
-      if (date < today) continue; // hide past dates
-      const count = (weekData.dates[date] || []).length;
+    for (let offset = -3; offset <= 6; offset += 1) {
+      const date = addDaysStr(today, offset);
+      const count =
+        (weekData && weekData.dates && (weekData.dates[date] || []).length) || 0;
       list.push({
         date,
         count,
         label: dateHeading(date),
         isToday: date === today,
-        isPast: false,
+        isPast: date < today,
       });
     }
     return list;
   }, [weekData, today]);
-
-  const showingFutureFallback = useMemo(() => {
-    if (!selectedDate) return false;
-    if (selectedDate === today) return false;
-    if (!futureDates.length) return false;
-    if (futureDates.includes(today)) return false;
-    return true;
-  }, [selectedDate, today, futureDates]);
 
   const fixturesForDay = useMemo(() => {
     if (!weekData || !selectedDate) return [];
@@ -398,13 +431,17 @@ export default function Dashboard() {
     return null;
   }, [weekData, today]);
 
-  const onSelectDay = (date) => {
-    if (date < today) return; // never select past dates
-    setSelectedDate(date);
-  };
+  // Past dates are now selectable — they render an empty/results state.
+  const onSelectDay = (date) => setSelectedDate(date);
 
   // Initial loading: no cache + no server response yet.
   const showInitialLoading = !weekData && !error;
+
+  // Pull-to-refresh — on mobile, dragging down at scrollTop=0 triggers
+  // a fresh fetch. The visible indicator follows the drag.
+  const { pullDist, triggered } = usePullToRefresh(() => {
+    fetchWeek().catch(() => { /* error in state */ });
+  });
 
   return (
     <Layout>
@@ -439,122 +476,72 @@ export default function Dashboard() {
               You're on a {streak}-pick winning streak
             </div>
           )}
-          <div style={{ marginBottom: 24 }}>
+          {/* 2px mint progress bar at the very top while a background scan
+              runs. Slides left-to-right; replaces the old full-screen
+              "Scanning…" card so cached cards stay visible underneath. */}
+          {scanning && <div className="top-progress-bar" aria-hidden="true" />}
+
+          {/* Pull-to-refresh indicator — follows the drag distance, fades
+              in proportionally, swaps to "Release to refresh" past the
+              threshold. Spec: small spinner + "Checking for updates…". */}
+          {pullDist > 0 && (
             <div
+              className="ptr-indicator"
               style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                justifyContent: 'space-between',
-                marginBottom: 18,
-                gap: 12,
-                flexWrap: 'wrap',
+                transform: `translate(-50%, ${Math.min(pullDist, 80) - 28}px)`,
+                opacity: Math.min(1, pullDist / 70),
+              }}
+              role="status"
+              aria-live="polite"
+            >
+              <span className="ptr-spinner" aria-hidden="true" />
+              <span>{triggered ? 'Release to refresh' : 'Checking for updates…'}</span>
+            </div>
+          )}
+
+          <div style={{ marginBottom: 20 }}>
+            <h1
+              className="display dash-page-title"
+              style={{
+                fontSize: 36,
+                fontWeight: 700,
+                margin: 0,
+                letterSpacing: '-0.025em',
               }}
             >
-              <div>
-                <h1
-                  className="display dash-page-title"
-                  style={{
-                    fontSize: 36,
-                    fontWeight: 700,
-                    margin: 0,
-                    letterSpacing: '-0.025em',
-                  }}
-                >
-                  This Week's Picks
-                </h1>
-                <p
-                  className="mono"
-                  style={{
-                    margin: '4px 0 0',
-                    color: 'var(--text-3)',
-                    fontSize: 12,
-                    letterSpacing: '0.04em',
-                  }}
-                >
-                  {showingFutureFallback
-                    ? `SHOWING NEXT FIXTURES · ${dateHeading(selectedDate)}`
-                    : selectedDate
-                      ? dateHeading(selectedDate)
-                      : 'MLS · Monday–Sunday'}
-                </p>
-                {weekData && weekData.lastScanned && (
-                  <p
-                    className="mono"
-                    style={{ margin: '6px 0 0', color: 'var(--text-3)', fontSize: 11, letterSpacing: '0.04em' }}
-                  >
-                    Last scanned: {formatScanDate(weekData.lastScanned)}
-                  </p>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button type="button" className="btn btn-ghost btn-sm">
-                  <Icon name="trending" size={13} /> MLS
-                </button>
-              </div>
-            </div>
+              {pageTitle(selectedDate, today)}
+            </h1>
+            <p
+              className="mono dash-page-sub"
+              style={{
+                margin: '4px 0 16px',
+                color: 'var(--text-3)',
+                fontSize: 12,
+                letterSpacing: '0.04em',
+              }}
+            >
+              {selectedDate ? dateHeading(selectedDate) : 'MLS'}
+            </p>
             <CalendarStrip
               days={days}
               activeDate={selectedDate}
               onSelect={onSelectDay}
             />
+            {fixturesForDay.length > 0 && (
+              <DailySummaryStrip fixtures={fixturesForDay} />
+            )}
           </div>
 
-          {scanning ? (
+          {showInitialLoading ? (
+            // No cache + no server response yet. Top progress bar handles
+            // the loading affordance; we render a tiny placeholder card so
+            // the page isn't blank if it takes a beat.
             <div
               className="card"
-              style={{
-                padding: '64px 24px',
-                textAlign: 'center',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 16,
-              }}
+              style={{ padding: '32px 20px', textAlign: 'center' }}
             >
-              <h2
-                className="display"
-                style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}
-              >
-                Scanning this week's MLS fixtures…
-              </h2>
-              <p
-                className="mono"
-                style={{ margin: 0, fontSize: 14, color: 'var(--text-2)' }}
-              >
-                Analysing match {Math.min(progress.done + 1, Math.max(progress.total, 1))} of {progress.total || '?'}…
-              </p>
-              <p style={{ margin: 0, fontSize: 13, color: 'var(--text-3)' }}>
-                This only happens once per week.
-              </p>
-              {progress.total > 0 && (
-                <div
-                  style={{
-                    width: 260,
-                    height: 4,
-                    background: 'var(--border-soft)',
-                    borderRadius: 2,
-                    overflow: 'hidden',
-                    marginTop: 4,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${Math.min(100, Math.round((progress.done / Math.max(progress.total, 1)) * 100))}%`,
-                      height: '100%',
-                      background: 'var(--mint)',
-                      transition: 'width 600ms ease-out',
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          ) : showInitialLoading ? (
-            <div
-              className="card"
-              style={{ padding: '48px 24px', textAlign: 'center' }}
-            >
-              <p className="mono" style={{ color: 'var(--text-3)', fontSize: 13 }}>
-                Loading this week's picks…
+              <p className="mono" style={{ color: 'var(--text-3)', fontSize: 12, margin: 0 }}>
+                Loading picks…
               </p>
             </div>
           ) : error ? (
@@ -577,61 +564,89 @@ export default function Dashboard() {
             </div>
           ) : fixturesForDay.length === 0 ? (
             selectedDate === today ? (
-              // Rich empty state for today specifically: yesterday recap +
-              // next-fixtures pill. FREE-tier accessible — no paywall.
+              // Today-with-no-matches empty state — large ⚽, "No matches
+              // today", a next-picks pointer button (when we know one),
+              // and (when we have them) a small strip of recent settled
+              // mini-cards so the page never feels barren.
               <div>
                 <div
                   className="card"
                   style={{
-                    padding: 24,
+                    padding: '28px 20px',
                     marginBottom: 16,
-                    textAlign: 'left',
+                    textAlign: 'center',
                   }}
                 >
+                  <div
+                    style={{ fontSize: 44, lineHeight: 1, marginBottom: 12 }}
+                    aria-hidden="true"
+                  >
+                    ⚽
+                  </div>
                   <h3
                     className="display"
-                    style={{ fontSize: 22, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.02em' }}
+                    style={{
+                      fontSize: 22,
+                      fontWeight: 700,
+                      margin: '0 0 6px',
+                      letterSpacing: '-0.02em',
+                    }}
                   >
                     No matches today
                   </h3>
-                  <p
-                    className="mono"
-                    style={{ margin: 0, color: 'var(--text-3)', fontSize: 12, letterSpacing: '0.04em' }}
-                  >
-                    HERE'S HOW THE AI DID YESTERDAY
-                  </p>
+                  {nextFixturesDay ? (
+                    <>
+                      <p
+                        style={{
+                          margin: '0 0 14px',
+                          color: 'var(--text-2)',
+                          fontSize: 13,
+                        }}
+                      >
+                        Next picks: {dateHeading(nextFixturesDay.date)} — {nextFixturesDay.count} matches
+                      </p>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => setSelectedDate(nextFixturesDay.date)}
+                      >
+                        See {(() => {
+                          try {
+                            return new Date(`${nextFixturesDay.date}T12:00:00Z`)
+                              .toLocaleDateString('en-US', { weekday: 'long' });
+                          } catch {
+                            return 'next day';
+                          }
+                        })()}'s picks →
+                      </button>
+                    </>
+                  ) : (
+                    <p
+                      style={{
+                        margin: 0,
+                        color: 'var(--text-3)',
+                        fontSize: 13,
+                      }}
+                    >
+                      Check back later in the week.
+                    </p>
+                  )}
                 </div>
-                {recentSettled.length > 0 ? (
+                {recentSettled.length > 0 && (
                   <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
+                    <div
+                      className="mono"
+                      style={{
+                        fontSize: 10,
+                        color: 'var(--text-3)',
+                        letterSpacing: '0.08em',
+                      }}
+                    >
+                      HOW THE AI DID YESTERDAY
+                    </div>
                     {recentSettled.map((row) => (
                       <SettledMatchMini key={row.id || `${row.date}-${row.match}`} row={row} />
                     ))}
-                  </div>
-                ) : (
-                  <div
-                    className="card mono"
-                    style={{ padding: 14, color: 'var(--text-3)', fontSize: 12, marginBottom: 16 }}
-                  >
-                    No settled matches yet. Check back after the next matchday.
-                  </div>
-                )}
-                {nextFixturesDay && (
-                  <div
-                    className="mono"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '8px 14px',
-                      borderRadius: 999,
-                      background: 'rgba(110,231,183,0.08)',
-                      border: '1px solid rgba(110,231,183,0.25)',
-                      color: 'var(--mint)',
-                      fontSize: 11,
-                      letterSpacing: '0.06em',
-                    }}
-                  >
-                    NEXT MATCHES: {dateHeading(nextFixturesDay.date)} — {nextFixturesDay.count} GAMES ANALYSED
                   </div>
                 )}
               </div>
@@ -643,7 +658,10 @@ export default function Dashboard() {
             )
           ) : (
             <>
-              {bestBet && (
+              {/* Best-bet banner only on today/future. On past dates we
+                  render everything as match cards since "best bet" doesn't
+                  make sense after kickoff. */}
+              {bestBet && selectedDate >= today && (
                 <BestBetBanner
                   fixture={bestBet}
                   isSharp={sharp}
@@ -656,25 +674,26 @@ export default function Dashboard() {
                   display: 'flex',
                   alignItems: 'baseline',
                   justifyContent: 'space-between',
-                  marginBottom: 16,
+                  marginBottom: 12,
                 }}
               >
                 <h2
                   className="display"
-                  style={{ fontSize: 22, fontWeight: 600, margin: 0 }}
+                  style={{ fontSize: 20, fontWeight: 600, margin: 0 }}
                 >
-                  All matches
+                  {selectedDate >= today ? 'All matches' : 'Results'}
                 </h2>
               </div>
 
               <div
+                className="mc-grid"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
-                  gap: 16,
+                  gap: 12,
                 }}
               >
-                {others.map((f) => (
+                {(selectedDate >= today ? others : fixturesForDay).map((f) => (
                   <MatchCard
                     key={f.id || f.fixtureId}
                     fixture={f}
@@ -683,15 +702,6 @@ export default function Dashboard() {
                   />
                 ))}
               </div>
-
-              {hydratedFromCache && (
-                <div
-                  className="mono"
-                  style={{ marginTop: 16, textAlign: 'center', color: 'var(--text-3)', fontSize: 11 }}
-                >
-                  CACHED · revalidating in background
-                </div>
-              )}
             </>
           )}
         </div>
