@@ -95,6 +95,12 @@ export default function Calculator() {
   const [betType, setBetType] = useState('single'); // 'single' | 'parlay'
   const [bankroll, setBankroll] = useState('500');
   const [odds, setOdds] = useState(preFillOdds || '1.85');
+  // Optional confidence override (single-bet only). When `useConfidence`
+  // is true the slider value (50-85) replaces the odds-derived
+  // probability in the Kelly calc, so the user can size to their own
+  // belief instead of the bookmaker's implied number.
+  const [useConfidence, setUseConfidence] = useState(false);
+  const [confidence, setConfidence] = useState('68');
 
   // If the URL ?odds= changes after mount (e.g. user navigates from
   // another card), update the input.
@@ -116,7 +122,11 @@ export default function Calculator() {
   // it's the whole point of the page.
   const result = useMemo(() => {
     if (betType === 'single') {
-      return computeSingle({ bankroll: parseFloat(bankroll), odds: parseFloat(odds) });
+      return computeSingle({
+        bankroll: parseFloat(bankroll),
+        odds: parseFloat(odds),
+        confidenceOverride: useConfidence ? parseFloat(confidence) : undefined,
+      });
     }
     if (parlayMode === 'individual') {
       return computeParlay({
@@ -129,7 +139,7 @@ export default function Calculator() {
       avgOdds: parseFloat(avgOdds),
       numLegs: parseInt(numLegs, 10),
     });
-  }, [betType, bankroll, odds, parlayMode, numLegs, avgOdds, legs]);
+  }, [betType, bankroll, odds, useConfidence, confidence, parlayMode, numLegs, avgOdds, legs]);
 
   // Sync legs array length to the selected leg count when the user
   // switches from average → individual mode.
@@ -257,33 +267,110 @@ export default function Calculator() {
 
           {/* Single-bet specific input */}
           {betType === 'single' && (
-            <div style={{ marginBottom: 14 }}>
-              <label
-                className="mono"
-                style={{
-                  display: 'block',
-                  fontSize: 10,
-                  letterSpacing: '0.1em',
-                  color: 'var(--text-3)',
-                  marginBottom: 6,
-                }}
-              >
-                BOOKMAKER ODDS
-              </label>
-              <input
-                className="input"
-                type="number"
-                inputMode="decimal"
-                placeholder="e.g. 1.85"
-                value={odds}
-                onChange={(e) => setOdds(e.target.value)}
-                min="1.01"
-                step="0.01"
-              />
-              <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text-3)' }}>
-                Decimal odds from your bookmaker
+            <>
+              <div style={{ marginBottom: 14 }}>
+                <label
+                  className="mono"
+                  style={{
+                    display: 'block',
+                    fontSize: 10,
+                    letterSpacing: '0.1em',
+                    color: 'var(--text-3)',
+                    marginBottom: 6,
+                  }}
+                >
+                  BOOKMAKER ODDS
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  inputMode="decimal"
+                  placeholder="e.g. 1.85"
+                  value={odds}
+                  onChange={(e) => setOdds(e.target.value)}
+                  min="1.01"
+                  step="0.01"
+                />
+                <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text-3)' }}>
+                  Decimal odds from your bookmaker
+                </div>
               </div>
-            </div>
+
+              {/* Optional confidence override. When enabled, the slider
+                  value replaces the odds-derived probability in the
+                  Kelly math. Lets the user size to their own belief
+                  ("I'm 70% on this") instead of the bookmaker's
+                  implied probability. */}
+              <div style={{ marginBottom: 14 }}>
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    marginBottom: 8,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={useConfidence}
+                    onChange={(e) => setUseConfidence(e.target.checked)}
+                    style={{ width: 16, height: 16, accentColor: 'var(--mint)' }}
+                  />
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 11,
+                      letterSpacing: '0.04em',
+                      color: useConfidence ? 'var(--mint)' : 'var(--text-2)',
+                    }}
+                  >
+                    Use my own confidence
+                  </span>
+                </label>
+                {useConfidence && (
+                  <div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'baseline',
+                        justifyContent: 'space-between',
+                        marginBottom: 6,
+                      }}
+                    >
+                      <span
+                        className="mono"
+                        style={{ fontSize: 10, letterSpacing: '0.1em', color: 'var(--text-3)' }}
+                      >
+                        CONFIDENCE
+                      </span>
+                      <span
+                        className="mono"
+                        style={{ fontSize: 16, fontWeight: 700, color: 'var(--mint)' }}
+                      >
+                        {confidence}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="50"
+                      max="85"
+                      step="1"
+                      value={confidence}
+                      onChange={(e) => setConfidence(e.target.value)}
+                      style={{
+                        width: '100%',
+                        accentColor: 'var(--mint)',
+                      }}
+                    />
+                    <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text-3)' }}>
+                      Your estimated win probability (50–85%). Used instead of the odds-derived number.
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
           {/* Parlay-specific inputs */}

@@ -442,8 +442,21 @@ function extractFormForTeam(fixtures, teamId) {
       if (!isHome && !isAway) return null; // shouldn't happen, defensive
       const winner = isHome ? f.teams.home.winner : f.teams.away.winner;
       // winner: true=W, false=L, null=actual draw (since we filtered to
-      // finished matches above)
-      const result = winner === true ? 'W' : winner === false ? 'L' : 'D';
+      // finished matches above). Defensive: if the winner key is
+      // missing entirely (rare in API-Football but seen), fall back
+      // to comparing goal counts.
+      let result;
+      if (winner === true) result = 'W';
+      else if (winner === false) result = 'L';
+      else if (winner === null) result = 'D';
+      else {
+        // Goals fallback. Both null → bail with 'D'.
+        const h = f.goals && f.goals.home;
+        const a = f.goals && f.goals.away;
+        if (h == null || a == null) result = 'D';
+        else if (isHome) result = h > a ? 'W' : h < a ? 'L' : 'D';
+        else result = a > h ? 'W' : a < h ? 'L' : 'D';
+      }
       console.log(
         `[football extractForm] team=${teamId} fx=${f.fixture.id} ` +
           `status=${f.fixture.status && f.fixture.status.short} ` +
@@ -453,7 +466,16 @@ function extractFormForTeam(fixtures, teamId) {
       return result;
     })
     .filter((v) => v != null);
-  return out;
+
+  // Keep only the 5 most recent (out is already sorted ascending, so
+  // slice from the tail). Pad to exactly 5 with null so every caller
+  // gets a fixed-length array — FormDots renders nulls as grey empty
+  // chips. The downstream scan-bg topUpForm logic still tops up from
+  // any-venue when a team has played fewer than 5 games at the
+  // requested venue.
+  const last5 = out.slice(-5);
+  while (last5.length < 5) last5.push(null);
+  return last5;
 }
 
 function calculateRestDays(fixtures) {

@@ -73,7 +73,12 @@ function clampStake(rawStake, bankroll) {
 }
 
 // ---------- SINGLE BET ----------
-export function computeSingle({ bankroll, odds }) {
+// confidenceOverride (0-100) — optional. When provided, replaces the
+// odds-derived probability with the user's own estimate. Lets a user
+// who genuinely thinks they have an edge (e.g. "I'm 70% on this") size
+// to their belief instead of the bookmaker's implied probability. When
+// omitted we fall back to (1/odds)/1.05 as before.
+export function computeSingle({ bankroll, odds, confidenceOverride }) {
   const warning = validateBasic({ bankroll, odds });
   if (warning) {
     return {
@@ -86,8 +91,18 @@ export function computeSingle({ bankroll, odds }) {
   const b = Number(bankroll);
   const o = Number(odds);
 
-  // Step 1: implied probability adjusted for the 5% overround.
-  const adjustedProbability = (1 / o) / OVERROUND;
+  // Step 1: probability. Use the override when supplied + valid;
+  // otherwise derive from odds with 5% overround. The override is
+  // clamped to (0, 1) so the Kelly math can't blow up on edge cases.
+  let adjustedProbability = (1 / o) / OVERROUND;
+  let usedConfidenceOverride = false;
+  if (confidenceOverride != null && Number.isFinite(Number(confidenceOverride))) {
+    const c = Number(confidenceOverride) / 100;
+    if (c > 0 && c < 1) {
+      adjustedProbability = c;
+      usedConfidenceOverride = true;
+    }
+  }
 
   // Step 2: full Kelly. b in formula = odds - 1 (decimal payout multiplier).
   const bMul = o - 1;
@@ -137,6 +152,7 @@ export function computeSingle({ bankroll, odds }) {
     // expose it on the object for an "advanced" toggle later.
     fullKelly: round1(kelly * 100),
     fractionalKellyApplied: SINGLE_KELLY_FRACTION,
+    usedConfidenceOverride,
   };
 }
 

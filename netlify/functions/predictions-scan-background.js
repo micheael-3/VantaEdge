@@ -367,17 +367,23 @@ async function fetchFixtureDetail(fx, leagueId, season, standings) {
   // form. We dedupe by fixture id before slicing back to 5.
   const homeAwayForm = football.extractFormForTeam(homeLast, homeId);
   const awayAwayForm = football.extractFormForTeam(awayLast, awayId);
+  // extractFormForTeam now always returns a 5-element array padded with
+  // null. "Has enough" means at least 5 non-null entries. When the
+  // venue-only array has fewer than 5 real games we top up from the
+  // any-venue array, which usually has 7-10 games for an MLS team.
+  function realCount(arr) {
+    return Array.isArray(arr) ? arr.filter((v) => v != null).length : 0;
+  }
   function topUpForm(primary, anyVenueArr, teamId, label) {
-    if (primary.length >= 5) return primary;
+    if (realCount(primary) >= 5) return primary;
     const anyForm = football.extractFormForTeam(anyVenueArr, teamId);
-    // anyForm contains every recent game including the ones we already
-    // got from the venue-specific call. We want the 5 most recent of
-    // anyForm (which extractFormForTeam returns chronologically already).
-    const merged = anyForm.slice(0, 5);
-    console.log(
-      `[scan-bg form] ${label} venue-only had ${primary.length}, any-venue has ${anyForm.length}; using ${merged.length} merged.`,
-    );
-    return merged;
+    if (realCount(anyForm) > realCount(primary)) {
+      console.log(
+        `[scan-bg form] ${label} venue-only had ${realCount(primary)} real entries, any-venue has ${realCount(anyForm)}; using any-venue.`,
+      );
+      return anyForm;
+    }
+    return primary;
   }
   const homeForm = topUpForm(homeAwayForm, homeAnyVenue, homeId, `home(${fx.teams.home.name})`);
   const awayForm = topUpForm(awayAwayForm, awayAnyVenue, awayId, `away(${fx.teams.away.name})`);
@@ -858,6 +864,22 @@ async function runScan(leagueId, weekStart) {
           continue;
         }
         throw claudeErr;
+      }
+
+      // Defensive belt-and-braces: never persist a row where the model
+      // returned exactly 50/50. claude.js currently throws on failure
+      // instead of returning a synthetic 50/50, but if a future change
+      // re-introduces a fallback path this guard stops it polluting
+      // the calibration data. Skip — don't insert.
+      if (
+        Number(analysis.over.confidence) === 50 &&
+        Number(analysis.btts.confidence) === 50
+      ) {
+        console.warn(
+          `[scan-bg] SKIP fixture=${fx.fixture && fx.fixture.id} ${fx.teams.home.name} vs ${fx.teams.away.name} — AI returned 50/50 placeholder.`,
+        );
+        skippedClaude += 1;
+        continue;
       }
 
       let oddsData = null;
