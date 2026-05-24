@@ -190,7 +190,7 @@ function CalculatorLocked() {
                 letterSpacing: '0.04em',
               }}
             >
-              CANCEL ANYTIME · 7-DAY TRIAL
+              CANCEL ANYTIME
             </p>
           </div>
         </div>
