@@ -780,6 +780,17 @@ async function runScan(leagueId, weekStart) {
       let analysis;
       try {
         analysis = await analyseMatch(claudePayload, false, false);
+        // Verbose log of every Claude verdict so we can audit whether the
+        // model is ever calling BTTS NO. Earlier reports showed every
+        // pick coming back as YES — the prompt now has an explicit
+        // "MUST predict NO when …" rule, and this log proves it.
+        console.log(
+          `[scan-bg verdict] fixture=${fx.fixture && fx.fixture.id} ` +
+            `${fx.teams.home.name} vs ${fx.teams.away.name} ` +
+            `OVER=${analysis.over.line}@${analysis.over.confidence}% ` +
+            `BTTS=${analysis.btts.prediction}@${analysis.btts.confidence}% ` +
+            `risk=${analysis.riskScore ?? 'n/a'}`,
+        );
         // Server-side BTTS cap. If either team has a clean-sheet rate
         // of 40%+, BTTS confidence shouldn't exceed 60% — a team that
         // shuts out 4 in 10 games can't be in a 70% BTTS-YES.

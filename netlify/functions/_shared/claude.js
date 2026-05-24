@@ -76,6 +76,10 @@ function analystSystemPrompt(reflection) {
     `  • Cite per-team goals/game, clean-sheet rates, H2H median, form, league position.\n` +
     `  • If H2H samples < 4, treat that signal as weak.\n` +
     `  • If either team has clean_sheet_rate ≥ 0.40, BTTS-YES cannot exceed 60%.\n` +
+    `  • BTTS NO is required when EITHER of these is true:\n` +
+    `      (a) either team has failed to score in 3 or more of their last 5 games, OR\n` +
+    `      (b) either team's goals-scored average is below 0.8 per game.\n` +
+    `    In those cases you MUST predict BTTS NO. Do not default to YES.\n` +
     `  • Confidence cap is 85%. Average confidence target is ~70%.\n` +
     `  • If you can't justify a pick with the numbers, drop confidence — don't fabricate.\n\n` +
     reflectionBlock(reflection)

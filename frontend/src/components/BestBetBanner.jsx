@@ -46,6 +46,12 @@ export default function BestBetBanner({ fixture }) {
   const label = confidenceLabel(conf);
   const overLine = fixture?.predictions?.over?.line ?? 2.5;
   const fixtureId = fixture.id || fixture.fixtureId;
+  // Settle pill (top-right). overHit is the canonical signal — present
+  // only when the match is fully settled. null/undefined → render
+  // nothing (upcoming or live; can't know yet).
+  const overHit = fixture && fixture.actualResult ? fixture.actualResult.overHit : null;
+  const showHit = overHit === true;
+  const showMiss = overHit === false;
 
   const onJumpToCard = () => {
     if (typeof document === 'undefined' || fixtureId == null) return;
@@ -89,6 +95,35 @@ export default function BestBetBanner({ fixture }) {
           pointerEvents: 'none',
         }}
       />
+      {/* Settle pill — top right corner. Only renders once overHit is
+          a real boolean from agent-results. Upcoming/live matches show
+          nothing so the banner doesn't claim a result that doesn't
+          exist yet. */}
+      {(showHit || showMiss) && (
+        <div
+          className="mono"
+          style={{
+            position: 'absolute',
+            top: 14,
+            right: 14,
+            zIndex: 2,
+            padding: '4px 10px',
+            borderRadius: 999,
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: '0.06em',
+            border: showHit
+              ? '1px solid rgba(110,231,183,0.4)'
+              : '1px solid rgba(239,68,68,0.4)',
+            background: showHit
+              ? 'rgba(110,231,183,0.15)'
+              : 'rgba(239,68,68,0.12)',
+            color: showHit ? 'var(--mint)' : 'var(--red)',
+          }}
+        >
+          {showHit ? '✓ HIT' : '✗ MISS'}
+        </div>
+      )}
       <div
         style={{
           display: 'flex',

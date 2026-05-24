@@ -250,7 +250,11 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
         </div>
       </div>
 
-      {isPast && (
+      {/* Result chip only renders when the match actually has a final
+          score (both goals known + status FT). Previously the chip
+          rendered "FT –" on upcoming/null cases because result was
+          truthy from the hit flags alone. */}
+      {isPast && result && result.homeGoals != null && result.awayGoals != null && (
         <div
           className="mono"
           style={{
@@ -334,6 +338,9 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
           pending={aiPending}
           explainer={bttsExplainer}
           hit={isPast ? !!result.bttsHit : null}
+          // BTTS NO is a valid strong pick — render the row in red
+          // (chip + conf bar) so the directional signal is obvious.
+          tone={String(bttsPred).toUpperCase() === 'NO' ? 'red' : 'mint'}
         />
       </div>
 
@@ -598,15 +605,18 @@ function StatBlock({ icon, label, value, explanation }) {
   return (
     <div
       style={{
-        padding: 10,
+        padding: 8,
         borderRadius: 8,
         border: '1px solid var(--border-soft)',
         background: 'var(--bg-2)',
         display: 'flex',
         flexDirection: 'column',
         gap: 2,
-        maxHeight: 64,
-        overflow: 'hidden',
+        // No max-height clamp — the value line can wrap to 2 lines when
+        // the string is long (e.g. "1.8 scored · 2.6 conceded" overflows
+        // a 44%-wide grid cell on iPhone-mini). We trade a few px of
+        // height for never truncating.
+        overflow: 'visible',
       }}
     >
       <div
@@ -616,13 +626,13 @@ function StatBlock({ icon, label, value, explanation }) {
           gap: 6,
         }}
       >
-        <span style={{ fontSize: 12, lineHeight: 1 }} aria-hidden="true">
+        <span style={{ fontSize: 11, lineHeight: 1 }} aria-hidden="true">
           {icon}
         </span>
         <span
           className="mono"
           style={{
-            fontSize: 10,
+            fontSize: 9,
             color: 'var(--text-3)',
             letterSpacing: '0.04em',
             textTransform: 'uppercase',
@@ -633,13 +643,13 @@ function StatBlock({ icon, label, value, explanation }) {
       </div>
       <div
         style={{
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: 600,
           color: 'var(--text)',
           lineHeight: 1.2,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
+          // Allow wrap (no nowrap, no ellipsis). Long values like
+          // "1.8 scored · 2.6 conceded" use 2 lines on narrow screens.
+          wordBreak: 'break-word',
         }}
         title={String(value)}
       >
@@ -647,9 +657,11 @@ function StatBlock({ icon, label, value, explanation }) {
       </div>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 10,
           color: 'var(--text-3)',
           lineHeight: 1.25,
+          // 1 line max with truncation — explanatory text is fine to
+          // cap because the title attr exposes the full string.
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',

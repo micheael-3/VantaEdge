@@ -44,6 +44,10 @@ export default function PredictionRow({
   pending = false,
   explainer = '',
   hit = null,
+  // 'mint' (default — positive direction like Over/BTTS YES) or 'red'
+  // (negative direction — BTTS NO). Affects the confidence bar fill
+  // and the label chip tint. Both are treated as valid strong picks.
+  tone = 'mint',
 }) {
   const [showHelp, setShowHelp] = useState(false);
   const [helpHidden, setHelpHidden] = useState(true); // start hidden to avoid SSR flicker
@@ -100,14 +104,23 @@ export default function PredictionRow({
   const label = confidenceLabel(pct);
 
   // Color treatment for the label chip.
-  //   70+        → mint (Strong / Very Strong)
+  //   70+        → mint (Strong / Very Strong) — or red when tone='red'
   //   65-69      → amber (Good)
   //   55-64      → soft slate (Decent)
+  //
+  // BTTS NO (tone='red'): the chip uses a red tint and the conf bar
+  // fills red. The number itself stays neutral white — the directional
+  // signal lives in the colour treatment, not in the percentage.
   let chipBg = 'transparent';
   let chipColor = 'var(--text-2)';
   if (pct >= 70) {
-    chipBg = 'rgba(110,231,183,0.15)';
-    chipColor = 'var(--mint)';
+    if (tone === 'red') {
+      chipBg = 'rgba(239,68,68,0.12)';
+      chipColor = 'var(--red)';
+    } else {
+      chipBg = 'rgba(110,231,183,0.15)';
+      chipColor = 'var(--mint)';
+    }
   } else if (pct >= 65) {
     chipBg = 'rgba(251,191,36,0.15)';
     chipColor = 'var(--amber)';
@@ -261,7 +274,7 @@ export default function PredictionRow({
           Confidence
         </span>
       </div>
-      <ConfBar pct={pct} color="mint" delay={delay} />
+      <ConfBar pct={pct} color={tone === 'red' ? 'red' : 'mint'} delay={delay} />
     </div>
   );
 }

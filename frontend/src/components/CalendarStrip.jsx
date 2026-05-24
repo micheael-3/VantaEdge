@@ -95,10 +95,15 @@ export default function CalendarStrip({ days, activeDate, onSelect }) {
             role="tab"
             aria-selected={isActive}
             title={`${d.count || 0} matches on ${d.label || d.date}`}
+            className="cs-pill"
             style={{
               flexShrink: 0,
+              // 64px desktop, 44px mobile (overridden by .cs-pill rule
+              // in index.css). Width is the only thing that changes —
+              // typography stays the same so the date number reads
+              // legibly at either width.
               width: 64,
-              padding: '10px 8px',
+              padding: '10px 4px',
               border: `1px solid ${borderColor}`,
               background,
               borderRadius: 10,

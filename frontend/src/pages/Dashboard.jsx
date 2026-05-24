@@ -456,7 +456,7 @@ export default function Dashboard() {
           {showOnboarding && (
             <OnboardingOverlay onClose={() => setShowOnboarding(false)} />
           )}
-          {streak > 0 && (
+          {streak >= 3 && (
             <div
               className="card mono"
               style={{

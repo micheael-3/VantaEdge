@@ -1196,20 +1196,23 @@ table.tbl tr:last-child td { border-bottom: none; }
 }
 .app-top-menu:active { transform: scale(0.96); }
 @media (max-width: 767px) {
-  /* Header sits in a 52px sticky strip. Bottom safe-area is handled
-     by .bottom-nav's own padding-bottom rule below. */
+  /* 52px sticky top bar — solid #0a0a0f bg, 1px #1c1c26 hairline below.
+     Logo left, date centred (DM Mono 12px muted), plan badge right. No
+     hamburger; bottom nav owns navigation. The negative margins offset
+     .app-main's own top padding so the bar truly hugs the viewport top. */
   .app-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 10px 14px;
-    margin: -56px -16px 14px;  /* offset the .app-main top padding */
-    border-bottom: 1px solid var(--border-soft);
+    height: 52px;
+    padding: 0 14px;
+    margin: -52px -16px 14px;
+    border-bottom: 1px solid #1c1c26;
     position: sticky;
     top: 0;
     z-index: 30;
-    background: var(--bg-2);
+    background: #0a0a0f;
   }
   .app-top .date {
     font-family: var(--font-mono);
@@ -1221,7 +1224,7 @@ table.tbl tr:last-child td { border-bottom: none; }
     text-align: center;
   }
   /* Reclaim mobile main padding now that we have a sticky bar at top */
-  .app-main { padding-top: 56px; }
+  .app-main { padding-top: 52px; }
 
   /* Tighten dashboard typography on mobile. 28px Syne bold per the
      mobile UI polish spec — the inline 36px hero size was eating the
@@ -1231,6 +1234,10 @@ table.tbl tr:last-child td { border-bottom: none; }
   /* 12px gap between cards (was 16px on desktop). The .mc-grid class
      is what Dashboard sets on the container. */
   .mc-grid { gap: 12px !important; }
+  /* 44px-wide calendar pills on mobile (64px on desktop). The strip
+     still scrolls horizontally — 10 pills × 44px + gaps fits inside
+     iPhone-mini width with a few px of breathing room. */
+  .cs-pill { width: 44px !important; }
 }
 
 /* Upgrade modal — centered card on desktop, bottom sheet on mobile. */
