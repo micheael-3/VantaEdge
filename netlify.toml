@@ -31,6 +31,15 @@
 [functions."agent-best-bet"]
   schedule = "0 7 * * *"
 
+# Intelligence Evolution agents — daily post-match autopsy + weekly
+# pattern mining. Both loop over all active sports from
+# netlify/functions/_shared/sports.js.
+[functions."agent-autopsy"]
+  schedule = "0 4 * * *"
+
+[functions."agent-patterns"]
+  schedule = "0 5 * * 1"
+
 [functions."email"]
   schedule = "0 7 * * *"
 
@@ -181,6 +190,12 @@
 [[redirects]]
   from   = "/api/accuracy"
   to     = "/.netlify/functions/accuracy"
+  status = 200
+
+# Intelligence Evolution endpoints.
+[[redirects]]
+  from   = "/api/intelligence"
+  to     = "/.netlify/functions/intelligence"
   status = 200
 
 # Self-learning upgrade: AI persona + user feedback endpoints.

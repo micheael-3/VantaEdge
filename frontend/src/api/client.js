@@ -153,6 +153,12 @@ export const persona = {
   get: () => api.get('/api/persona').then((r) => r.data),
 };
 
+// Public intelligence-score endpoint. Powers the Admin Intelligence
+// tab today; the dashboard widget that reads it lives in a follow-up.
+export const intelligence = {
+  get: () => api.get('/api/intelligence').then((r) => r.data),
+};
+
 export const feedback = {
   rate: (predictionId, rating, comment) =>
     api

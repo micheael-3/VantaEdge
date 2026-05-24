@@ -473,6 +473,48 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
   // pull the three tabs (verdict / analysis / risks).
   const debatePayload = analysis.debate || null;
 
+  // Contrarian detection — does the AI's call go against the obvious
+  // surface stats? Three triggers per spec; any one is enough.
+  //   1. Over UNDER when both teams average > 2.5 goals each.
+  //   2. BTTS NO when both teams scored in 4+ of last 5.
+  //   3. Confidence > 75 on either market when sign of (totalAvg − 2.5)
+  //      conflicts with the over_line vote.
+  // PRO users see the full reasoning in Show Analysis; everyone sees a
+  // small amber "CONTRARIAN PICK" badge.
+  function bothScoredCount(scores) {
+    if (!Array.isArray(scores)) return 0;
+    let n = 0;
+    for (const s of scores) {
+      const m = String(s).match(/(\d+)\s*[-–]\s*(\d+)/);
+      if (m && Number(m[1]) > 0 && Number(m[2]) > 0) n += 1;
+    }
+    return n;
+  }
+  const homeAvgFor = matchData && matchData.home && matchData.home.goalsPerGame && matchData.home.goalsPerGame.avgFor;
+  const awayAvgFor = matchData && matchData.away && matchData.away.goalsPerGame && matchData.away.goalsPerGame.avgFor;
+  const homeRecentScored = matchData && matchData.home && bothScoredCount(matchData.home.lastFiveScores);
+  const awayRecentScored = matchData && matchData.away && bothScoredCount(matchData.away.lastFiveScores);
+  const overIsUnderSide = Number(analysis.over.line) <= 1.5;
+  const bothHighScoring = Number(homeAvgFor) > 2.5 && Number(awayAvgFor) > 2.5;
+  const bttsNo = String(analysis.btts.prediction || '').toUpperCase() === 'NO';
+  const bothScoringStreak = homeRecentScored >= 4 && awayRecentScored >= 4;
+  const overConf = Number(analysis.over.confidence) || 0;
+  const bttsConf = Number(analysis.btts.confidence) || 0;
+  const isContrarian =
+    (overIsUnderSide && bothHighScoring) ||
+    (bttsNo && bothScoringStreak) ||
+    (overConf >= 75 && bothHighScoring && overIsUnderSide) ||
+    (bttsConf >= 75 && bothScoringStreak && bttsNo);
+  if (isContrarian) {
+    console.log(
+      `[scan-bg contrarian] fixture=${fx.fixture && fx.fixture.id} ` +
+        `${fx.teams.home.name} vs ${fx.teams.away.name} ` +
+        `over=${analysis.over.line}@${overConf}% btts=${analysis.btts.prediction}@${bttsConf}% ` +
+        `homeAvg=${homeAvgFor} awayAvg=${awayAvgFor} ` +
+        `homeBTS5=${homeRecentScored} awayBTS5=${awayRecentScored}`,
+    );
+  }
+
   // match_data JSON carries everything the UI needs that isn't already
   // a top-level column: home/away form arrays, rest days, goals-per-game,
   // and the AI reasoning strings (so /week can render them without
@@ -524,7 +566,8 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
          ev_edge_over, ev_edge_btts, kelly_over, kelly_btts,
          best_over_odds, best_over_bookmaker, best_btts_odds, best_btts_bookmaker,
          auto_ev_over, auto_ev_btts, match_data,
-         debate_json, calibrated_over_confidence, calibrated_btts_confidence)
+         debate_json, calibrated_over_confidence, calibrated_btts_confidence,
+         sport, is_contrarian)
       VALUES
         (${adminUserId}, ${league.name}, ${fx.fixture.id}, ${fx.teams.home.name}, ${fx.teams.away.name},
          ${fx.fixture.date}, ${analysis.over.line}, ${Math.round(analysis.over.confidence)},
@@ -536,7 +579,8 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
          ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null},
          ${mdPayload ? JSON.stringify(mdPayload) : null}::jsonb,
          ${debatePayload ? JSON.stringify(debatePayload) : null}::jsonb,
-         ${calibratedOver}, ${calibratedBtts})
+         ${calibratedOver}, ${calibratedBtts},
+         ${(league.name || 'MLS').toLowerCase()}, ${isContrarian})
       ON CONFLICT (fixture_id) DO UPDATE SET
         league = EXCLUDED.league,
         home_team = EXCLUDED.home_team,
@@ -559,7 +603,9 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
         match_data = EXCLUDED.match_data,
         debate_json = EXCLUDED.debate_json,
         calibrated_over_confidence = EXCLUDED.calibrated_over_confidence,
-        calibrated_btts_confidence = EXCLUDED.calibrated_btts_confidence`;
+        calibrated_btts_confidence = EXCLUDED.calibrated_btts_confidence,
+        sport = EXCLUDED.sport,
+        is_contrarian = EXCLUDED.is_contrarian`;
   } catch (err) {
     if (err && (err.code === '42703' || /column .* does not exist/i.test(err.message || ''))) {
       console.warn('[scan-bg] self-learning columns missing on predictions table — inserting without them. Run run-migration.sql.');

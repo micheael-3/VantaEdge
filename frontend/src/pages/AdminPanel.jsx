@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout.jsx';
 import Icon from '../components/Icon.jsx';
 import Loading from '../components/Loading.jsx';
-import { admin as adminApi } from '../api/client.js';
+import { admin as adminApi, intelligence as intelligenceApi } from '../api/client.js';
 
 // Admin Panel — three tabs: STATS, USERS, PREDICTIONS.
 // Mounted at /admin-panel and gated by <AdminOnly> in App.jsx.
@@ -11,6 +11,7 @@ const TABS = [
   { key: 'stats', label: 'Stats' },
   { key: 'users', label: 'Users' },
   { key: 'predictions', label: 'Predictions' },
+  { key: 'intelligence', label: 'Intelligence' },
 ];
 
 const TIER_BADGE = {
@@ -1252,8 +1253,132 @@ export default function AdminPanel() {
           {tab === 'stats' && <StatsTab />}
           {tab === 'users' && <UsersTab />}
           {tab === 'predictions' && <PredictionsTab />}
+          {tab === 'intelligence' && <IntelligenceTab />}
         </div>
       )}
     </Layout>
+  );
+}
+
+// Intelligence Evolution dashboard. Shows the composite intelligence
+// score (from /api/intelligence), the active learned rules table,
+// recent autopsies, and recent pattern insights. Read-only for now —
+// the rule-toggle and "Run Pattern Mining" controls are stubs that
+// just show what would be wired (they'd POST to admin endpoints that
+// don't exist yet). Each section lazily fetches its data on tab open.
+function IntelligenceTab() {
+  const [intel, setIntel] = useState(null);
+  const [intelError, setIntelError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    intelligenceApi
+      .get()
+      .then((r) => { if (!cancelled) setIntel(r); })
+      .catch((err) => {
+        if (!cancelled) setIntelError(err?.response?.data?.error || err.message || 'Failed to load intelligence');
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <>
+      {/* Big score header */}
+      <div
+        className="card"
+        style={{
+          padding: 22,
+          marginBottom: 16,
+          borderColor: 'rgba(110,231,183,0.3)',
+          background: 'linear-gradient(180deg, rgba(110,231,183,0.05), transparent), var(--card)',
+        }}
+      >
+        <div
+          className="mono"
+          style={{ fontSize: 10, color: 'var(--text-3)', letterSpacing: '0.1em', marginBottom: 8 }}
+        >
+          FASTSCORE INTELLIGENCE SCORE
+        </div>
+        {intelError ? (
+          <div style={{ fontSize: 14, color: 'var(--red)' }}>{intelError}</div>
+        ) : !intel ? (
+          <div className="muted">Loading…</div>
+        ) : (
+          <>
+            <div
+              className="display"
+              style={{ fontSize: 56, fontWeight: 700, color: 'var(--mint)', letterSpacing: '-0.03em', lineHeight: 1 }}
+            >
+              {intel.score}
+              <span style={{ fontSize: 18, color: 'var(--text-3)', marginLeft: 8 }}>/ 1150</span>
+            </div>
+            <div
+              style={{
+                marginTop: 14,
+                height: 4,
+                background: 'var(--border-soft)',
+                borderRadius: 2,
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  width: `${Math.min(100, (intel.score / 1150) * 100)}%`,
+                  height: '100%',
+                  background: 'var(--mint)',
+                }}
+              />
+            </div>
+            <div
+              className="mono"
+              style={{ marginTop: 14, fontSize: 11, color: 'var(--text-2)', letterSpacing: '0.04em' }}
+            >
+              {intel.settledPredictions} settled · {intel.learnedRules} learned rules ·{' '}
+              {intel.calibrationWeeks} weeks of calibration · {intel.overallAccuracy}% accuracy · {intel.trend.toUpperCase()}
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-3)' }}>
+              Breakdown: base {intel.breakdown.base} + predictions {intel.breakdown.settledPoints} + rules{' '}
+              {intel.breakdown.rulesPoints} + calibration {intel.breakdown.calibrationPoints} + accuracy{' '}
+              {intel.breakdown.accuracyBonus}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Lazy panels — each fetches via its own admin endpoint when wired.
+          Today they show a static "comes online after a deploy + first
+          run" placeholder so the tab isn't blank pre-migration. */}
+      <IntelligencePanel
+        title="ACTIVE LEARNED RULES"
+        emptyMessage="No rules yet. After agent-autopsy runs daily at 4am (or pattern mining on Monday at 5am), high-confidence rules appear here."
+        endpointHint="learned_rules"
+      />
+      <IntelligencePanel
+        title="PATTERN INSIGHTS"
+        emptyMessage="No patterns mined yet. Pattern mining runs weekly on Monday at 5am and writes to pattern_insights when a (dimension, value) group beats the average hit rate by >10pts."
+        endpointHint="pattern_insights"
+      />
+      <IntelligencePanel
+        title="RECENT AUTOPSIES"
+        emptyMessage="Autopsy of the last 24h of settled predictions runs daily at 4am. The first run after a matchday populates this list."
+        endpointHint="prediction_autopsy"
+      />
+    </>
+  );
+}
+
+function IntelligencePanel({ title, emptyMessage }) {
+  return (
+    <div className="card" style={{ padding: 16, marginBottom: 12 }}>
+      <div
+        className="mono"
+        style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em', marginBottom: 6 }}
+      >
+        {title}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5 }}>
+        {emptyMessage}
+      </div>
+    </div>
   );
 }

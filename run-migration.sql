@@ -73,6 +73,86 @@ DO $$ BEGIN
     ADD CONSTRAINT prediction_fixture_unique UNIQUE (fixture_id);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- =====================================================================
+-- INTELLIGENCE EVOLUTION SYSTEM (sport/league agnostic)
+-- =====================================================================
+-- All three new tables include both `sport` and `league` text columns so
+-- future sports (UFC, World Cup, CL) drop into the same schema with no
+-- ALTERs. The application reads sport/league identifiers from
+-- _shared/sports.js — never hardcoded.
+
+-- Post-settle Claude autopsy of every prediction.
+CREATE TABLE IF NOT EXISTS prediction_autopsy (
+  id                   UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  prediction_id        UUID         REFERENCES predictions(id) ON DELETE CASCADE,
+  sport                TEXT         NOT NULL,
+  league               TEXT         NOT NULL,
+  was_correct          BOOLEAN,
+  primary_reason       TEXT,
+  misleading_factors   JSONB,
+  raw_response         JSONB,
+  created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS prediction_autopsy_prediction_idx
+  ON prediction_autopsy(prediction_id);
+CREATE INDEX IF NOT EXISTS prediction_autopsy_sport_idx
+  ON prediction_autopsy(sport, league, created_at DESC);
+
+-- Rules extracted by the autopsy agent (and the pattern miner). Injected
+-- into the Analyst's system prompt on every new prediction. Toggle via
+-- the `active` flag from the Admin Intelligence tab if a rule starts to
+-- hurt instead of help.
+CREATE TABLE IF NOT EXISTS learned_rules (
+  id                     UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  sport                  TEXT         NOT NULL,
+  league                 TEXT         NOT NULL,
+  condition              TEXT         NOT NULL,
+  adjustment             TEXT         NOT NULL,
+  supporting_predictions INTEGER      NOT NULL DEFAULT 1,
+  accuracy_improvement   REAL,
+  confidence             INTEGER,
+  active                 BOOLEAN      NOT NULL DEFAULT TRUE,
+  source                 TEXT         NOT NULL DEFAULT 'autopsy',
+  created_at             TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS learned_rules_active_idx
+  ON learned_rules(sport, league, active);
+
+-- Statistical patterns mined weekly from settled-prediction history.
+CREATE TABLE IF NOT EXISTS pattern_insights (
+  id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  sport             TEXT         NOT NULL,
+  league            TEXT         NOT NULL,
+  dimension         TEXT         NOT NULL,
+  dimension_value   TEXT         NOT NULL,
+  sample_count      INTEGER      NOT NULL,
+  hit_rate          REAL         NOT NULL,
+  overall_hit_rate  REAL         NOT NULL,
+  delta             REAL         NOT NULL,
+  insight           TEXT,
+  created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS pattern_insights_sport_idx
+  ON pattern_insights(sport, league, created_at DESC);
+
+-- New columns on predictions:
+--   sport               — explicit sport key from _shared/sports.js. The
+--                         existing `league` column stores the legacy
+--                         human-readable label ('MLS'); `sport` stores
+--                         the canonical id ('mls') so cross-sport joins
+--                         are sane.
+--   is_contrarian       — true when the AI's call goes against the
+--                         obvious stats. Surfaced as an amber badge in
+--                         MatchCard so PRO users can spot value picks.
+--   confidence_updated  — true after a late-window re-analysis bumped
+--                         confidence by >10pts (pipeline ships later).
+--   confidence_previous — the confidence we shipped before that update,
+--                         so the UI can render "~~74%~~ → 61%".
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS sport               TEXT;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS is_contrarian       BOOLEAN     NOT NULL DEFAULT FALSE;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS confidence_updated  BOOLEAN     NOT NULL DEFAULT FALSE;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS confidence_previous INTEGER;
+
 -- 2. Per-league, per-market calibration. agent-results.js calls
 --    updateCalibration() on every settle; predictions-scan-background.js
 --    reads correction_factor at insert time to compute the calibrated

@@ -402,6 +402,57 @@ DO $$ BEGIN
     ADD CONSTRAINT prediction_fixture_unique UNIQUE (fixture_id);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- Intelligence Evolution columns + tables. Sport-agnostic by design —
+-- new sports drop into _shared/sports.js without touching the schema.
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS sport               TEXT;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS is_contrarian       BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS confidence_updated  BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS confidence_previous INTEGER;
+
+CREATE TABLE IF NOT EXISTS prediction_autopsy (
+  id                 UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  prediction_id      UUID         REFERENCES predictions(id) ON DELETE CASCADE,
+  sport              TEXT         NOT NULL,
+  league             TEXT         NOT NULL,
+  was_correct        BOOLEAN,
+  primary_reason     TEXT,
+  misleading_factors JSONB,
+  raw_response       JSONB,
+  created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS prediction_autopsy_prediction_idx ON prediction_autopsy(prediction_id);
+CREATE INDEX IF NOT EXISTS prediction_autopsy_sport_idx       ON prediction_autopsy(sport, league, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS learned_rules (
+  id                     UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  sport                  TEXT         NOT NULL,
+  league                 TEXT         NOT NULL,
+  condition              TEXT         NOT NULL,
+  adjustment             TEXT         NOT NULL,
+  supporting_predictions INTEGER      NOT NULL DEFAULT 1,
+  accuracy_improvement   REAL,
+  confidence             INTEGER,
+  active                 BOOLEAN      NOT NULL DEFAULT TRUE,
+  source                 TEXT         NOT NULL DEFAULT 'autopsy',
+  created_at             TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS learned_rules_active_idx ON learned_rules(sport, league, active);
+
+CREATE TABLE IF NOT EXISTS pattern_insights (
+  id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  sport             TEXT         NOT NULL,
+  league            TEXT         NOT NULL,
+  dimension         TEXT         NOT NULL,
+  dimension_value   TEXT         NOT NULL,
+  sample_count      INTEGER      NOT NULL,
+  hit_rate          REAL         NOT NULL,
+  overall_hit_rate  REAL         NOT NULL,
+  delta             REAL         NOT NULL,
+  insight           TEXT,
+  created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS pattern_insights_sport_idx ON pattern_insights(sport, league, created_at DESC);
+
 -- Per-league, per-market live calibration. Updated on every settle by
 -- agent-results.js; read by predictions-scan-background.js at insert time.
 -- meanConfidence = average raw confidence we shipped on this bucket;

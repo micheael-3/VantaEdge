@@ -1,5 +1,7 @@
 const axios = require('axios');
 const { sql } = require('./db');
+const { loadActiveRules, formatRulesForPrompt } = require('./learned-rules');
+const { findByLeagueLabel } = require('./sports');
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -63,7 +65,7 @@ function reflectionBlock(lines) {
 
 // ---------- Agent system prompts ----------
 
-function analystSystemPrompt(reflection) {
+function analystSystemPrompt(reflection, learnedRulesBlock) {
   return (
     `You are an elite MLS football statistician with 10+ years of analysing match data.\n\n` +
     `Your job: produce a detailed, NUMBER-DRIVEN prediction report for the ` +
@@ -82,7 +84,8 @@ function analystSystemPrompt(reflection) {
     `    In those cases you MUST predict BTTS NO. Do not default to YES.\n` +
     `  • Confidence cap is 85%. Average confidence target is ~70%.\n` +
     `  • If you can't justify a pick with the numbers, drop confidence — don't fabricate.\n\n` +
-    reflectionBlock(reflection)
+    reflectionBlock(reflection) +
+    (learnedRulesBlock || '')
   );
 }
 
@@ -235,14 +238,24 @@ function classifyHttpError(err) {
 // Returns: parsed JSON from the Adjudicator with an extra `debate`
 // field carrying the analyst + critique transcripts for storage.
 async function runEnsemble(matchData, { includeFirstHalf, includeAsianHandicap, leagueForReflection }) {
-  const reflection = await fetchRecentReflectionLines(leagueForReflection || (matchData && matchData.league) || 'MLS');
+  const leagueLabel = leagueForReflection || (matchData && matchData.league) || 'MLS';
+  const sportEntry = findByLeagueLabel(leagueLabel);
+  const sportKey = sportEntry ? sportEntry.id : leagueLabel.toLowerCase();
+  const leagueKey = sportEntry ? sportEntry.name : leagueLabel;
+  const reflection = await fetchRecentReflectionLines(leagueLabel);
+  // Learned rules — injected into the Analyst's system prompt so the
+  // model has to acknowledge them before producing a verdict. Best-
+  // effort: load failures return an empty string and the prompt is
+  // identical to the pre-Intelligence behaviour.
+  const rules = await loadActiveRules(sportKey, leagueKey);
+  const learnedRulesBlock = formatRulesForPrompt(rules);
   const matchJson = JSON.stringify(matchData, null, 2);
 
   // 1. ANALYST — free-text prediction report.
   let analystText;
   try {
     analystText = await callOpenRouter({
-      systemPrompt: analystSystemPrompt(reflection),
+      systemPrompt: analystSystemPrompt(reflection, learnedRulesBlock),
       userMessage: `Analyse this match. Output your full prediction report.\n\nMatch data:\n${matchJson}`,
       maxTokens: 700,
     });
@@ -354,6 +367,10 @@ async function runEnsemble(matchData, { includeFirstHalf, includeAsianHandicap, 
     adjudicator: String(verdictText || '').slice(0, 3000),
     riskScore: parsed.riskScore,
     keyFactor: parsed.keyFactor || null,
+    // Snapshot of the active learned rules the Analyst saw. Admin
+    // Intelligence tab uses this to audit which rules were applied
+    // to which predictions.
+    rulesApplied: rules.map((r) => ({ id: r.id, condition: r.condition, adjustment: r.adjustment })),
     generatedAt: new Date().toISOString(),
   };
 

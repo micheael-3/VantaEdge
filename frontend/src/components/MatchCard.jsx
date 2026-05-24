@@ -201,9 +201,49 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
           color: 'var(--text-3)',
           letterSpacing: '0.08em',
           marginBottom: 12,
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 8,
         }}
       >
-        MLS · {formatKickoffShort(fixture.kickoff)}
+        <span>MLS · {formatKickoffShort(fixture.kickoff)}</span>
+        {fixture.isContrarian && (
+          <span
+            title="AI goes against the obvious stats here. These are often where the real value hides."
+            style={{
+              padding: '2px 7px',
+              borderRadius: 4,
+              fontSize: 9,
+              background: 'rgba(251,191,36,0.12)',
+              color: 'var(--amber)',
+              border: '1px solid rgba(251,191,36,0.3)',
+              letterSpacing: '0.08em',
+            }}
+          >
+            🔄 CONTRARIAN
+          </span>
+        )}
+        {fixture.confidenceUpdated && (
+          <span
+            title={
+              fixture.confidencePrevious != null
+                ? `Confidence updated before kickoff — was ${fixture.confidencePrevious}%`
+                : 'Confidence updated based on late-breaking information'
+            }
+            style={{
+              padding: '2px 7px',
+              borderRadius: 4,
+              fontSize: 9,
+              background: 'rgba(129,140,248,0.12)',
+              color: 'var(--indigo)',
+              border: '1px solid rgba(129,140,248,0.3)',
+              letterSpacing: '0.08em',
+            }}
+          >
+            ⚠ UPDATED
+          </span>
+        )}
       </div>
 
       <div

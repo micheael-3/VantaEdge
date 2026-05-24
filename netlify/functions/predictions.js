@@ -417,6 +417,12 @@ function shapeForFrontend(row, adjustments) {
       over: row.ev_edge_over != null ? { edge: row.ev_edge_over } : null,
       btts: row.ev_edge_btts != null ? { edge: row.ev_edge_btts } : null,
     },
+    // Intelligence-system flags (sport-agnostic). The frontend renders:
+    //   isContrarian          → amber "CONTRARIAN PICK" badge
+    //   confidenceUpdated     → "⚠️ UPDATED" tag + previous-value strike-through
+    isContrarian: row.is_contrarian === true,
+    confidenceUpdated: row.confidence_updated === true,
+    confidencePrevious: row.confidence_previous != null ? Number(row.confidence_previous) : null,
     aiStatus: (md && md.aiStatus) || 'ok',
     aiReason: (md && md.aiReason) || null,
   };
@@ -486,7 +492,8 @@ async function handleWeek(event) {
              match_data,
              debate_json, accuracy_score,
              calibrated_over_confidence, calibrated_btts_confidence,
-             home_goals, away_goals
+             home_goals, away_goals,
+             is_contrarian, confidence_updated, confidence_previous
       FROM predictions
       WHERE kickoff >= ${readFrom}::date
         AND kickoff <  (${readTo}::date + INTERVAL '1 day')
