@@ -129,6 +129,10 @@ export const admin = {
   // UI renders them distinctly and they're excluded from accuracy stats.
   recoverHistory: (days = 30) =>
     api.post(`/api/admin/recover-history?days=${days}`).then((r) => r.data),
+  // Strips ghost rows (over_confidence 0/null) and collapses duplicate
+  // fixture_id rows to the highest-confidence one. Pre-migration cleanup
+  // so the new UNIQUE (fixture_id) constraint can be added safely.
+  deduplicate: () => api.post('/api/admin/deduplicate').then((r) => r.data),
   // Per-fixture inspector. Returns raw API-Football responses, the
   // extracted form/stats/standings, and the matchData that would be
   // sent to Claude. Used by the "Debug Fixture" UI in the admin panel.

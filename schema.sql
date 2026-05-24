@@ -392,6 +392,15 @@ ALTER TABLE predictions ADD COLUMN IF NOT EXISTS calibrated_over_confidence  INT
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS calibrated_btts_confidence  INTEGER;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS home_goals                  INTEGER;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS away_goals                  INTEGER;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS settled_at                  TIMESTAMPTZ;
+
+-- Unique constraint on fixture_id — one prediction row per fixture in
+-- the shared MLS scan model. The migration script in run-migration.sql
+-- dedupes before adding this so old multi-row fixtures get collapsed.
+DO $$ BEGIN
+  ALTER TABLE predictions
+    ADD CONSTRAINT prediction_fixture_unique UNIQUE (fixture_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Per-league, per-market live calibration. Updated on every settle by
 -- agent-results.js; read by predictions-scan-background.js at insert time.

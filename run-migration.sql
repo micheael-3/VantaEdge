@@ -29,6 +29,50 @@ ALTER TABLE predictions ADD COLUMN IF NOT EXISTS calibrated_btts_confidence  INT
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS home_goals                  INTEGER;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS away_goals                  INTEGER;
 
+-- 1b. settled_at — the moment agent-results successfully wrote hit/miss.
+--     Used as a guard so the resettle pipeline can't re-process the same
+--     row twice. Settlement check is now:
+--       WHERE kickoff < NOW() AND over_hit IS NULL AND settled_at IS NULL
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS settled_at                  TIMESTAMPTZ;
+
+-- 1c. CRITICAL — dedup the predictions table and prevent recurrence.
+--
+-- Two cleanups must run before the UNIQUE constraint, or the ALTER fails:
+--   a) Drop ghost rows with over_confidence = 0 or NULL. Those are
+--      either recovery placeholders (from /api/admin/recover-history)
+--      or never-settled OpenRouter-failure rows; either way they don't
+--      belong in the live predictions stream.
+--   b) Collapse duplicate (fixture_id) rows to the single best by
+--      over_confidence, breaking ties with newest created_at.
+--
+-- Once the table has at most one row per fixture_id, the UNIQUE
+-- constraint locks it in. Future scans use ON CONFLICT (fixture_id)
+-- DO UPDATE so re-runs always overwrite the existing row instead of
+-- inserting a sibling.
+DELETE FROM predictions
+WHERE over_confidence = 0 OR over_confidence IS NULL;
+
+DELETE FROM predictions
+WHERE id IN (
+  SELECT id FROM (
+    SELECT id,
+           ROW_NUMBER() OVER (
+             PARTITION BY fixture_id
+             ORDER BY over_confidence DESC, created_at DESC
+           ) AS rn
+    FROM predictions
+  ) sub
+  WHERE rn > 1
+);
+
+-- Idempotent constraint add — name guards against the IF NOT EXISTS
+-- gap (Postgres doesn't support IF NOT EXISTS on ADD CONSTRAINT before
+-- v18). Wrap in a DO block to make re-runnable.
+DO $$ BEGIN
+  ALTER TABLE predictions
+    ADD CONSTRAINT prediction_fixture_unique UNIQUE (fixture_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- 2. Per-league, per-market calibration. agent-results.js calls
 --    updateCalibration() on every settle; predictions-scan-background.js
 --    reads correction_factor at insert time to compute the calibrated

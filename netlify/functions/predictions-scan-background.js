@@ -511,6 +511,12 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
   // INSERT so the scan still completes; the new columns just won't
   // populate until run-migration.sql is applied.
   try {
+    // ON CONFLICT (fixture_id) DO UPDATE — one row per fixture in the
+    // shared MLS scan model. If a Force Rescan or re-run touches the
+    // same fixture, the existing row gets refreshed instead of growing
+    // a sibling. UPDATE intentionally preserves over_hit/btts_hit/
+    // settled_at/accuracy_score/home_goals/away_goals so a re-scan
+    // after a match is settled doesn't blow the result away.
     await sql()`
       INSERT INTO predictions
         (user_id, league, fixture_id, home_team, away_team, kickoff,
@@ -530,7 +536,30 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
          ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null},
          ${mdPayload ? JSON.stringify(mdPayload) : null}::jsonb,
          ${debatePayload ? JSON.stringify(debatePayload) : null}::jsonb,
-         ${calibratedOver}, ${calibratedBtts})`;
+         ${calibratedOver}, ${calibratedBtts})
+      ON CONFLICT (fixture_id) DO UPDATE SET
+        league = EXCLUDED.league,
+        home_team = EXCLUDED.home_team,
+        away_team = EXCLUDED.away_team,
+        kickoff = EXCLUDED.kickoff,
+        over_line = EXCLUDED.over_line,
+        over_confidence = EXCLUDED.over_confidence,
+        btts = EXCLUDED.btts,
+        btts_confidence = EXCLUDED.btts_confidence,
+        ev_edge_over = EXCLUDED.ev_edge_over,
+        ev_edge_btts = EXCLUDED.ev_edge_btts,
+        kelly_over = EXCLUDED.kelly_over,
+        kelly_btts = EXCLUDED.kelly_btts,
+        best_over_odds = EXCLUDED.best_over_odds,
+        best_over_bookmaker = EXCLUDED.best_over_bookmaker,
+        best_btts_odds = EXCLUDED.best_btts_odds,
+        best_btts_bookmaker = EXCLUDED.best_btts_bookmaker,
+        auto_ev_over = EXCLUDED.auto_ev_over,
+        auto_ev_btts = EXCLUDED.auto_ev_btts,
+        match_data = EXCLUDED.match_data,
+        debate_json = EXCLUDED.debate_json,
+        calibrated_over_confidence = EXCLUDED.calibrated_over_confidence,
+        calibrated_btts_confidence = EXCLUDED.calibrated_btts_confidence`;
   } catch (err) {
     if (err && (err.code === '42703' || /column .* does not exist/i.test(err.message || ''))) {
       console.warn('[scan-bg] self-learning columns missing on predictions table — inserting without them. Run run-migration.sql.');

@@ -358,6 +358,62 @@ async function refreshUpcomingForms() {
   return json(200, { ok: true, report });
 }
 
+// POST /api/admin/deduplicate
+//
+// Strips two classes of polluting rows from the predictions table:
+//   1. over_confidence = 0 or NULL — "ghost" rows from recovery
+//      placeholders or legacy OpenRouter-fallback paths. These don't
+//      reflect a real AI prediction and shouldn't sit in the live
+//      stream.
+//   2. Duplicate (fixture_id) rows — collapsed to the single best by
+//      over_confidence, ties broken by newest created_at.
+//
+// Idempotent — running it twice does nothing extra. After the migration
+// in run-migration.sql adds UNIQUE (fixture_id), the dedup half here
+// will only ever find ghost rows; this endpoint becomes essentially a
+// "clean up zeros" tool.
+async function deduplicatePredictions() {
+  const t0 = Date.now();
+  const report = { zeroRowsDeleted: 0, duplicateRowsDeleted: 0, durationMs: 0 };
+
+  try {
+    const z = await sql()`
+      DELETE FROM predictions
+      WHERE over_confidence = 0 OR over_confidence IS NULL
+      RETURNING id`;
+    report.zeroRowsDeleted = z.length;
+    console.log(`[admin/deduplicate] removed ${z.length} zero/null confidence rows`);
+  } catch (e) {
+    console.error('[admin/deduplicate] zero-conf delete failed:', e.message);
+    return error(500, e.message || 'zero-confidence delete failed');
+  }
+
+  try {
+    const d = await sql()`
+      DELETE FROM predictions
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT id,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY fixture_id
+                   ORDER BY over_confidence DESC, created_at DESC
+                 ) AS rn
+          FROM predictions
+        ) sub
+        WHERE rn > 1
+      )
+      RETURNING id`;
+    report.duplicateRowsDeleted = d.length;
+    console.log(`[admin/deduplicate] removed ${d.length} duplicate rows`);
+  } catch (e) {
+    console.error('[admin/deduplicate] dedup delete failed:', e.message);
+    return error(500, e.message || 'dedup delete failed');
+  }
+
+  report.durationMs = Date.now() - t0;
+  return json(200, { ok: true, report, totalDeleted: report.zeroRowsDeleted + report.duplicateRowsDeleted });
+}
+
 // POST /api/admin/recover-history?days=30
 //
 // Recovery for the May 2026 wipe. Pulls last N days of MLS fixtures
@@ -740,6 +796,14 @@ exports.handler = async (event) => {
     //     about what's been lost — no fabricated AI predictions.
     if (method === 'POST' && (path === '/recover-history' || path === '/recover-history/')) {
       return await recoverHistory(event);
+    }
+
+    // --- POST /deduplicate --- removes ghost rows (over_confidence = 0
+    //     or NULL) and collapses duplicate fixture_id rows to the
+    //     single best by confidence. Idempotent and safe to call
+    //     repeatedly.
+    if (method === 'POST' && (path === '/deduplicate' || path === '/deduplicate/')) {
+      return await deduplicatePredictions();
     }
 
     // --- GET /debug-fixture/:fixtureId --- cookie-authed inspector.

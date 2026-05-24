@@ -78,16 +78,40 @@ async function settleBatch({ dryRun = false } = {}) {
   // /api/admin/recover-history tool already have hit columns set, so
   // they won't match `over_hit IS NULL` anyway. Belt-and-braces.
   void ninetyMinutesAgoIso; // keep import alive for callers
-  const rows = await sql()`
-    SELECT id, user_id, league, fixture_id, kickoff,
-           over_line, over_confidence, btts, btts_confidence,
-           is_sharp_move
-    FROM predictions
-    WHERE over_hit IS NULL
-      AND fixture_id IS NOT NULL
-      AND kickoff < NOW()
-    ORDER BY kickoff ASC
-    LIMIT 500`;
+  // Two-step query so we can also catch rows that had over_hit set
+  // earlier but never had settled_at stamped (legacy data from before
+  // the column existed). settled_at IS NULL is the canonical "still
+  // needs settling" signal going forward.
+  let rows;
+  try {
+    rows = await sql()`
+      SELECT id, user_id, league, fixture_id, kickoff,
+             over_line, over_confidence, btts, btts_confidence,
+             is_sharp_move
+      FROM predictions
+      WHERE over_hit IS NULL
+        AND fixture_id IS NOT NULL
+        AND kickoff < NOW()
+        AND settled_at IS NULL
+      ORDER BY kickoff ASC
+      LIMIT 500`;
+  } catch (err) {
+    if (err && (err.code === '42703' || /column .* does not exist/i.test(err.message || ''))) {
+      console.warn('[agent-results] settled_at column missing — falling back. Run run-migration.sql.');
+      rows = await sql()`
+        SELECT id, user_id, league, fixture_id, kickoff,
+               over_line, over_confidence, btts, btts_confidence,
+               is_sharp_move
+        FROM predictions
+        WHERE over_hit IS NULL
+          AND fixture_id IS NOT NULL
+          AND kickoff < NOW()
+        ORDER BY kickoff ASC
+        LIMIT 500`;
+    } else {
+      throw err;
+    }
+  }
 
   const byFixture = new Map();
   for (const r of rows) {
@@ -157,6 +181,9 @@ async function settleBatch({ dryRun = false } = {}) {
         // settleBatch — once run-migration.sql is applied, every
         // re-settle pass also backfills home_goals/away_goals so the
         // FT chip on settled cards lights up again.
+        // settled_at = NOW() is the "this row has been processed" flag —
+        // the WHERE clause above filters on settled_at IS NULL so a
+        // settled row never gets re-processed on subsequent runs.
         try {
           await sql()`
             UPDATE predictions
@@ -164,11 +191,12 @@ async function settleBatch({ dryRun = false } = {}) {
                 btts_hit = ${calc.bttsHit},
                 accuracy_score = ${accuracyScore},
                 home_goals = ${calc.home},
-                away_goals = ${calc.away}
+                away_goals = ${calc.away},
+                settled_at = NOW()
             WHERE id = ${p.id}`;
         } catch (err) {
           if (err && (err.code === '42703' || /column .* does not exist/i.test(err.message || ''))) {
-            console.warn('[agent-results] new columns missing — falling back. Run run-migration.sql to enable accuracy_score + home_goals/away_goals persistence.');
+            console.warn('[agent-results] new columns missing — falling back. Run run-migration.sql to enable accuracy_score + home_goals/away_goals + settled_at persistence.');
             try {
               await sql()`
                 UPDATE predictions

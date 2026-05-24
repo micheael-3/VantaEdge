@@ -80,10 +80,30 @@ async function getHistory(event) {
     }
   }
 
+  // Belt-and-braces dedup: even after run-migration.sql adds the
+  // UNIQUE (fixture_id) constraint, there's a window where pre-migration
+  // duplicates still exist. Collapse here by keeping the highest-
+  // confidence row per fixture_id so the summary count reflects reality
+  // and "2 from 2 correct" never shows a 50-row inflated total.
+  const byFixture = new Map();
+  for (const p of predictions) {
+    const key = p.fixture_id;
+    if (!key) continue;
+    const existing = byFixture.get(key);
+    const score = Math.max(Number(p.over_confidence) || 0, Number(p.btts_confidence) || 0);
+    const existingScore = existing
+      ? Math.max(Number(existing.over_confidence) || 0, Number(existing.btts_confidence) || 0)
+      : -1;
+    if (!existing || score > existingScore) byFixture.set(key, p);
+  }
+  const uniquePredictions = Array.from(byFixture.values()).sort(
+    (a, b) => new Date(b.kickoff) - new Date(a.kickoff),
+  );
+
   // Rate-eligible rows: rows with a real AI prediction (confidence >= 60
   // on at least one market). Recovered placeholder rows are excluded
   // here so they don't fake the model's accuracy.
-  const rateEligible = predictions.filter(
+  const rateEligible = uniquePredictions.filter(
     (p) => Number(p.over_confidence) >= 60 || Number(p.btts_confidence) >= 60,
   );
 
@@ -93,17 +113,17 @@ async function getHistory(event) {
   const bttsSettled = rateEligible.filter((p) => p.btts_hit !== null);
   const bttsHits = bttsSettled.filter((p) => p.btts_hit === true).length;
 
-  const totalSettledRows = predictions.filter(
+  const totalSettledRows = uniquePredictions.filter(
     (p) => p.over_hit !== null || p.btts_hit !== null,
   ).length;
-  const pendingRows = predictions.length - totalSettledRows;
+  const pendingRows = uniquePredictions.length - totalSettledRows;
 
   const totalHits = overHits + bttsHits;
   const totalSettledMarkets = overSettled.length + bttsSettled.length;
 
   // Per-league summary — counts settled-only.
   const byLeague = {};
-  for (const p of predictions) {
+  for (const p of uniquePredictions) {
     if (!byLeague[p.league]) {
       byLeague[p.league] = {
         league: p.league,
@@ -136,7 +156,7 @@ async function getHistory(event) {
 
   // Rolling daily accuracy from settled markets only.
   const byDay = {};
-  for (const p of predictions) {
+  for (const p of uniquePredictions) {
     const day = new Date(p.kickoff).toISOString().slice(0, 10);
     if (!byDay[day]) byDay[day] = { date: day, settled: 0, hits: 0 };
     if (p.over_hit !== null) {
@@ -155,7 +175,7 @@ async function getHistory(event) {
   return json(200, {
     summary: {
       window: windowLabel,
-      totalPredictions: predictions.length,
+      totalPredictions: uniquePredictions.length,
       settledMarkets: totalSettledMarkets,
       pendingRows,
       overallAccuracy: pct(totalHits, totalSettledMarkets),
@@ -172,7 +192,7 @@ async function getHistory(event) {
     // Recent table only shows SETTLED rows. Pending predictions clutter
     // the list with rows that have no verdict yet — users find it
     // confusing. Aggregate stats above still count everything correctly.
-    recent: predictions
+    recent: uniquePredictions
       .filter((p) => p.over_hit !== null || p.btts_hit !== null)
       .slice(0, 50)
       .map((p) => {

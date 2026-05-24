@@ -99,6 +99,7 @@ function StatsTab() {
   const [refreshFormsState, setRefreshFormsState] = useState({ busy: false, message: '' });
   const [recoverState, setRecoverState] = useState({ busy: false, message: '' });
   const [recoverDays, setRecoverDays] = useState('30');
+  const [dedupState, setDedupState] = useState({ busy: false, message: '' });
   const [debugId, setDebugId] = useState('');
   const [debugState, setDebugState] = useState({ busy: false, message: '', result: null });
 
@@ -218,6 +219,35 @@ function StatsTab() {
       setRefreshFormsState({
         busy: false,
         message: err?.response?.data?.error || err.message || 'Refresh forms failed',
+      });
+    }
+  };
+
+  // Remove ghost rows (0% confidence) and duplicate fixture rows.
+  // Pre-migration cleanup; safe to call repeatedly. Requires the user
+  // to confirm because deletions are not reversible.
+  const onDedup = async () => {
+    if (dedupState.busy) return;
+    if (!window.confirm(
+      'Remove duplicate and 0% confidence (recovered/ghost) records?\n\n' +
+      'This deletes:\n' +
+      '  • Every prediction where over_confidence is 0 or NULL\n' +
+      '  • Every duplicate row for the same fixture (keeping the highest confidence)\n\n' +
+      'Settled match scores are unaffected. Cannot be undone.',
+    )) return;
+    setDedupState({ busy: true, message: 'Removing ghost + duplicate rows…' });
+    try {
+      const r = await adminApi.deduplicate();
+      const rep = (r && r.report) || {};
+      setDedupState({
+        busy: false,
+        message: `Removed ${rep.zeroRowsDeleted ?? 0} ghost rows + ${rep.duplicateRowsDeleted ?? 0} duplicates (${r.totalDeleted ?? 0} total). Refresh dashboard to see clean data.`,
+      });
+      setTimeout(() => loadStats({ cancelled: false }), 1500);
+    } catch (err) {
+      setDedupState({
+        busy: false,
+        message: err?.response?.data?.error || err.message || 'Deduplicate failed',
       });
     }
   };
@@ -484,6 +514,50 @@ function StatsTab() {
           }}
         >
           {resettleState.busy ? 'Re-settling…' : 'Re-settle Past Predictions'}
+        </button>
+      </div>
+
+      {/* Deduplicate — strip ghost rows (0% confidence) and collapse
+          duplicate (fixture_id) rows. Must run BEFORE the UNIQUE
+          constraint in run-migration.sql can be added; safe to run
+          repeatedly afterwards. */}
+      <div
+        className="card"
+        style={{
+          marginTop: 16,
+          padding: 16,
+          display: 'flex',
+          gap: 18,
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          borderColor: 'rgba(251,191,36,0.4)',
+        }}
+      >
+        <div>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em' }}>
+            REMOVE DUPLICATE PREDICTIONS
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>
+            Drop 0% confidence ghost rows AND collapse duplicate-fixture rows to the highest-confidence row. Required before the new UNIQUE constraint in run-migration.sql can apply.
+          </div>
+          {dedupState.message && (
+            <div
+              className="mono"
+              style={{ marginTop: 8, fontSize: 11, color: dedupState.busy ? 'var(--mint)' : 'var(--text-3)' }}
+            >
+              {dedupState.message}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={onDedup}
+          disabled={dedupState.busy}
+          style={{ borderColor: 'rgba(251,191,36,0.5)', color: 'var(--amber)' }}
+        >
+          {dedupState.busy ? 'Cleaning…' : 'Remove Duplicate Predictions'}
         </button>
       </div>
 

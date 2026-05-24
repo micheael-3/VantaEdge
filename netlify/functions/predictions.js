@@ -879,6 +879,9 @@ async function handleAnalyze(event) {
   // Persist to predictions table so /history continues to work.
   let insertedId = null;
   try {
+    // ON CONFLICT (fixture_id) — one row per fixture in the shared scan
+    // model. A /analyze hit on an already-scanned fixture refreshes the
+    // existing row instead of erroring on the UNIQUE constraint.
     const inserted = await sql()`
       INSERT INTO predictions
         (user_id, league, fixture_id, home_team, away_team, kickoff,
@@ -895,6 +898,15 @@ async function handleAnalyze(event) {
          ${oddsData ? oddsData.bestOverOdds : null}, ${oddsData ? oddsData.bestOverBookmaker : null},
          ${oddsData ? oddsData.bestBttsOdds : null}, ${oddsData ? oddsData.bestBttsBookmaker : null},
          ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null})
+      ON CONFLICT (fixture_id) DO UPDATE SET
+        over_line = EXCLUDED.over_line,
+        over_confidence = EXCLUDED.over_confidence,
+        btts = EXCLUDED.btts,
+        btts_confidence = EXCLUDED.btts_confidence,
+        ev_edge_over = EXCLUDED.ev_edge_over,
+        ev_edge_btts = EXCLUDED.ev_edge_btts,
+        kelly_over = EXCLUDED.kelly_over,
+        kelly_btts = EXCLUDED.kelly_btts
       RETURNING id`;
     insertedId = inserted[0] && inserted[0].id;
 
@@ -1112,6 +1124,11 @@ async function handleLeague(event, _leagueIdFromPath) {
              ${oddsData ? oddsData.bestOverOdds : null}, ${oddsData ? oddsData.bestOverBookmaker : null},
              ${oddsData ? oddsData.bestBttsOdds : null}, ${oddsData ? oddsData.bestBttsBookmaker : null},
              ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null})
+          ON CONFLICT (fixture_id) DO UPDATE SET
+            over_line = EXCLUDED.over_line,
+            over_confidence = EXCLUDED.over_confidence,
+            btts = EXCLUDED.btts,
+            btts_confidence = EXCLUDED.btts_confidence
           RETURNING id`;
 
         const actualResult = buildActualResult(fx, analysis);
