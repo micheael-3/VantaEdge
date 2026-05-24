@@ -1,9 +1,22 @@
+import { useEffect, useState } from 'react';
 import Icon from './Icon.jsx';
 import {
   confidenceLabel,
   effectiveOverConf,
   formatKickoffShort,
 } from '../lib/fixture.js';
+import { persona as personaApi } from '../api/client.js';
+
+// Map persona moods to a 4-px coloured dot. Spec:
+//   dominant   → mint
+//   analytical → indigo (spec says blue; we use the existing --indigo
+//                token to stay on-palette)
+//   humble     → amber
+function moodColor(mood) {
+  if (mood === 'dominant') return 'var(--mint)';
+  if (mood === 'humble') return 'var(--amber)';
+  return 'var(--indigo)';
+}
 
 // Glowing top-of-page "BEST BET TODAY" hero card.
 // Mint-tinted border, radial gradient top-right, pulsing mint shadow.
@@ -18,6 +31,16 @@ import {
 //   - Tapping the banner smooth-scrolls to the same fixture's card
 //     below via the `data-fixture-id` anchor MatchCard now exposes.
 export default function BestBetBanner({ fixture }) {
+  const [personaState, setPersonaState] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    personaApi
+      .get()
+      .then((p) => { if (!cancelled) setPersonaState(p); })
+      .catch(() => { /* silent — banner falls back to no persona line */ });
+    return () => { cancelled = true; };
+  }, []);
+
   if (!fixture) return null;
   const conf = effectiveOverConf(fixture);
   const label = confidenceLabel(conf);
@@ -93,7 +116,7 @@ export default function BestBetBanner({ fixture }) {
           fontSize: 22,
           fontWeight: 700,
           letterSpacing: '-0.02em',
-          marginBottom: 10,
+          marginBottom: 8,
           position: 'relative',
           lineHeight: 1.2,
           wordBreak: 'break-word',
@@ -103,6 +126,35 @@ export default function BestBetBanner({ fixture }) {
         <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>vs</span>{' '}
         {fixture.away?.name}
       </div>
+      {/* Persona catchphrase — mood dot + DM Mono 12px muted line.
+          Mood: dominant=mint, analytical=indigo, humble=amber.
+          Silent failure if /api/persona doesn't respond. */}
+      {personaState && personaState.catchphrase && (
+        <div
+          className="mono"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 12,
+            color: 'var(--text-3)',
+            marginBottom: 10,
+            position: 'relative',
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: moodColor(personaState.mood),
+              flexShrink: 0,
+            }}
+          />
+          <span>· {personaState.catchphrase}</span>
+        </div>
+      )}
       <div
         style={{
           display: 'inline-flex',

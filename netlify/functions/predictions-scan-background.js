@@ -20,6 +20,7 @@ const { calculateEV, calculateKelly } = require('./_shared/ev');
 const oddsService = require('./_shared/odds');
 const { LEAGUES } = require('./_shared/tier');
 const { cyprusDateStr, addDaysStr } = require('./_shared/dates');
+const { getCalibrationFactor, applyFactor } = require('./_shared/calibration');
 
 // MIN_DATA_QUALITY env knob. Two modes:
 //   'partial' (default) — full + partial rows are saved; invalid rows
@@ -410,7 +411,7 @@ async function fetchFixturesForWeek(leagueId, weekStart, weekEnd) {
   return { fixtures: [], season: seasons[0] || null };
 }
 
-async function insertPredictionForUserId(adminUserId, fx, league, analysis, oddsData, matchData) {
+async function insertPredictionForUserId(adminUserId, fx, league, analysis, oddsData, matchData, calibration) {
   let autoEvOver = null;
   let autoEvBtts = null;
   let kellyOverAuto = 0;
@@ -423,6 +424,20 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
     autoEvBtts = calculateEV(analysis.btts.confidence, oddsData.bestBttsOdds);
     kellyBttsAuto = calculateKelly(analysis.btts.confidence, oddsData.bestBttsOdds);
   }
+
+  // Compute calibrated confidence using the per-(league, market) factor
+  // resolved once at the top of runScan. Returns null when raw confidence
+  // is null (defensive — by this point analysis.over.confidence is always
+  // a number, but the helper clamps + integerises for us either way).
+  const overFactor = (calibration && calibration.over) || 1;
+  const bttsFactor = (calibration && calibration.btts) || 1;
+  const calibratedOver = applyFactor(analysis.over.confidence, overFactor);
+  const calibratedBtts = applyFactor(analysis.btts.confidence, bttsFactor);
+
+  // Debate transcript from the 3-agent ensemble. analysis.debate is set
+  // by claude.js. Persist as a single JSONB blob so the dashboard can
+  // pull the three tabs (verdict / analysis / risks).
+  const debatePayload = analysis.debate || null;
 
   // match_data JSON carries everything the UI needs that isn't already
   // a top-level column: home/away form arrays, rest days, goals-per-game,
@@ -462,7 +477,8 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
        over_line, over_confidence, btts, btts_confidence,
        ev_edge_over, ev_edge_btts, kelly_over, kelly_btts,
        best_over_odds, best_over_bookmaker, best_btts_odds, best_btts_bookmaker,
-       auto_ev_over, auto_ev_btts, match_data)
+       auto_ev_over, auto_ev_btts, match_data,
+       debate_json, calibrated_over_confidence, calibrated_btts_confidence)
     VALUES
       (${adminUserId}, ${league.name}, ${fx.fixture.id}, ${fx.teams.home.name}, ${fx.teams.away.name},
        ${fx.fixture.date}, ${analysis.over.line}, ${Math.round(analysis.over.confidence)},
@@ -472,7 +488,9 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
        ${oddsData ? oddsData.bestOverOdds : null}, ${oddsData ? oddsData.bestOverBookmaker : null},
        ${oddsData ? oddsData.bestBttsOdds : null}, ${oddsData ? oddsData.bestBttsBookmaker : null},
        ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null},
-       ${mdPayload ? JSON.stringify(mdPayload) : null}::jsonb)`;
+       ${mdPayload ? JSON.stringify(mdPayload) : null}::jsonb,
+       ${debatePayload ? JSON.stringify(debatePayload) : null}::jsonb,
+       ${calibratedOver}, ${calibratedBtts})`;
 }
 
 async function pickScanOwnerUserId() {
@@ -543,6 +561,21 @@ async function runScan(leagueId, weekStart) {
     leagueOdds = await oddsService.getMatchOdds(leagueId);
   } catch (err) {
     console.error('[scan-bg] odds fetch failed:', err.message);
+  }
+
+  // 4a. Per-(league, market) calibration factors — single pair of DB
+  //     reads per scan, then we pass them into every insert call. Factor
+  //     defaults to 1.0 (no adjustment) until ≥10 settled samples exist.
+  let calibration = { over: 1, btts: 1 };
+  try {
+    const [overF, bttsF] = await Promise.all([
+      getCalibrationFactor(league.name, 'over'),
+      getCalibrationFactor(league.name, 'btts'),
+    ]);
+    calibration = { over: overF, btts: bttsF };
+    console.log(`[scan-bg] calibration loaded league=${league.name} over=${overF} btts=${bttsF}`);
+  } catch (err) {
+    console.error('[scan-bg] calibration load failed:', err.message);
   }
 
   // 5. League standings — ONE call, reused for every fixture in this
@@ -766,7 +799,7 @@ async function runScan(leagueId, weekStart) {
         console.error('[scan-bg] odds match failed:', err.message);
       }
 
-      await insertPredictionForUserId(ownerId, fx, league, analysis, oddsData, matchData);
+      await insertPredictionForUserId(ownerId, fx, league, analysis, oddsData, matchData, calibration);
     } catch (err) {
       console.error(`[scan-bg] fixture ${fx.fixture && fx.fixture.id} failed: ${err.message}`);
     } finally {

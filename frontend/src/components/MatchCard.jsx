@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import FormDots from './FormDots.jsx';
 import Icon from './Icon.jsx';
 import PredictionRow from './PredictionRow.jsx';
 import ShareButtons from './ShareButtons.jsx';
+import { feedback as feedbackApi } from '../api/client.js';
 import {
   analysisText,
   avgConceded,
@@ -24,8 +25,44 @@ import {
 // pair of share buttons. When BOTH calibrated confidences are <60 we
 // render a muted card with a single "AI not confident" neutral chip
 // instead of the prediction block.
+// localStorage key for "we already collected feedback on this fixture".
+// Lets the user rate once per pick without us re-rendering the row after
+// a refresh.
+const FEEDBACK_LS_KEY = 'fastscore_rated_predictions';
+
+function readRatedSet() {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = window.localStorage.getItem(FEEDBACK_LS_KEY);
+    if (!raw) return new Set();
+    return new Set(JSON.parse(raw));
+  } catch {
+    return new Set();
+  }
+}
+
+function markRated(predictionId) {
+  if (typeof window === 'undefined' || !predictionId) return;
+  try {
+    const set = readRatedSet();
+    set.add(predictionId);
+    window.localStorage.setItem(FEEDBACK_LS_KEY, JSON.stringify([...set]));
+  } catch {
+    /* quota — silent */
+  }
+}
+
 export default function MatchCard({ fixture, isSharp, onUpgrade }) {
   const [showAnalysis, setShowAnalysis] = useState(false);
+  // Three tabs in the analysis card when debateJson exists. Default to
+  // verdict (the conservative summary) — analysis = analyst's free-text
+  // report, risks = devil's advocate critique.
+  const [analysisTab, setAnalysisTab] = useState('verdict');
+  // Feedback row state. `submitted` flips when we either receive a
+  // successful POST or detect the id in localStorage on mount.
+  const [feedbackRating, setFeedbackRating] = useState(0);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
 
   if (!fixture) return null;
 
@@ -73,6 +110,32 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
 
   const result = fixture.actualResult;
   const isPast = !!result;
+  const predictionId = fixture.id || fixture.fixtureId;
+
+  // On mount, check whether we've already collected feedback on this
+  // prediction id. If so, we render the "thanks" line instead of the
+  // star row.
+  useEffect(() => {
+    if (!predictionId) return;
+    const set = readRatedSet();
+    if (set.has(String(predictionId))) setFeedbackSubmitted(true);
+  }, [predictionId]);
+
+  const submitFeedback = async (rating) => {
+    if (!predictionId || feedbackBusy || feedbackSubmitted) return;
+    setFeedbackBusy(true);
+    setFeedbackRating(rating);
+    try {
+      await feedbackApi.rate(String(predictionId), rating);
+      markRated(String(predictionId));
+      setFeedbackSubmitted(true);
+    } catch {
+      // Surface as a transient busy=false so the user can retry.
+      setFeedbackRating(0);
+    } finally {
+      setFeedbackBusy(false);
+    }
+  };
 
   // Hide weak cards entirely: when BOTH calibrated confidences are below
   // 55, the AI doesn't have a real edge — surfacing the row at all just
@@ -332,49 +395,77 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
           {isSharp && (
             <div
               style={{
-                maxHeight: showAnalysis ? 400 : 0,
+                maxHeight: showAnalysis ? 600 : 0,
                 overflow: 'hidden',
                 transition: 'max-height 0.35s ease, opacity 0.25s',
                 opacity: showAnalysis ? 1 : 0,
               }}
             >
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 12,
-                  background: 'var(--bg-2)',
-                  borderRadius: 8,
-                  border: '1px solid var(--border-soft)',
-                }}
-              >
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <Icon name="brain" size={14} color="var(--indigo)" />
-                  <span
-                    className="mono"
-                    style={{
-                      fontSize: 10,
-                      color: 'var(--indigo)',
-                      letterSpacing: '0.08em',
-                    }}
-                  >
-                    THE AI THINKS:
-                  </span>
-                </div>
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: 13,
-                    lineHeight: 1.55,
-                    color: 'var(--text-2)',
-                    whiteSpace: 'pre-line',
-                  }}
-                >
-                  {analysisText(fixture)}
-                </p>
-              </div>
+              <DebateView fixture={fixture} tab={analysisTab} onTab={setAnalysisTab} />
             </div>
           )}
         </div>
+
+        {/* 5-star feedback row — settled predictions only (so the user
+            actually knows whether the AI was right) and PRO users only
+            (FREE doesn't see the analysis section anyway). Once rated,
+            we replace the stars with a "Thanks for the feedback" line. */}
+        {isPast && isSharp && predictionId && (
+          <div
+            style={{
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: '1px solid var(--border-soft)',
+            }}
+          >
+            {feedbackSubmitted ? (
+              <div
+                className="mono"
+                style={{ fontSize: 11, color: 'var(--mint)', letterSpacing: '0.04em' }}
+              >
+                Thanks for the feedback
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--text-3)',
+                    letterSpacing: '0.08em',
+                  }}
+                >
+                  RATE THIS PICK
+                </span>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[1, 2, 3, 4, 5].map((n) => {
+                    const active = n <= feedbackRating;
+                    return (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => submitFeedback(n)}
+                        disabled={feedbackBusy}
+                        aria-label={`Rate ${n} star${n === 1 ? '' : 's'}`}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 2,
+                          cursor: feedbackBusy ? 'default' : 'pointer',
+                          color: active ? 'var(--amber)' : 'var(--text-faint)',
+                          fontSize: 18,
+                          lineHeight: 1,
+                        }}
+                      >
+                        ★
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
       {/* Share row — both before kickoff (promo) and after (celebrate/honest). */}
       <div
@@ -396,6 +487,113 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
 // to a muted label; the value renders bold below, and a tiny muted line of
 // plain-English context anchors the bottom so casual bettors actually
 // understand what they're looking at.
+// Three-tab analysis view: Verdict / Analysis / Risks. When the row was
+// produced by the 3-agent ensemble (debateJson present), we render real
+// transcripts. On legacy rows we render only the Verdict tab from
+// analysisText() so the toggle still does something sensible.
+function DebateView({ fixture, tab, onTab }) {
+  const debate = fixture && fixture.debateJson;
+  const hasDebate = !!(debate && (debate.analyst || debate.devilsAdvocate));
+  const verdict = analysisText(fixture);
+  let body = '';
+  if (tab === 'analysis') body = (debate && debate.analyst) || verdict;
+  else if (tab === 'risks') body = (debate && debate.devilsAdvocate) || 'No risk analysis on this pick.';
+  else body = verdict;
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        padding: 12,
+        background: 'var(--bg-2)',
+        borderRadius: 8,
+        border: '1px solid var(--border-soft)',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+        <Icon name="brain" size={14} color="var(--indigo)" />
+        <span
+          className="mono"
+          style={{ fontSize: 10, color: 'var(--indigo)', letterSpacing: '0.08em' }}
+        >
+          THE AI THINKS
+        </span>
+      </div>
+      {/* Tab switcher — only render when we have a real debate to switch
+          between. Legacy rows just show the verdict block. */}
+      {hasDebate && (
+        <div
+          style={{
+            display: 'flex',
+            gap: 4,
+            marginBottom: 10,
+            padding: 2,
+            background: 'var(--card-2)',
+            border: '1px solid var(--border-soft)',
+            borderRadius: 6,
+          }}
+        >
+          {[
+            { key: 'verdict', label: 'Verdict' },
+            { key: 'analysis', label: 'Analysis' },
+            { key: 'risks', label: 'Risks' },
+          ].map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => onTab(t.key)}
+                style={{
+                  flex: 1,
+                  background: active ? 'var(--card)' : 'transparent',
+                  border: 'none',
+                  color: active ? 'var(--text)' : 'var(--text-3)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
+                  letterSpacing: '0.04em',
+                  padding: '6px 8px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                }}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <p
+        style={{
+          margin: 0,
+          fontSize: 13,
+          lineHeight: 1.55,
+          color: 'var(--text-2)',
+          whiteSpace: 'pre-line',
+        }}
+      >
+        {body}
+      </p>
+      {/* Risk score chip — only on the Risks tab when present. Visual
+          signal that this pick has higher-than-usual uncertainty. */}
+      {hasDebate && tab === 'risks' && typeof debate.riskScore === 'number' && (
+        <div
+          className="mono"
+          style={{
+            marginTop: 10,
+            fontSize: 11,
+            color: debate.riskScore > 7 ? 'var(--red)' : 'var(--text-3)',
+            letterSpacing: '0.04em',
+          }}
+        >
+          RISK SCORE: {debate.riskScore}/10
+          {debate.riskScore > 7 ? ' · CONFIDENCE AUTO-REDUCED' : ''}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatBlock({ icon, label, value, explanation }) {
   return (
     <div

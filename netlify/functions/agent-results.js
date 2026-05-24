@@ -12,6 +12,7 @@ const football = require('./_shared/football');
 const { settleEntriesForPrediction } = require('./_shared/bankroll');
 const { createAgentAlert } = require('./_shared/alerts');
 const { confidenceBucket, markRun, setState } = require('./_shared/agent');
+const { updateCalibration } = require('./_shared/calibration');
 
 const SCHEDULE = '0 */2 * * *';
 
@@ -129,10 +130,29 @@ async function settleBatch({ dryRun = false } = {}) {
         continue;
       }
       if (!dryRun) {
+        // accuracy_score is 1.0 if both markets hit, 0.5 if one hits,
+        // 0.0 if both miss. Saved alongside the hit flags so /history
+        // and the persona-state engine can read it in a single query.
+        const accuracyScore =
+          (calc.overHit ? 0.5 : 0) + (calc.bttsHit ? 0.5 : 0);
         await sql()`
           UPDATE predictions
-          SET over_hit = ${calc.overHit}, btts_hit = ${calc.bttsHit}
+          SET over_hit = ${calc.overHit},
+              btts_hit = ${calc.bttsHit},
+              accuracy_score = ${accuracyScore}
           WHERE id = ${p.id}`;
+        // Live calibration update — recomputes mean_confidence /
+        // actual_win_rate from the full settled set and writes the new
+        // correction_factor. Per-(league, market). Best-effort; a
+        // failure here doesn't block the settle.
+        try {
+          await Promise.all([
+            updateCalibration(p.league, 'over', !!calc.overHit, Number(p.over_confidence)),
+            updateCalibration(p.league, 'btts', !!calc.bttsHit, Number(p.btts_confidence)),
+          ]);
+        } catch (e) {
+          console.error(`[agent-results] calibration update failed for ${p.id}:`, e.message);
+        }
         try {
           const settled = await settleEntriesForPrediction(p.id);
           if (settled.length) report.bankrollEntriesSettled += settled.length;

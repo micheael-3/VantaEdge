@@ -114,6 +114,27 @@ export const admin = {
     api.get(`/api/admin/debug-fixture/${fixtureId}`).then((r) => r.data),
 };
 
+// Self-learning upgrade: AI persona + per-user feedback.
+//
+// `persona.get()` is a public, no-auth GET — the BestBetBanner reads it
+// on mount and renders a mood dot + catchphrase. Cached server-side
+// for ~5 minutes, so calling on every dashboard load is fine.
+//
+// `feedback.rate()` posts a 1–5 star rating against a prediction id;
+// `feedback.my()` returns the user's last 10 ratings (used by the
+// account page later if we surface them).
+export const persona = {
+  get: () => api.get('/api/persona').then((r) => r.data),
+};
+
+export const feedback = {
+  rate: (predictionId, rating, comment) =>
+    api
+      .post('/api/feedback', comment ? { predictionId, rating, comment } : { predictionId, rating })
+      .then((r) => r.data),
+  my: () => api.get('/api/feedback/my').then((r) => r.data),
+};
+
 export const affiliate = {
   dashboard: () => api.get('/api/affiliate/dashboard').then((r) => r.data),
   join: () => api.post('/api/affiliate/join').then((r) => r.data),

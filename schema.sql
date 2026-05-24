@@ -377,3 +377,62 @@ CREATE TABLE IF NOT EXISTS scan_status (
 );
 CREATE INDEX IF NOT EXISTS scan_status_league_week_idx
   ON scan_status(league_id, week_start);
+
+-- =====================================================================
+-- SELF-LEARNING UPGRADE (memory, debate ensemble, calibration, persona,
+-- user feedback). Columns + tables added so older schema dumps still
+-- run cleanly via the IF NOT EXISTS guards above.
+-- =====================================================================
+
+-- Per-prediction debate transcript + post-settle accuracy + per-prediction
+-- calibrated confidence (derived from the new `calibration` table).
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS debate_json                 JSONB;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS accuracy_score              REAL;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS calibrated_over_confidence  INTEGER;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS calibrated_btts_confidence  INTEGER;
+
+-- Per-league, per-market live calibration. Updated on every settle by
+-- agent-results.js; read by predictions-scan-background.js at insert time.
+-- meanConfidence = average raw confidence we shipped on this bucket;
+-- actualWinRate  = average hit rate of those predictions.
+-- correctionFactor = actualWinRate / meanConfidence, clamped 0.5–2.0.
+-- Used as a multiplier on raw confidence before save.
+CREATE TABLE IF NOT EXISTS calibration (
+  id                SERIAL       PRIMARY KEY,
+  league            TEXT         NOT NULL,
+  market            TEXT         NOT NULL,        -- 'over' | 'btts'
+  correction_factor REAL         NOT NULL DEFAULT 1.0,
+  sample_count      INTEGER      NOT NULL DEFAULT 0,
+  mean_confidence   REAL,
+  actual_win_rate   REAL,
+  updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  UNIQUE (league, market)
+);
+
+-- Single-row persona state. Rewritten daily by agent-accuracy from the
+-- last 24h hit-rate. Read by /api/persona (no auth) so the BestBetBanner
+-- can show the AI's "mood".
+CREATE TABLE IF NOT EXISTS persona_state (
+  id           INTEGER      PRIMARY KEY DEFAULT 1,
+  mood         TEXT         NOT NULL DEFAULT 'analytical',
+  catchphrase  TEXT         NOT NULL DEFAULT 'The data never lies.',
+  updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  CONSTRAINT persona_state_singleton CHECK (id = 1)
+);
+INSERT INTO persona_state (id, mood, catchphrase)
+  VALUES (1, 'analytical', 'The data never lies.')
+  ON CONFLICT (id) DO NOTHING;
+
+-- Per-user 1–5 star feedback on individual predictions. The AI uses
+-- low-rated picks as negative signal when self-reflecting on past calls.
+CREATE TABLE IF NOT EXISTS feedback (
+  id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id        UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  prediction_id  UUID         NOT NULL REFERENCES predictions(id) ON DELETE CASCADE,
+  rating         INTEGER      NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment        TEXT,
+  created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, prediction_id)
+);
+CREATE INDEX IF NOT EXISTS feedback_user_idx       ON feedback(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS feedback_prediction_idx ON feedback(prediction_id);

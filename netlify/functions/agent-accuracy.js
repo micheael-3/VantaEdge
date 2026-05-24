@@ -185,6 +185,62 @@ async function rebuild() {
     }
   }
 
+  // ---------- Persona state rewrite ----------
+  //
+  // The dashboard's BestBetBanner reads /api/persona to display the
+  // AI's "mood" + catchphrase. We derive that mood from the rolling
+  // 24h hit-rate of settled predictions (accuracy_score is set in
+  // agent-results.js, so a row settled in the last 24h has 1.0 / 0.5 / 0).
+  //
+  // Thresholds per spec:
+  //   avg > 0.70 → mood='dominant',    "I'm on fire. Trust the process."
+  //   0.45-0.70  → mood='analytical', "The data never lies, but my edge sharpens."
+  //   < 0.45     → mood='humble',     "Even I miss sometimes. Here's my honest read."
+  //
+  // We skip the rewrite (leaving the existing persona alone) if there
+  // are zero settled predictions in the last 24h — no signal, no change.
+  try {
+    const personaRows = await sql()`
+      SELECT AVG(accuracy_score)::float AS avg_acc,
+             COUNT(*)::int               AS n
+      FROM predictions
+      WHERE accuracy_score IS NOT NULL
+        AND over_hit IS NOT NULL
+        AND kickoff > NOW() - INTERVAL '24 hours'`;
+    const row = personaRows && personaRows[0];
+    const sample = row ? Number(row.n) : 0;
+    const avg = row && Number.isFinite(Number(row.avg_acc)) ? Number(row.avg_acc) : null;
+    if (sample > 0 && avg != null) {
+      let mood;
+      let catchphrase;
+      if (avg > 0.70) {
+        mood = 'dominant';
+        catchphrase = "I'm on fire. Trust the process.";
+      } else if (avg >= 0.45) {
+        mood = 'analytical';
+        catchphrase = 'The data never lies, but my edge sharpens.';
+      } else {
+        mood = 'humble';
+        catchphrase = "Even I miss sometimes. Here's my honest read.";
+      }
+      // Singleton row (id = 1) enforced by the CHECK constraint on the
+      // table. Upsert so the row appears on first run.
+      await sql()`
+        INSERT INTO persona_state (id, mood, catchphrase, updated_at)
+        VALUES (1, ${mood}, ${catchphrase}, NOW())
+        ON CONFLICT (id) DO UPDATE SET
+          mood        = EXCLUDED.mood,
+          catchphrase = EXCLUDED.catchphrase,
+          updated_at  = NOW()`;
+      report.persona = { mood, catchphrase, sample, avgAccuracy: avg };
+      console.log(`[agent-accuracy] persona → ${mood} (avg=${avg.toFixed(2)}, n=${sample})`);
+    } else {
+      console.log('[agent-accuracy] persona unchanged — no settled predictions in last 24h');
+    }
+  } catch (e) {
+    console.error('[agent-accuracy] persona update failed:', e.message);
+  }
+
   report.durationMs = Date.now() - t0;
   await markRun('accuracy_last_run');
   await setState('accuracy_last_report', { ...report, at: new Date().toISOString() });

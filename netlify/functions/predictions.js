@@ -340,24 +340,43 @@ function shapeForFrontend(row, adjustments) {
       over: {
         line: row.over_line,
         confidence: row.over_confidence,
+        // Prefer the new per-(league, market) calibrated value persisted
+        // at insert time (calibrated_over_confidence). Falls back to the
+        // legacy per-bucket calibration multiplier for rows from before
+        // the self-learning upgrade.
         calibratedConfidence:
-          adjustments && row.over_confidence != null
-            ? calibrate(row.over_confidence, 'over', adjustments)
-            : null,
+          row.calibrated_over_confidence != null
+            ? Number(row.calibrated_over_confidence)
+            : adjustments && row.over_confidence != null
+              ? calibrate(row.over_confidence, 'over', adjustments)
+              : null,
         reasoning: reasoning.over || null,
       },
       btts: {
         prediction: row.btts,
         confidence: row.btts_confidence,
         calibratedConfidence:
-          adjustments && row.btts_confidence != null
-            ? calibrate(row.btts_confidence, 'btts', adjustments)
-            : null,
+          row.calibrated_btts_confidence != null
+            ? Number(row.calibrated_btts_confidence)
+            : adjustments && row.btts_confidence != null
+              ? calibrate(row.btts_confidence, 'btts', adjustments)
+              : null,
         reasoning: reasoning.btts || null,
       },
       firstHalf: null,
       asianHandicap: null,
     },
+    // 3-agent ensemble debate transcript ({analyst, devilsAdvocate,
+    // adjudicator, riskScore, keyFactor}). The dashboard's "Show
+    // Analysis" section reads this to render the verdict/analysis/risks
+    // tabs. Null on rows from before the self-learning upgrade.
+    debateJson: (() => {
+      const raw = row.debate_json;
+      if (!raw) return null;
+      if (typeof raw === 'object') return raw;
+      try { return JSON.parse(raw); } catch { return null; }
+    })(),
+    accuracyScore: row.accuracy_score != null ? Number(row.accuracy_score) : null,
     h2h: (md && md.h2h) || null,
     // New: full H2H stats object {avg, median, samples, display} from
     // the scan. Lets the dashboard show "8 H2H meetings, median 2.5"
@@ -439,7 +458,9 @@ async function handleWeek(event) {
     SELECT id, fixture_id, league, home_team, away_team, kickoff,
            over_line, over_confidence, btts, btts_confidence,
            ev_edge_over, ev_edge_btts, over_hit, btts_hit, created_at,
-           match_data
+           match_data,
+           debate_json, accuracy_score,
+           calibrated_over_confidence, calibrated_btts_confidence
     FROM predictions
     WHERE kickoff >= ${weekStart}::date
       AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')
