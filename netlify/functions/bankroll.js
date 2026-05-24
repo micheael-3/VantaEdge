@@ -241,6 +241,80 @@ async function logBet(event) {
   });
 }
 
+// ---------- GET/PUT /api/bankroll/bets ----------
+//
+// Cross-device sync for the Bet Tracker page. The frontend keeps its
+// bet list in a localStorage blob (parlays + single bets + free-form
+// match strings — a richer shape than the structured bankroll_entries
+// table tracks). This endpoint mirrors that blob into the
+// `bet_tracker_blobs` table so the same logged-in account sees the
+// same tracker on iPad + PC + phone.
+//
+// GET returns { bets: [...] }; empty array when no row exists yet.
+// PUT body { bets: [...] } upserts the row. We cap the array at 500
+// entries server-side as a hard ceiling against runaway payloads.
+
+const MAX_BETS = 500;
+
+function isMissingBlobTable(err) {
+  return (
+    err &&
+    (err.code === '42P01' ||
+      /relation "?bet_tracker_blobs"? does not exist/i.test(err.message || ''))
+  );
+}
+
+async function getBets(event) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+  const gate = requireTier(user, 'ANALYST');
+  if (gate) return gate;
+  try {
+    const [row] = await sql()`
+      SELECT bets, updated_at FROM bet_tracker_blobs WHERE user_id = ${user.id}`;
+    if (!row) return json(200, { bets: [], updatedAt: null });
+    const bets = Array.isArray(row.bets) ? row.bets : [];
+    return json(200, { bets, updatedAt: row.updated_at });
+  } catch (err) {
+    if (isMissingBlobTable(err)) {
+      // Schema not migrated — degrade so the frontend keeps working
+      // from localStorage. PUT will see the same error.
+      return json(200, { bets: [], updatedAt: null, warning: 'bet_tracker_blobs table missing — run schema.sql' });
+    }
+    console.error('[bankroll/bets GET] failed:', err.message);
+    return error(500, err.message || 'bets fetch failed');
+  }
+}
+
+async function putBets(event) {
+  const { res, user } = await requireUser(event);
+  if (res) return res;
+  const gate = requireTier(user, 'ANALYST');
+  if (gate) return gate;
+  const body = parseBody(event);
+  const incoming = Array.isArray(body.bets) ? body.bets : null;
+  if (!incoming) return error(400, 'bets must be an array');
+  const bets = incoming.slice(0, MAX_BETS);
+  try {
+    await sql()`
+      INSERT INTO bet_tracker_blobs (user_id, bets, updated_at)
+      VALUES (${user.id}, ${JSON.stringify(bets)}::jsonb, NOW())
+      ON CONFLICT (user_id) DO UPDATE
+        SET bets = EXCLUDED.bets,
+            updated_at = NOW()`;
+    return json(200, { ok: true, count: bets.length });
+  } catch (err) {
+    if (isMissingBlobTable(err)) {
+      // Same graceful degrade — return ok so the frontend doesn't show
+      // an error toast; user will simply lose cross-device sync until
+      // the table exists.
+      return json(200, { ok: true, count: bets.length, warning: 'bet_tracker_blobs table missing — run schema.sql' });
+    }
+    console.error('[bankroll/bets PUT] failed:', err.message);
+    return error(500, err.message || 'bets save failed');
+  }
+}
+
 exports.handler = async (event) => {
   try {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, body: '' };
@@ -250,6 +324,9 @@ exports.handler = async (event) => {
     if (method === 'POST' && path === '/setup') return await setupBankroll(event);
     if (method === 'POST' && path === '/entry') return await addManualEntry(event);
     if (method === 'POST' && path === '/bet') return await logBet(event);
+    // Cross-device bet tracker sync.
+    if (method === 'GET' && (path === '/bets' || path === '/bets/')) return await getBets(event);
+    if ((method === 'PUT' || method === 'POST') && (path === '/bets' || path === '/bets/')) return await putBets(event);
     return notFound();
   } catch (err) {
     console.error('bankroll handler error:', err);

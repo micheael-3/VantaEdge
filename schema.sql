@@ -519,3 +519,16 @@ CREATE INDEX IF NOT EXISTS banner_events_banner_event_idx
 CREATE INDEX IF NOT EXISTS banner_events_recent_idx
   ON banner_events(created_at DESC);
 
+-- =====================================================================
+-- Bet Tracker blob — server-side mirror of the frontend's localStorage
+-- bet list so PRO users see the same tracker across devices (iPad + PC).
+-- One row per user; full JSON array is overwritten on every save (small
+-- payload, no row churn). Lives alongside the structured bankroll_entries
+-- table; future work can migrate this blob into per-row inserts.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS bet_tracker_blobs (
+  user_id    UUID         PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  bets       JSONB        NOT NULL DEFAULT '[]'::jsonb,
+  updated_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+

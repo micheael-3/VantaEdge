@@ -177,6 +177,15 @@ export const affiliate = {
     api.post('/api/affiliate/payout', { method, destination }).then((r) => r.data),
 };
 
+// Bet Tracker cross-device sync. The page mirrors its localStorage blob
+// into the server so the same logged-in account sees the same bets on
+// iPad + PC + phone. Save is debounced client-side to keep churn down.
+export const bankrollApi = {
+  getBets: () => api.get('/api/bankroll/bets').then((r) => r.data),
+  saveBets: (bets) =>
+    api.put('/api/bankroll/bets', { bets }).then((r) => r.data),
+};
+
 // Promo banner analytics. POSTs are fire-and-forget; the GET is
 // admin-only and powers the Banner Stats card in the Admin Stats tab.
 export const analytics = {

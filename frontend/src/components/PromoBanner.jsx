@@ -65,11 +65,11 @@ const BANNERS = [
   {
     id: 'affiliate',
     icon: '💰',
-    headline: 'Earn €4.00 every month per referral',
+    headline: 'Earn €2.00 every month per referral',
     body:
       'Share your link. When someone subscribes to PRO, you earn 40% recurring. Forever. No cap.',
     cta: 'Join Affiliate Program →',
-    small: '10 referrals = €480/year passive income',
+    small: '10 referrals = €240/year passive income',
     accent: '#fbbf24', // amber
     bgTint: 'rgba(251,191,36,0.05)',
     action: 'route',

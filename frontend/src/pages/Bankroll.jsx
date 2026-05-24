@@ -1,18 +1,26 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Layout from '../components/Layout.jsx';
 import Icon from '../components/Icon.jsx';
 import LockedOverlay from '../components/LockedOverlay.jsx';
 import { isSharp, useAuth } from '../context/AuthContext.jsx';
+import { bankrollApi } from '../api/client.js';
 
-// Bet Tracker — bets persist via localStorage so a refresh doesn't wipe
-// them. Full backend persistence (the /api/bankroll endpoint exists but
-// isn't wired) is a separate task; this is the minimum-risk middle
-// ground: bets stay across reloads, no schema/API surface changes.
+// Bet Tracker — bets sync across devices via /api/bankroll/bets for
+// PRO users (server is the source of truth). localStorage is kept as
+// an offline cache so a refresh still shows the last-known-good state
+// before the network round-trip resolves.
+//
+// First-run migration: if a logged-in account fetches an empty server
+// blob but the browser has local bets, we push the local bets up once.
+// After that the server wins on every mount.
 //
 // Storage key is versioned so a future shape change can ignore old
 // blobs cleanly. Capped read at 500 rows so a corrupt LS entry can't
 // blow the page.
 const BETS_LS_KEY = 'fastscore_bets_v1';
+// Debounce for server saves — coalesces rapid state changes (e.g. user
+// cycling through PENDING → WIN → LOSS on multiple rows) into one PUT.
+const SAVE_DEBOUNCE_MS = 700;
 
 function loadBetsFromStorage() {
   if (typeof window === 'undefined') return [];
@@ -600,10 +608,9 @@ function AddBetModal({ onClose, onAdd }) {
 export default function Bankroll() {
   const { user } = useAuth();
   const sharp = isSharp(user);
-  // Initialise from localStorage on mount so a refresh doesn't wipe the
-  // tracked bets. The lazy initialiser only runs once (React useState
-  // pattern), so we don't pay the parse cost on every render. Falls
-  // back to INITIAL_BETS = [] if storage is empty / corrupt / disabled.
+  // Optimistic localStorage hydrate — instant first paint even before
+  // the network round-trip resolves. The lazy initialiser only runs
+  // once. Server takes over below once /api/bankroll/bets returns.
   const [bets, setBets] = useState(() => {
     const stored = loadBetsFromStorage();
     return stored.length ? stored : INITIAL_BETS;
@@ -613,14 +620,82 @@ export default function Bankroll() {
   // don't expand — they have no legs to show.
   const [expandedId, setExpandedId] = useState(null);
 
-  // Persist on every change. Cheap (one JSON.stringify call) and runs
-  // after render, so it never blocks user input. If saveBetsToStorage
-  // fails (quota / private-browsing), state stays in memory — we just
-  // lose persistence for this user, never the bets they're currently
-  // looking at.
+  // Three pieces of plumbing for the server-sync layer:
+  // 1. `hydrated` — true once the server response (or the lack of one)
+  //    has been merged. Until then we don't push back up, so the
+  //    initial state-from-LS doesn't immediately overwrite a real
+  //    server blob from another device with a race.
+  // 2. `saveTimerRef` — debounce handle so rapid edits coalesce into
+  //    one PUT.
+  // 3. `lastSavedJsonRef` — guards against redundant PUTs (no payload
+  //    change → skip the request).
+  const [hydrated, setHydrated] = useState(false);
+  const saveTimerRef = useRef(null);
+  const lastSavedJsonRef = useRef(null);
+
+  // Hydrate from the server on mount when the user is signed-in PRO.
+  // Anonymous/guest/FREE users keep the localStorage-only experience
+  // (the page is route-gated to PRO anyway, but defensive guard here
+  // keeps the API call from firing for guests).
+  useEffect(() => {
+    if (!sharp) {
+      setHydrated(true);
+      return;
+    }
+    let cancelled = false;
+    bankrollApi
+      .getBets()
+      .then((r) => {
+        if (cancelled) return;
+        const serverBets = Array.isArray(r && r.bets) ? r.bets : [];
+        const localBets = loadBetsFromStorage();
+        // One-time migration: if the server has nothing yet but this
+        // browser has tracked bets from before sync existed, push them
+        // up so they follow the account. Otherwise the server wins.
+        if (serverBets.length === 0 && localBets.length > 0) {
+          setBets(localBets);
+          // Mark as needing save after hydrate flips to true (next effect).
+        } else {
+          setBets(serverBets);
+          lastSavedJsonRef.current = JSON.stringify(serverBets);
+        }
+      })
+      .catch(() => {
+        // Network/auth error — fall back to localStorage. The next save
+        // attempt will retry the round-trip and recover sync if the
+        // failure was transient.
+      })
+      .finally(() => {
+        if (!cancelled) setHydrated(true);
+      });
+    return () => { cancelled = true; };
+  }, [sharp]);
+
+  // Persist on every change. localStorage always (instant offline
+  // cache); server only after hydrate, only for sharp users, and only
+  // when the payload actually changed.
   useEffect(() => {
     saveBetsToStorage(bets);
-  }, [bets]);
+    if (!hydrated) return undefined;
+    if (!sharp) return undefined;
+    const json = JSON.stringify(bets);
+    if (json === lastSavedJsonRef.current) return undefined;
+    // Debounce — clear any pending save and schedule a fresh one.
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      bankrollApi
+        .saveBets(bets)
+        .then(() => { lastSavedJsonRef.current = json; })
+        .catch(() => { /* keep retrying on next change */ });
+    }, SAVE_DEBOUNCE_MS);
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [bets, hydrated, sharp]);
 
   const stats = useMemo(() => {
     const settled = bets.filter((b) => b.result !== 'PENDING');
