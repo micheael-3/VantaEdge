@@ -155,12 +155,13 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
     }
   };
 
-  // Hide weak cards entirely: when BOTH calibrated confidences are below
-  // 55, the AI doesn't have a real edge — surfacing the row at all just
-  // pollutes the dashboard. We return null here so the parent grid
-  // collapses cleanly. (Settled cards bypass this so accuracy history
-  // remains complete.)
-  const weakSignal = !aiPending && !isPast && ouConf < 55 && btsConf < 55;
+  // Hide threshold dropped from <55 to <50. The 3-agent ensemble floors
+  // confidence at 50, so this guard effectively never fires now — every
+  // card renders. The old 55 threshold was hiding most cards on
+  // matchdays where the Devil's Advocate kept the adjudicator
+  // conservative; the user was seeing "4 matches" but only the best
+  // bet rendered because everything else got nulled here.
+  const weakSignal = !aiPending && !isPast && ouConf < 50 && btsConf < 50;
   if (weakSignal) return null;
 
   // Mint tint on high-confidence cards (≥75% on either market). Spec is

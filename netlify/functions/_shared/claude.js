@@ -98,7 +98,23 @@ const DEVILS_ADVOCATE_PROMPT = (
   `      RISK_SCORE: <n>\n\n` +
   `Do not propose a different prediction. Just attack the existing one. ` +
   `Be specific. Vague risks ("anything can happen in football") are ` +
-  `worthless — quote numbers from the data.`
+  `worthless — quote numbers from the data.\n\n` +
+  `RISK SCORE CALIBRATION — read carefully:\n` +
+  `  • 1-3 = LOW: the prediction has strong, clean data supporting it ` +
+  `(consistent form, clear H2H signal, no contradictions). Most matches ` +
+  `should land here.\n` +
+  `  • 4-6 = MODERATE: minor concerns — small sample size on one stat, ` +
+  `mixed form, one missing data point. Normal football uncertainty.\n` +
+  `  • 7-8 = HIGH: real red flags — data is thinly sourced, signals ` +
+  `contradict each other, or the prediction depends on a single fragile ` +
+  `data point.\n` +
+  `  • 9-10 = SEVERE: reserved for predictions with major data gaps, ` +
+  `directly contradictory evidence, or where the analyst is clearly ` +
+  `overconfident given the data. RARE — should be one in twenty matches ` +
+  `or fewer.\n\n` +
+  `Default to LOW (1-3) when the analyst's reasoning is sound. Do not ` +
+  `inflate risk to seem thorough. "I could imagine a scenario where..." ` +
+  `is not a risk — only ACTUAL data gaps or contradictions count.`
 );
 
 const ADJUDICATOR_PROMPT = (
@@ -106,8 +122,19 @@ const ADJUDICATOR_PROMPT = (
   `You will be given:\n` +
   `  1. An analyst's prediction report.\n` +
   `  2. A devil's advocate critique with a RISK_SCORE.\n\n` +
-  `Weigh both. Be conservative — if the risk score is > 7, REDUCE the ` +
-  `analyst's confidence on each market by 10 percentage points (floor 50).\n\n` +
+  `DEFAULT BEHAVIOUR: trust the analyst. The devil's advocate's job is\n` +
+  `to surface concerns; that doesn't automatically mean the analyst was\n` +
+  `wrong. When the analyst's reasoning is sound and references real\n` +
+  `numbers, KEEP THE ANALYST'S CONFIDENCE.\n\n` +
+  `Confidence adjustment rules — apply only one:\n` +
+  `  • risk_score ≤ 6 → KEEP the analyst's confidence verbatim.\n` +
+  `  • risk_score 7-8 → reduce confidence by 3 percentage points.\n` +
+  `  • risk_score 9-10 → reduce confidence by 6 percentage points.\n` +
+  `  • Floor: 50. Ceiling: 85.\n\n` +
+  `Do NOT compound multiple safety mechanisms. The analyst already\n` +
+  `enforces the clean-sheet cap on BTTS YES; do not re-cut for the same\n` +
+  `reason. If the analyst returned 72%, the devil scored 5, and you\n` +
+  `output anything other than 72%, you are wrong.\n\n` +
   `Return ONLY valid JSON with this exact shape:\n` +
   `{\n` +
   `  "over":  { "line": number, "confidence": number, "reasoning": string },\n` +
@@ -122,7 +149,7 @@ const ADJUDICATOR_PROMPT = (
   `  • confidence numbers are integers in the 50–85 range. No exceptions.\n` +
   `  • reasoning fields max 2 sentences each and must reference numbers.\n` +
   `  • keyFactor: the single biggest reason for the verdict, one sentence.\n` +
-  `  • riskFlag = (riskScore > 7).\n` +
+  `  • riskFlag = (riskScore >= 9).\n` +
   `  • firstHalf and asianHandicap are nullable — leave null unless asked.\n` +
   `  • Output JSON only. No markdown, no commentary, no prose preamble.`
 );
@@ -292,16 +319,25 @@ async function runEnsemble(matchData, { includeFirstHalf, includeAsianHandicap, 
   parsed.btts.confidence = Math.min(85, Math.max(0, Math.round(parsed.btts.confidence)));
   parsed.btts.prediction = String(parsed.btts.prediction).toUpperCase();
 
-  // Apply the "risk > 7 → -10 confidence" rule on our side too, in case
-  // the adjudicator forgot. Floor 50 to stay in the model's calibrated
-  // range — under 50% is "AI declined" territory and shouldn't appear.
+  // Defensive risk-reduction ladder matching the new adjudicator prompt:
+  //   risk ≤ 6: no reduction
+  //   risk 7-8: −3 points
+  //   risk ≥ 9: −6 points
+  // This is the LAST defence — the adjudicator is supposed to do it
+  // itself. We only nudge if the model returned a number that ignored
+  // the rule. Floor 50.
   const finalRisk = typeof parsed.riskScore === 'number' ? parsed.riskScore : riskScore;
-  if (typeof finalRisk === 'number' && finalRisk > 7) {
-    parsed.over.confidence = Math.max(50, parsed.over.confidence - 10);
-    parsed.btts.confidence = Math.max(50, parsed.btts.confidence - 10);
+  if (typeof finalRisk === 'number') {
+    let cut = 0;
+    if (finalRisk >= 9) cut = 6;
+    else if (finalRisk >= 7) cut = 3;
+    if (cut > 0) {
+      parsed.over.confidence = Math.max(50, parsed.over.confidence - cut);
+      parsed.btts.confidence = Math.max(50, parsed.btts.confidence - cut);
+    }
   }
   parsed.riskScore = typeof finalRisk === 'number' ? finalRisk : null;
-  parsed.riskFlag = !!(parsed.riskScore != null && parsed.riskScore > 7);
+  parsed.riskFlag = !!(parsed.riskScore != null && parsed.riskScore >= 9);
 
   if (!includeFirstHalf) parsed.firstHalf = null;
   if (!includeAsianHandicap) parsed.asianHandicap = null;

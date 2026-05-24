@@ -452,6 +452,13 @@ async function handleWeek(event) {
   const leagueId = MLS_LEAGUE_ID;
   const weekStart = mondayOf(new Date());
   const weekEnd = addDaysStr(weekStart, 6);
+  // Read window — wider than weekStart..weekEnd so the CalendarStrip's
+  // 3-past + 6-future range always has data. Without this, viewing
+  // Monday May 25 on a Sunday May 24 returned 0 rows because Mon-25
+  // is in next week (May 25-31). We still key scan_status by weekStart,
+  // but the SELECT pulls everything in the visible 14-day window.
+  const readFrom = addDaysStr(weekStart, -3);
+  const readTo = addDaysStr(weekStart, 13); // next Sunday
 
   // 1. All predictions in the kickoff window (shared rows; not per-user).
   //    We don't filter by user_id because the weekly scan stores rows
@@ -475,8 +482,8 @@ async function handleWeek(event) {
              calibrated_over_confidence, calibrated_btts_confidence,
              home_goals, away_goals
       FROM predictions
-      WHERE kickoff >= ${weekStart}::date
-        AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')
+      WHERE kickoff >= ${readFrom}::date
+        AND kickoff <  (${readTo}::date + INTERVAL '1 day')
         AND league = 'MLS'
       ORDER BY kickoff ASC`;
   } catch (err) {
@@ -488,8 +495,8 @@ async function handleWeek(event) {
                ev_edge_over, ev_edge_btts, over_hit, btts_hit, created_at,
                match_data
         FROM predictions
-        WHERE kickoff >= ${weekStart}::date
-          AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')
+        WHERE kickoff >= ${readFrom}::date
+          AND kickoff <  (${readTo}::date + INTERVAL '1 day')
           AND league = 'MLS'
         ORDER BY kickoff ASC`;
     } else {
@@ -539,6 +546,31 @@ async function handleWeek(event) {
   if (rows.length === 0 && status.status !== 'scanning' && status.status !== 'complete') {
     await triggerBackgroundScan(leagueId, weekStart);
     scanning = true;
+  }
+
+  // 4b. Next-week scan trigger. The CalendarStrip shows up to 6 days
+  // ahead of today, so on Thursday onwards we want next week's data
+  // ready. Fire next-week's scan when we're at least Thursday AND the
+  // next-week scan_status row is idle/missing. Fire-and-forget; the
+  // /week response doesn't wait for it.
+  try {
+    const nextWeekStart = addDaysStr(weekStart, 7);
+    const todayDay = new Date().getUTCDay(); // 0=Sun, 4=Thu, 5=Fri, 6=Sat
+    const shouldQueueNextWeek = todayDay === 0 || todayDay >= 4;
+    if (shouldQueueNextWeek) {
+      let nextStatus = 'idle';
+      try {
+        const nextRows = await sql()`
+          SELECT status FROM scan_status WHERE id = ${`league-${leagueId}-week-${nextWeekStart}`} LIMIT 1`;
+        if (nextRows[0]) nextStatus = nextRows[0].status;
+      } catch { /* table missing — fine, scan will create it */ }
+      if (nextStatus === 'idle' || nextStatus === 'error') {
+        console.log(`[predictions/week] auto-queueing next-week scan league=${leagueId} weekStart=${nextWeekStart}`);
+        await triggerBackgroundScan(leagueId, nextWeekStart);
+      }
+    }
+  } catch (err) {
+    console.error('[predictions/week] next-week trigger check failed:', err.message);
   }
 
   return json(200, {
