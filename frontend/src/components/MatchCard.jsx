@@ -183,10 +183,11 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
 
   return (
     <div
-      className={`card${strongCard ? ' card-strong' : ''}`}
+      className={`card mc-card${strongCard ? ' card-strong' : ''}`}
       data-fixture-id={fixture.id || fixture.fixtureId}
       style={{
-        padding: 16,
+        // padding is set via .mc-card CSS so the mobile media query can
+        // tighten it. Inline padding here would override the rule.
         position: 'relative',
         borderColor: 'var(--border)',
         overflow: 'hidden',

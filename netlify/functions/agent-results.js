@@ -137,20 +137,41 @@ async function settleBatch({ dryRun = false } = {}) {
         // back to the hit-flags-only UPDATE so the settle still happens.
         const accuracyScore =
           (calc.overHit ? 0.5 : 0) + (calc.bttsHit ? 0.5 : 0);
+        // Try the full UPDATE (hit columns + accuracy_score + actual
+        // goal counts). On 42703 fall back to the columns the older
+        // schema knows about. The Resettle button uses the same
+        // settleBatch — once run-migration.sql is applied, every
+        // re-settle pass also backfills home_goals/away_goals so the
+        // FT chip on settled cards lights up again.
         try {
           await sql()`
             UPDATE predictions
             SET over_hit = ${calc.overHit},
                 btts_hit = ${calc.bttsHit},
-                accuracy_score = ${accuracyScore}
+                accuracy_score = ${accuracyScore},
+                home_goals = ${calc.home},
+                away_goals = ${calc.away}
             WHERE id = ${p.id}`;
         } catch (err) {
           if (err && (err.code === '42703' || /column .* does not exist/i.test(err.message || ''))) {
-            console.warn('[agent-results] accuracy_score column missing — settling without it. Run run-migration.sql.');
-            await sql()`
-              UPDATE predictions
-              SET over_hit = ${calc.overHit}, btts_hit = ${calc.bttsHit}
-              WHERE id = ${p.id}`;
+            console.warn('[agent-results] new columns missing — falling back. Run run-migration.sql to enable accuracy_score + home_goals/away_goals persistence.');
+            try {
+              await sql()`
+                UPDATE predictions
+                SET over_hit = ${calc.overHit},
+                    btts_hit = ${calc.bttsHit},
+                    accuracy_score = ${accuracyScore}
+                WHERE id = ${p.id}`;
+            } catch (err2) {
+              if (err2 && (err2.code === '42703' || /column .* does not exist/i.test(err2.message || ''))) {
+                await sql()`
+                  UPDATE predictions
+                  SET over_hit = ${calc.overHit}, btts_hit = ${calc.bttsHit}
+                  WHERE id = ${p.id}`;
+              } else {
+                throw err2;
+              }
+            }
           } else {
             throw err;
           }

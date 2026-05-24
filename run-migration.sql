@@ -22,6 +22,13 @@ ALTER TABLE predictions ADD COLUMN IF NOT EXISTS accuracy_score              REA
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS calibrated_over_confidence  INTEGER;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS calibrated_btts_confidence  INTEGER;
 
+-- 1a. Actual final score columns. agent-results computes calc.home /
+--     calc.away to derive hit/miss but discards the raw goal counts.
+--     Storing them lets the dashboard render "FT 2–1" on settled cards
+--     without re-hitting API-Football and powers the Resettle recovery.
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS home_goals                  INTEGER;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS away_goals                  INTEGER;
+
 -- 2. Per-league, per-market calibration. agent-results.js calls
 --    updateCalibration() on every settle; predictions-scan-background.js
 --    reads correction_factor at insert time to compute the calibrated

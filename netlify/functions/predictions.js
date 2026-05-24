@@ -396,10 +396,16 @@ function shapeForFrontend(row, adjustments) {
     // DB but we surface anyway). issues is a string[] of flag names.
     dataConfidence: (md && md.dataConfidence) || null,
     dataIssues: (md && md.dataIssues) || null,
-    actualResult: row.over_hit != null || row.btts_hit != null ? {
+    // Surface goals alongside hit flags so MatchCard's "FT X–Y" chip
+    // can render. Either a hit boolean OR a known goal count is enough
+    // to consider the row "settled" — we set actualResult so the green
+    // tick / red X show up on the prediction rows below.
+    actualResult: (row.over_hit != null || row.btts_hit != null || row.home_goals != null || row.away_goals != null) ? {
       status: 'FT',
       overHit: row.over_hit,
       bttsHit: row.btts_hit,
+      homeGoals: row.home_goals != null ? Number(row.home_goals) : null,
+      awayGoals: row.away_goals != null ? Number(row.away_goals) : null,
     } : null,
     ev: {
       over: row.ev_edge_over != null ? { edge: row.ev_edge_over } : null,
@@ -466,7 +472,8 @@ async function handleWeek(event) {
              ev_edge_over, ev_edge_btts, over_hit, btts_hit, created_at,
              match_data,
              debate_json, accuracy_score,
-             calibrated_over_confidence, calibrated_btts_confidence
+             calibrated_over_confidence, calibrated_btts_confidence,
+             home_goals, away_goals
       FROM predictions
       WHERE kickoff >= ${weekStart}::date
         AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')

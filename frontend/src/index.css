@@ -1184,6 +1184,13 @@ table.tbl tr:last-child td { border-bottom: none; }
 /* Subtle card shadow on every .card — makes cards feel elevated. */
 .card { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
 
+/* Match card padding — class-based so the mobile rule below can tighten
+   it. Set here (not inline in MatchCard) so the media query below works. */
+.mc-card { padding: 16px; }
+@media (max-width: 767px) {
+  .mc-card { padding: 14px; }
+}
+
 /* Pull-to-refresh indicator pill. Anchored to the top-centre of the
    viewport and translates downward following the drag distance. The
    parent component handles transform/opacity inline. */
@@ -1291,6 +1298,11 @@ table.tbl tr:last-child td { border-bottom: none; }
      still scrolls horizontally — 10 pills × 44px + gaps fits inside
      iPhone-mini width with a few px of breathing room. */
   .cs-pill { width: 44px !important; }
+  /* Bottom nav with 5 tabs — labels shrink to 9px to keep the 22px
+     icons readable. iPhone-mini has 75px per tab at 375px width, more
+     than enough for the icon + a 4-char label. */
+  .bottom-nav .tab { font-size: 9px; }
+  .bottom-nav .tab .ico { width: 20px; height: 20px; }
 }
 
 /* Upgrade modal — centered card on desktop, bottom sheet on mobile. */

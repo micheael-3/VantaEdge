@@ -390,6 +390,8 @@ ALTER TABLE predictions ADD COLUMN IF NOT EXISTS debate_json                 JSO
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS accuracy_score              REAL;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS calibrated_over_confidence  INTEGER;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS calibrated_btts_confidence  INTEGER;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS home_goals                  INTEGER;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS away_goals                  INTEGER;
 
 -- Per-league, per-market live calibration. Updated on every settle by
 -- agent-results.js; read by predictions-scan-background.js at insert time.
