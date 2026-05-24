@@ -64,14 +64,28 @@ async function bumpAccuracy(dimension, value, hit) {
 }
 
 async function settleBatch({ dryRun = false } = {}) {
-  const since = ninetyMinutesAgoIso();
+  // Previously this used a 90-minute lag (kickoff <= NOW() - 90min) as a
+  // safety buffer to give API-Football time to finalise scores before we
+  // tried to settle. Problem: it also meant rows from yesterday's match-
+  // day didn't settle until the next 2-hour cron tick, and any row whose
+  // kickoff was within the last 90 minutes was permanently skipped on
+  // that pass. The TERMINAL_STATUSES check below (FT/AET/PEN) already
+  // guards against settling a still-in-play fixture, so the time lag is
+  // redundant — and harmful. Drop it; rely on status only.
+  //
+  // fixture_id IS NOT NULL is a defensive guard. The schema says
+  // fixture_id is NOT NULL, but recovered placeholder rows from the
+  // /api/admin/recover-history tool already have hit columns set, so
+  // they won't match `over_hit IS NULL` anyway. Belt-and-braces.
+  void ninetyMinutesAgoIso; // keep import alive for callers
   const rows = await sql()`
     SELECT id, user_id, league, fixture_id, kickoff,
            over_line, over_confidence, btts, btts_confidence,
            is_sharp_move
     FROM predictions
     WHERE over_hit IS NULL
-      AND kickoff <= ${since}
+      AND fixture_id IS NOT NULL
+      AND kickoff < NOW()
     ORDER BY kickoff ASC
     LIMIT 500`;
 

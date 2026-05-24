@@ -714,10 +714,16 @@ exports.handler = async (event) => {
       return await clearBadPredictions();
     }
 
-    // --- POST /resettle --- re-run agent-results settle logic for any
-    //     past predictions still missing hit columns. Use to recover
-    //     settled data when something has been wiped.
-    if (method === 'POST' && (path === '/resettle' || path === '/resettle/')) {
+    // --- POST /resettle (or /run-results, same handler) --- re-run
+    //     agent-results settle logic for any past prediction still
+    //     missing hit columns. Use to recover settled data when
+    //     something has been wiped, or to trigger immediately after
+    //     a matchday without waiting for the 2-hour cron tick.
+    if (
+      method === 'POST' &&
+      (path === '/resettle' || path === '/resettle/' ||
+       path === '/run-results' || path === '/run-results/')
+    ) {
       return await resettlePastPredictions();
     }
 

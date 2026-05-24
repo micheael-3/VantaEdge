@@ -472,9 +472,16 @@ function StatsTab() {
         </div>
         <button
           type="button"
-          className="btn btn-primary btn-sm"
+          className="btn btn-ghost btn-sm"
           onClick={onResettle}
           disabled={resettleState.busy}
+          style={{
+            // Amber — not destructive (no DELETE) but not primary
+            // either; it's a recovery action so we want the user to
+            // notice it without it competing with Force Rescan.
+            borderColor: 'rgba(251,191,36,0.45)',
+            color: 'var(--amber)',
+          }}
         >
           {resettleState.busy ? 'Re-settling…' : 'Re-settle Past Predictions'}
         </button>
