@@ -359,6 +359,14 @@ function shapeForFrontend(row, adjustments) {
       asianHandicap: null,
     },
     h2h: (md && md.h2h) || null,
+    // New: full H2H stats object {avg, median, samples, display} from
+    // the scan. Lets the dashboard show "8 H2H meetings, median 2.5"
+    // instead of just the legacy "3.2 G/M" string.
+    h2hStats: (md && md.h2hStats) || null,
+    // Which API-Football season the scan's /teams/statistics call
+    // actually returned. Surfaced for the debug endpoint so we can
+    // verify "we're really pulling 2026" without re-fetching.
+    seasonUsed: (md && md.seasonUsed) || null,
     // Referee block from match_data: { name, avgGoalsPerGame } or null.
     // The stats grid reads fixture.referee.name and .avgGoalsPerGame to
     // render the "Referee" block — without surfacing it here the card

@@ -36,7 +36,8 @@ STRICT RULES YOU MUST FOLLOW:
 - A team with form W W W W W is in great form — factor this heavily.
 - Rest days over 7: slight positive performance boost.
 - Rest days under 3: slight negative performance boost.
-- H2H average goals directly influences the Over line choice.
+- H2H goals: prefer h2h.medianGoalsPerGame over h2h.avgGoalsPerGame — the mean is sensitive to single-game outliers (one 6-1 blowout in an 8-game sample shifts mean by ~1 goal per game). If h2h.samples < 4, treat the H2H signal as weak and lean on per-team averages instead.
+- Clean sheet rate: a team with cleanSheetRate >= 0.40 (40%+ of games as clean sheets) is a defensively strong side. If EITHER team has cleanSheetRate >= 0.40, BTTS YES confidence MUST NOT exceed 60%. This is a hard ceiling.
 - Referee average goals per game: if ref averages over 3.0, slightly increase Over line.
 - League position and season record are provided. A team in 2nd place with 9W-2D-2L is significantly stronger than a team in 12th with 4W-2D-7L. Factor this into confidence and prediction. Large form/position gaps should increase confidence in the stronger team's markets.
 - If data is missing or null for a field: ignore that field, do not assume.

@@ -253,8 +253,14 @@ function pickStandingForTeam(standings, teamId) {
   };
 }
 
+// H2H sample bumped from last 5 → last 8 per the external validation
+// report ("LA Galaxy vs Houston H2H was 2.0 here but 3.64 on FootyStats" /
+// "Colorado vs FC Dallas showed 4.0 — likely small-sample outlier").
+// A larger window dilutes single-game outliers in both directions.
+// Scan-bg pairs this with a MEDIAN computation so a 6-1 blowout in the
+// window doesn't drag the average up by ~1 goal/game on a 5-sample mean.
 async function getH2H(homeId, awayId) {
-  const params = { h2h: `${homeId}-${awayId}`, last: 5 };
+  const params = { h2h: `${homeId}-${awayId}`, last: 8 };
   return getOrFetch('/fixtures/headtohead', params, () => apiGet('/fixtures/headtohead', params), 3600);
 }
 

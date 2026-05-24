@@ -104,9 +104,35 @@ function gpgFromStats(stats, teamLabel) {
   }
   const fAvg = (stats.goals.for && stats.goals.for.average) || {};
   const aAvg = (stats.goals.against && stats.goals.against.average) || {};
+  // Clean sheet block from API-Football: { total, home, away }. Used
+  // downstream to cap BTTS confidence per the external validation
+  // report ("a team with 40%+ clean sheet rate shouldn't have BTTS
+  // confidence >60%").
+  const cs = stats.clean_sheet || {};
+  const fixtures = stats.fixtures || {};
+  const played = (fixtures.played && fixtures.played.total) || null;
+  // played.home / played.away if we want per-venue rates later.
+  const playedHome = fixtures.played && fixtures.played.home;
+  const playedAway = fixtures.played && fixtures.played.away;
+  const csTotal = num(cs.total);
+  const csHome = num(cs.home);
+  const csAway = num(cs.away);
+  const cleanSheetRate = played && csTotal != null ? csTotal / played : null;
+  const cleanSheetRateHome = playedHome && csHome != null ? csHome / playedHome : null;
+  const cleanSheetRateAway = playedAway && csAway != null ? csAway / playedAway : null;
+  // Log the season the upstream call actually used. The /teams/statistics
+  // response echoes back `league.season` — we surface it here so the
+  // diagnostic logs can prove we're pulling 2026 data, not 2025. This
+  // is the explicit "filter to 2026 only" verification the external
+  // validation asked for.
+  const seasonEcho =
+    (stats.league && stats.league.season) ||
+    (stats.parameters && stats.parameters.season) ||
+    null;
   console.log(
-    `[scan-bg gpg] ${teamLabel || ''} raw goals.for.average=${JSON.stringify(fAvg)} ` +
-      `goals.against.average=${JSON.stringify(aAvg)}`,
+    `[scan-bg gpg] ${teamLabel || ''} season=${seasonEcho} played=${played} ` +
+      `goals.for.average=${JSON.stringify(fAvg)} goals.against.average=${JSON.stringify(aAvg)} ` +
+      `cleanSheet=${csTotal}/${played} (${cleanSheetRate != null ? (cleanSheetRate * 100).toFixed(0) : 'n/a'}%)`,
   );
   return {
     // Overall season averages.
@@ -118,6 +144,18 @@ function gpgFromStats(stats, teamLabel) {
     avgForAway: num(fAvg.away),
     avgAgainstHome: num(aAvg.home),
     avgAgainstAway: num(aAvg.away),
+    // Clean sheet rates — surfaced to Sonnet so the prompt's BTTS-cap
+    // rule has data to act on, and stored in match_data for the debug
+    // endpoint.
+    cleanSheets: csTotal,
+    cleanSheetRate: cleanSheetRate != null ? Math.round(cleanSheetRate * 100) / 100 : null,
+    cleanSheetRateHome: cleanSheetRateHome != null ? Math.round(cleanSheetRateHome * 100) / 100 : null,
+    cleanSheetRateAway: cleanSheetRateAway != null ? Math.round(cleanSheetRateAway * 100) / 100 : null,
+    matchesPlayed: played,
+    // Echo back the season API-Football actually used. If this comes
+    // out as 2025 when the upcoming fixture is 2026, that's the season-
+    // mismatch the validation report flagged for Portland / Colorado.
+    seasonUsed: seasonEcho,
   };
 }
 
@@ -229,23 +267,49 @@ async function setFinalStatus(id, status, errorMsg) {
   }
 }
 
-// Fetch the 4 per-fixture detail calls in parallel.
-// Compute average goals per match across the last-5 H2H meetings.
-// Returns a display string like "3.2 G/M" or null if no data.
-function h2hAverageString(h2hList) {
+// Compute H2H goals/match stats across the last-N meetings. Returns
+// { avg, median, samples, display } or null when no usable data.
+// Median is what we send Sonnet because a single 6-1 outlier in an
+// 8-game window shifts mean by ~1 goal/match but barely moves the
+// median. The legacy `display` string ("3.2 G/M") is kept so the
+// existing dashboard rendering path doesn't have to change.
+function h2hStatsFrom(h2hList) {
   if (!Array.isArray(h2hList) || h2hList.length === 0) return null;
-  let totalGoals = 0;
-  let counted = 0;
+  const FINISHED = new Set(['FT', 'AET', 'PEN']);
+  const totals = [];
   for (const g of h2hList) {
-    const home = g && g.goals && g.goals.home;
-    const away = g && g.goals && g.goals.away;
+    const status = g && g.fixture && g.fixture.status && g.fixture.status.short;
+    if (!FINISHED.has(status)) continue;
+    const home = g.goals && g.goals.home;
+    const away = g.goals && g.goals.away;
     if (home == null || away == null) continue;
-    totalGoals += Number(home) + Number(away);
-    counted += 1;
+    totals.push(Number(home) + Number(away));
   }
-  if (counted === 0) return null;
-  const avg = totalGoals / counted;
-  return `${avg.toFixed(1)} G/M`;
+  if (totals.length === 0) return null;
+  const sorted = totals.slice().sort((a, b) => a - b);
+  const sum = totals.reduce((a, b) => a + b, 0);
+  const mean = sum / totals.length;
+  const mid = Math.floor(sorted.length / 2);
+  const median =
+    sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid];
+  return {
+    avg: Math.round(mean * 100) / 100,
+    median: Math.round(median * 100) / 100,
+    samples: totals.length,
+    // Keep a human display string so legacy callers / DB-stored strings
+    // remain unchanged in shape. Prefer median when sample is small
+    // (<=5) because that's where outliers do the most damage.
+    display: `${(totals.length <= 5 ? median : mean).toFixed(1)} G/M`,
+  };
+}
+
+// Legacy adaptor so any other code-path that still expects the old
+// "3.2 G/M" string from h2hAverageString keeps working.
+function h2hAverageString(h2hList) {
+  const s = h2hStatsFrom(h2hList);
+  return s ? s.display : null;
 }
 
 // Extract last-5 H2H actual scorelines (oldest → newest) from the
@@ -306,6 +370,7 @@ async function fetchFixtureDetail(fx, leagueId, season, standings) {
     homeGpg: gpgFromStats(homeStats, `home(${fx.teams.home.name})`),
     awayGpg: gpgFromStats(awayStats, `away(${fx.teams.away.name})`),
     h2h: h2hAverageString(h2hList),
+    h2hStats: h2hStatsFrom(h2hList),
     h2hScores: h2hLastFiveScores(h2hList, homeId),
     // Last-5 actual scorelines per team, home/away splits.
     homeLastFiveHomeScores: lastFiveScores(homeLast, homeId),
@@ -513,10 +578,14 @@ async function runScan(leagueId, weekStart) {
       const homeGpg = detail.homeGpg || {};
       const awayGpg = detail.awayGpg || {};
 
-      // Clean payload Sonnet 4.5 sees. This matches the shape referenced
-      // by the new system prompt: home/away splits, last-5 scorelines,
-      // league position, season record. Nothing else — no legacy fields,
-      // no internal IDs, no raw API objects.
+      const homeCsRate = homeGpg.cleanSheetRate;
+      const awayCsRate = awayGpg.cleanSheetRate;
+
+      // Clean payload Sonnet 4.5 sees. Adds the per-team clean-sheet
+      // rate (so the prompt's BTTS-cap rule has data to act on) and
+      // sends MEDIAN H2H instead of mean (median is outlier-resistant —
+      // an 8-game window with one 6-1 blowout has a sane median but
+      // an inflated mean).
       const claudePayload = {
         match: `${fx.teams.home.name} vs ${fx.teams.away.name}`,
         league: league.name,
@@ -528,6 +597,10 @@ async function runScan(leagueId, weekStart) {
           avgScoredTotal: homeGpg.avgFor,
           avgConcededHome: homeGpg.avgAgainstHome,
           avgConcededTotal: homeGpg.avgAgainst,
+          // Clean-sheet rate (0..1) — overall and per-venue. The prompt
+          // explicitly references this for the BTTS cap.
+          cleanSheetRate: homeCsRate,
+          cleanSheetRateHome: homeGpg.cleanSheetRateHome,
           lastFiveHomeScores: detail.homeLastFiveHomeScores,
           leaguePosition: detail.homeStanding && detail.homeStanding.position,
           seasonRecord: detail.homeStanding && detail.homeStanding.record,
@@ -542,6 +615,8 @@ async function runScan(leagueId, weekStart) {
           avgScoredTotal: awayGpg.avgFor,
           avgConcededAway: awayGpg.avgAgainstAway,
           avgConcededTotal: awayGpg.avgAgainst,
+          cleanSheetRate: awayCsRate,
+          cleanSheetRateAway: awayGpg.cleanSheetRateAway,
           lastFiveAwayScores: detail.awayLastFiveAwayScores,
           leaguePosition: detail.awayStanding && detail.awayStanding.position,
           seasonRecord: detail.awayStanding && detail.awayStanding.record,
@@ -550,8 +625,13 @@ async function runScan(leagueId, weekStart) {
           seasonGoalsAgainst: detail.awayStanding && detail.awayStanding.goalsAgainst,
         },
         h2h: {
-          avgGoalsPerGame: detail.h2h,
-          lastFiveResults: detail.h2hScores,
+          // medianGoalsPerGame is the headline figure now. avgGoalsPerGame
+          // and samples are exposed so the model can downweight when
+          // the sample is small.
+          medianGoalsPerGame: detail.h2hStats ? detail.h2hStats.median : null,
+          avgGoalsPerGame: detail.h2hStats ? detail.h2hStats.avg : null,
+          samples: detail.h2hStats ? detail.h2hStats.samples : 0,
+          lastResults: detail.h2hScores,
         },
         referee: detail.referee || null,
         restDays: {
@@ -592,7 +672,19 @@ async function runScan(leagueId, weekStart) {
         },
         h2h: detail.h2h,
         h2hScores: detail.h2hScores,
+        // New: median + samples for the debug endpoint and any future
+        // UI that wants to surface "8 H2H meetings, median 2.5 goals".
+        h2hStats: detail.h2hStats || null,
         referee: detail.referee || null,
+        // Diagnostic: which season API-Football echoed back on
+        // /teams/statistics. Visible in /api/admin/debug-fixture
+        // so we can prove (or disprove) the "filter to 2026" question
+        // raised in the external validation report.
+        seasonUsed:
+          (detail.homeGpg && detail.homeGpg.seasonUsed) ||
+          (detail.awayGpg && detail.awayGpg.seasonUsed) ||
+          detectedSeason ||
+          null,
       };
 
       // Validate BEFORE calling Claude. invalid → hard skip. partial →
@@ -625,6 +717,36 @@ async function runScan(leagueId, weekStart) {
       let analysis;
       try {
         analysis = await analyseMatch(claudePayload, false, false);
+        // Server-side BTTS cap. If either team has a clean-sheet rate
+        // of 40%+, BTTS confidence shouldn't exceed 60% — a team that
+        // shuts out 4 in 10 games can't be in a 70% BTTS-YES.
+        // The prompt also tells Sonnet this rule, but enforcing it
+        // here guarantees the contract even if the model drifts.
+        const CS_THRESHOLD = 0.40;
+        const CS_CAP = 60;
+        const homeCsHigh = typeof homeCsRate === 'number' && homeCsRate >= CS_THRESHOLD;
+        const awayCsHigh = typeof awayCsRate === 'number' && awayCsRate >= CS_THRESHOLD;
+        const btts = analysis.btts || {};
+        const isYes = String(btts.prediction || '').toUpperCase() === 'YES';
+        // Only cap the YES side — high clean-sheet rate is a NO signal,
+        // so a BTTS NO prediction with high confidence is internally
+        // consistent and shouldn't be capped.
+        if (isYes && (homeCsHigh || awayCsHigh) && typeof btts.confidence === 'number' && btts.confidence > CS_CAP) {
+          const before = btts.confidence;
+          analysis.btts.confidence = CS_CAP;
+          analysis.btts.reasoning =
+            `${analysis.btts.reasoning || ''}\n[Auto-capped to ${CS_CAP}% — ${
+              homeCsHigh ? `${fx.teams.home.name} keeps clean sheets in ${(homeCsRate * 100).toFixed(0)}% of games` : ''
+            }${homeCsHigh && awayCsHigh ? '; ' : ''}${
+              awayCsHigh ? `${fx.teams.away.name} keeps clean sheets in ${(awayCsRate * 100).toFixed(0)}% of games` : ''
+            }]`.trim();
+          console.log(
+            `[scan-bg btts-cap] fixture=${fx.fixture && fx.fixture.id} ` +
+              `${fx.teams.home.name} vs ${fx.teams.away.name} ` +
+              `home-cs=${homeCsRate} away-cs=${awayCsRate} ` +
+              `BTTS YES capped ${before}% -> ${CS_CAP}%`,
+          );
+        }
       } catch (claudeErr) {
         if (claudeErr instanceof ClaudeAnalysisError) {
           console.error(
