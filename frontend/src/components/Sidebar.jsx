@@ -19,6 +19,7 @@ const ITEMS = [
   { to: '/calculator', label: 'Calculator', icon: 'calc', requiresSharp: true, guestLocked: true },
   { to: '/history', label: 'Accuracy', icon: 'history', guestLocked: true },
   { to: '/guide', label: 'How It Works', icon: 'brain' },
+  { to: '/ebook', label: 'Betting Bible', icon: 'brain' },
   { to: '/affiliate', label: 'Affiliates', icon: 'affiliate' },
   { to: '/settings', label: 'Settings', icon: 'settings' },
 ];

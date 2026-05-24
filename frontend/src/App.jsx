@@ -11,6 +11,7 @@ import Affiliate from './pages/Affiliate.jsx';
 import Bankroll from './pages/Bankroll.jsx';
 import Calculator from './pages/Calculator.jsx';
 import Guide from './pages/Guide.jsx';
+import Ebook from './pages/Ebook.jsx';
 import Landing from './pages/Landing.jsx';
 import AdminPanel from './pages/AdminPanel.jsx';
 import Results from './pages/Results.jsx';
@@ -56,6 +57,7 @@ export default function App() {
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/results" element={<Results />} />
       <Route path="/guide" element={<Guide />} />
+      <Route path="/ebook" element={<Ebook />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/affiliate" element={<Affiliate />} />
 

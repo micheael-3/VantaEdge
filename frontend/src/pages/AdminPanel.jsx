@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout.jsx';
 import Icon from '../components/Icon.jsx';
 import Loading from '../components/Loading.jsx';
-import { admin as adminApi, intelligence as intelligenceApi } from '../api/client.js';
+import { admin as adminApi, intelligence as intelligenceApi, analytics as analyticsApi } from '../api/client.js';
+import { PROMO_BANNERS } from '../components/PromoBanner.jsx';
 
 // Admin Panel — three tabs: STATS, USERS, PREDICTIONS.
 // Mounted at /admin-panel and gated by <AdminOnly> in App.jsx.
@@ -875,7 +876,152 @@ function StatsTab() {
           </pre>
         )}
       </div>
+
+      {/* Banner Stats — impressions / clicks / dismissals per promo
+          banner. Helps figure out which CTA actually converts so the
+          rotation can be tuned. Reads aggregated counts from
+          /api/analytics/banner/stats; surfaces a warning row if the
+          banner_events table hasn't been migrated yet. */}
+      <BannerStatsCard />
     </>
+  );
+}
+
+// Read-only card rendered at the bottom of StatsTab. Mirrors the layout
+// of the other admin cards so it slots in without extra styling work.
+function BannerStatsCard() {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [warning, setWarning] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    analyticsApi
+      .bannerStats()
+      .then((r) => {
+        if (cancelled) return;
+        setStats(r);
+        setWarning(r && r.warning ? r.warning : '');
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setErr(e?.response?.data?.error || e.message || 'Failed to load banner stats');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const banners = (stats && stats.banners) || [];
+  const labelFor = (id) => {
+    const found = PROMO_BANNERS.find((b) => b.id === id);
+    return found ? found.headline : id;
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 16, padding: 16 }}>
+      <div
+        className="mono"
+        style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em' }}
+      >
+        BANNER STATS
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4, marginBottom: 12 }}>
+        Promo banner performance — impressions, clicks, dismissals, click-through rate.
+      </div>
+      {loading && (
+        <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>
+          Loading banner stats…
+        </div>
+      )}
+      {err && !loading && (
+        <div className="mono" style={{ fontSize: 11, color: 'var(--red)' }}>
+          {err}
+        </div>
+      )}
+      {warning && !err && (
+        <div
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: 'var(--amber)',
+            marginBottom: 10,
+            padding: '6px 10px',
+            background: 'rgba(251,191,36,0.06)',
+            border: '1px solid rgba(251,191,36,0.25)',
+            borderRadius: 6,
+          }}
+        >
+          {warning}
+        </div>
+      )}
+      {!loading && !err && banners.length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr
+                style={{
+                  textAlign: 'left',
+                  color: 'var(--text-3)',
+                  letterSpacing: '0.06em',
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  borderBottom: '1px solid var(--border-soft)',
+                }}
+              >
+                <th style={{ padding: '8px 8px' }}>Banner</th>
+                <th style={{ padding: '8px 8px', textAlign: 'right' }}>Impressions</th>
+                <th style={{ padding: '8px 8px', textAlign: 'right' }}>Clicks</th>
+                <th style={{ padding: '8px 8px', textAlign: 'right' }}>Dismissals</th>
+                <th style={{ padding: '8px 8px', textAlign: 'right' }}>CTR</th>
+              </tr>
+            </thead>
+            <tbody>
+              {banners.map((b) => (
+                <tr key={b.bannerId} style={{ borderBottom: '1px solid var(--border-soft)' }}>
+                  <td style={{ padding: '10px 8px', color: 'var(--text)' }}>
+                    <div style={{ fontWeight: 600 }}>{b.bannerId}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                      {labelFor(b.bannerId)}
+                    </div>
+                  </td>
+                  <td className="mono" style={{ padding: '10px 8px', textAlign: 'right' }}>
+                    {b.impression}
+                  </td>
+                  <td
+                    className="mono"
+                    style={{
+                      padding: '10px 8px',
+                      textAlign: 'right',
+                      color: b.click > 0 ? 'var(--mint)' : 'var(--text-3)',
+                    }}
+                  >
+                    {b.click}
+                  </td>
+                  <td className="mono" style={{ padding: '10px 8px', textAlign: 'right' }}>
+                    {b.dismiss}
+                  </td>
+                  <td
+                    className="mono"
+                    style={{
+                      padding: '10px 8px',
+                      textAlign: 'right',
+                      color: b.ctr >= 5 ? 'var(--mint)' : 'var(--text-2)',
+                    }}
+                  >
+                    {b.ctr}%
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 

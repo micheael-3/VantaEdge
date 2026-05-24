@@ -177,4 +177,13 @@ export const affiliate = {
     api.post('/api/affiliate/payout', { method, destination }).then((r) => r.data),
 };
 
+// Promo banner analytics. POSTs are fire-and-forget; the GET is
+// admin-only and powers the Banner Stats card in the Admin Stats tab.
+export const analytics = {
+  bannerEvent: (bannerId, event, userTier) =>
+    api.post('/api/analytics/banner', { bannerId, event, userTier }).then((r) => r.data),
+  bannerStats: () =>
+    api.get('/api/analytics/banner/stats').then((r) => r.data),
+};
+
 export default api;

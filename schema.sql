@@ -498,3 +498,24 @@ CREATE TABLE IF NOT EXISTS feedback (
 );
 CREATE INDEX IF NOT EXISTS feedback_user_idx       ON feedback(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS feedback_prediction_idx ON feedback(prediction_id);
+
+-- =====================================================================
+-- Banner analytics — impressions / clicks / dismissals per promo banner.
+-- Drives the "Banner Stats" section in the Admin Stats tab.
+--
+-- One row per (banner_id, event) emission. user_tier captures whether
+-- the firing user was a guest / free / pro at the time (helpful when
+-- we later expand banner visibility rules).
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS banner_events (
+  id         BIGSERIAL    PRIMARY KEY,
+  banner_id  TEXT         NOT NULL,
+  event      TEXT         NOT NULL,   -- 'impression' | 'click' | 'dismiss'
+  user_tier  TEXT,                    -- 'guest' | 'free' | 'pro' (best-effort)
+  created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS banner_events_banner_event_idx
+  ON banner_events(banner_id, event);
+CREATE INDEX IF NOT EXISTS banner_events_recent_idx
+  ON banner_events(created_at DESC);
+

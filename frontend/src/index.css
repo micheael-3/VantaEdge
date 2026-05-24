@@ -1421,3 +1421,45 @@ table.tbl tr:last-child td { border-bottom: none; }
     animation: slide-up 0.25s ease-out;
   }
 }
+
+/* ---------------------------------------------------------------------
+   PromoBanner — self-promotional banner for GUEST + FREE users.
+   Two placement variants live in the DOM at once; the wrong one hides
+   per breakpoint so layout never duplicates the banner visually.
+   --------------------------------------------------------------------- */
+.promo-banner { margin-bottom: 16px; }
+/* Desktop placement is hidden on mobile (≤767px) */
+.promo-desktop-only { display: block; }
+.promo-mobile-only  { display: none; }
+@media (max-width: 767px) {
+  .promo-desktop-only { display: none; }
+  .promo-mobile-only  { display: block; }
+}
+
+/* Desktop: one-line layout — icon | text | CTA | dismiss. 72px target. */
+.promo-banner-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 40px;
+}
+.promo-banner-inner .promo-banner-body  { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.promo-banner-inner .promo-banner-small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Mobile: stack — icon + headline on top, body below, CTA full-width. */
+@media (max-width: 767px) {
+  .promo-banner-inner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .promo-banner-inner .promo-banner-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .promo-banner-inner .promo-banner-body  { white-space: normal; }
+  .promo-banner-inner .promo-banner-small { white-space: normal; }
+  .promo-banner-action .promo-banner-cta { width: 100%; justify-content: center; }
+}
+

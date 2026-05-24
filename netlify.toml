@@ -214,6 +214,13 @@
   to     = "/.netlify/functions/feedback/:splat"
   status = 200
 
+# Promo banner analytics. POST /api/analytics/banner from the client
+# (guests and FREE users), GET /api/analytics/banner/stats from admin.
+[[redirects]]
+  from   = "/api/analytics/*"
+  to     = "/.netlify/functions/analytics/:splat"
+  status = 200
+
 # Agent admin trigger paths (used by the Admin → Agent tab).
 [[redirects]]
   from   = "/api/agent/scanner"

@@ -6,6 +6,7 @@ import BestBetBanner from '../components/BestBetBanner.jsx';
 import OnboardingOverlay from '../components/OnboardingOverlay.jsx';
 import SettledMatchMini from '../components/SettledMatchMini.jsx';
 import ConversionToast from '../components/ConversionToast.jsx';
+import PromoBanner from '../components/PromoBanner.jsx';
 import { isSharp, useAuth } from '../context/AuthContext.jsx';
 import { predictions, history as historyApi } from '../api/client.js';
 import { agentScore } from '../lib/fixture.js';
@@ -678,6 +679,12 @@ export default function Dashboard() {
                 />
               )}
 
+              {/* PROMO BANNER — desktop placement. CSS hides this on
+                  ≤767px viewports (the mobile version sits inline in the
+                  card grid below). PromoBanner itself returns null for
+                  PRO users so this slot is invisible to subscribers. */}
+              <PromoBanner placement="desktop" />
+
               <div
                 style={{
                   display: 'flex',
@@ -708,14 +715,35 @@ export default function Dashboard() {
                   gap: 12,
                 }}
               >
-                {(selectedDate >= today ? others : fixturesForDay).map((f) => (
-                  <MatchCard
-                    key={f.id || f.fixtureId}
-                    fixture={f}
-                    isSharp={sharp}
-                    onUpgrade={openUpgrade}
-                  />
-                ))}
+                {(() => {
+                  const list = selectedDate >= today ? others : fixturesForDay;
+                  // Mobile-inline promo: spec says "between match card 2
+                  // and match card 3". On today/future, card 1 is the
+                  // BestBet banner above the grid; that means others[0]
+                  // is card 2 and others[1] is card 3 — insert the
+                  // mobile banner AFTER index 0 (i.e. before others[1]).
+                  // On past dates there's no BestBet banner, so card 2 is
+                  // fixturesForDay[1] and card 3 is fixturesForDay[2] —
+                  // insert after index 1. Both branches collapse to "we
+                  // already rendered the second visible card" → use
+                  // `bannerInsertAfter` for the relevant offset.
+                  const bannerInsertAfter = selectedDate >= today ? 0 : 1;
+                  const out = [];
+                  list.forEach((f, idx) => {
+                    out.push(
+                      <MatchCard
+                        key={f.id || f.fixtureId}
+                        fixture={f}
+                        isSharp={sharp}
+                        onUpgrade={openUpgrade}
+                      />,
+                    );
+                    if (idx === bannerInsertAfter && list.length > bannerInsertAfter + 1) {
+                      out.push(<PromoBanner key="promo-mobile-inline" placement="mobile" />);
+                    }
+                  });
+                  return out;
+                })()}
               </div>
             </>
           )}
