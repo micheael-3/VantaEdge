@@ -47,6 +47,16 @@ exports.handler = async (event) => {
     return jsonResp(401, { error: 'Unauthorized. Append ?key=<ADMIN_PASSWORD> to the URL.' });
   }
 
+  // Destructive — wipes every prediction-related table. Requires an
+  // explicit `confirm=DELETE_ALL` query param so a stray bookmark or
+  // muscle-memory URL paste can't accidentally trigger it. Same guard
+  // pattern as the cookie-authed /api/admin/clear-all endpoint.
+  if (String(params.confirm || '').trim() !== 'DELETE_ALL') {
+    return jsonResp(400, {
+      error: 'Confirmation required. Append &confirm=DELETE_ALL to the URL to proceed. This wipes settled accuracy history irreversibly.',
+    });
+  }
+
   const results = [];
   let totalDeleted = 0;
   let okCount = 0;

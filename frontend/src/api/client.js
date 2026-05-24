@@ -103,10 +103,20 @@ export const admin = {
   // predictions + scan_status, then fires the background scanner.
   forceRescan: (leagueId) =>
     api.post(`/api/admin/rescan/${leagueId}`).then((r) => r.data),
-  // Wipe ALL prediction-related tables (10 of them) and trigger a
-  // fresh background scan. Same operation as /api/admin/clear-history
-  // but cookie-authed so we don't need ADMIN_PASSWORD in the URL.
-  clearAll: () => api.post('/api/admin/clear-all').then((r) => r.data),
+  // Wipe ALL prediction-related tables (10 of them) including settled
+  // accuracy history, then trigger a fresh background scan. Requires
+  // the caller to send the literal string "DELETE ALL" — the AdminPanel
+  // UI prompts the user to type it before this fires.
+  clearAll: (confirmation) =>
+    api.post('/api/admin/clear-all', { confirmation }).then((r) => r.data),
+  // Delete only synthetic 50/50 placeholder rows (legacy fallback path).
+  // Safe — never touches settled rows.
+  clearBad: () => api.post('/api/admin/clear-bad').then((r) => r.data),
+  // Re-run the agent-results settle pipeline immediately. Walks every
+  // past prediction missing hit columns, fetches the score from
+  // API-Football, writes hit/miss + accuracy_score. Used to recover
+  // settled data after an accidental wipe.
+  resettle: () => api.post('/api/admin/resettle').then((r) => r.data),
   // Per-fixture inspector. Returns raw API-Football responses, the
   // extracted form/stats/standings, and the matchData that would be
   // sent to Claude. Used by the "Debug Fixture" UI in the admin panel.

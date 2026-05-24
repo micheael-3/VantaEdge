@@ -107,14 +107,27 @@ async function forceRescan(leagueId) {
   const weekEnd = addDaysStr(weekStart, 6);
   const scanId = `league-${leagueId}-week-${weekStart}`;
 
-  // 1. Clear this week's predictions for the league.
-  // The legacy `predictions.league` column stores the league name (e.g.
-  // "MLS"); we only have the ID here. Easiest: scope by kickoff window —
-  // MLS is the only league in this build, so the window is unambiguous.
-  await sql()`
+  // 1. Clear THIS WEEK'S UPCOMING + UNSETTLED predictions only.
+  //    Critical bug fix (May 2026): the previous version deleted every
+  //    row in the current week's kickoff window — including matches
+  //    that had already played and been settled. That destroyed
+  //    accuracy history. The new filter:
+  //      - kickoff > NOW()       → only upcoming matches
+  //      - over_hit IS NULL      → never touch a row that's already
+  //      - btts_hit IS NULL        been settled by agent-results
+  //
+  //    Effect: re-runs Claude / refetches stats for matches that
+  //    haven't kicked off yet, while preserving every settled row
+  //    earlier in the same week.
+  const deletedRows = await sql()`
     DELETE FROM predictions
     WHERE kickoff >= ${weekStart}::date
-      AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')`;
+      AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')
+      AND kickoff > NOW()
+      AND over_hit IS NULL
+      AND btts_hit IS NULL
+    RETURNING id`;
+  console.log(`[admin/rescan] league=${leagueId} weekStart=${weekStart} deleted ${deletedRows.length} upcoming/unsettled rows; settled rows preserved.`);
 
   // 2. Clear the scan_status row so /week re-triggers cleanly.
   await sql()`DELETE FROM scan_status WHERE id = ${scanId}`;
@@ -140,17 +153,33 @@ async function forceRescan(leagueId) {
     console.error('[admin/rescan] bg trigger setup failed:', err.message);
   }
 
-  return json(200, { ok: true, leagueId, weekStart, weekEnd });
+  return json(200, {
+    ok: true,
+    leagueId,
+    weekStart,
+    weekEnd,
+    deletedUpcomingRows: deletedRows.length,
+    settledRowsPreserved: true,
+  });
 }
 
 // POST /api/admin/clear-all
 //
-// Cookie-authed admin version of /api/admin/clear-history (which uses
-// ?key=<ADMIN_PASSWORD>). Wipes the same 10 tables and triggers a
-// fresh background scan. Used by the AdminPanel "Clear All & Rescan"
-// button so admins don't need to construct URLs or type their
-// password into a browser address bar.
-async function clearAllAndRescan() {
+// DESTRUCTIVE — wipes settled data including the predictions table.
+// Requires `confirmation: "DELETE ALL"` in the request body to proceed.
+// Previously a window.confirm was the only guard, which we hit by
+// accident in May 2026 and lost weeks of settled accuracy history.
+// The phrase is intentional: typing "CONFIRM" is too easy to muscle-
+// memory through, "DELETE ALL" forces you to read what you're doing.
+//
+// For non-destructive refresh of upcoming-only predictions, use
+// /api/admin/rescan/:leagueId — that preserves every settled row.
+async function clearAllAndRescan(event) {
+  const body = parseBody(event);
+  const confirmation = String((body && body.confirmation) || '').trim();
+  if (confirmation !== 'DELETE ALL') {
+    return error(400, 'Confirmation required: send { "confirmation": "DELETE ALL" } to proceed. This is destructive and irreversible.');
+  }
   const TARGETS = [
     'bankroll_entries',
     'odds_snapshots',
@@ -207,6 +236,53 @@ async function clearAllAndRescan() {
   }
 
   return json(200, { ok: true, totalDeleted, scanTriggered, results });
+}
+
+// POST /api/admin/clear-bad
+//
+// Deletes only the synthetic 50%/50% rows that the legacy fallback path
+// produced when OpenRouter was unhealthy. Safe by design: never touches
+// settled rows. Used to clean up "Analysis unavailable. 50%" placeholders
+// without affecting accuracy history.
+async function clearBadPredictions() {
+  const rows = await sql()`
+    DELETE FROM predictions
+    WHERE over_confidence = 50
+      AND btts_confidence = 50
+      AND over_hit IS NULL
+      AND btts_hit IS NULL
+    RETURNING id`;
+  console.log(`[admin/clear-bad] deleted ${rows.length} synthetic 50% placeholders (settled rows preserved).`);
+  return json(200, { ok: true, deletedRows: rows.length });
+}
+
+// POST /api/admin/resettle
+//
+// Re-runs the agent-results settle pipeline immediately. Use this to
+// recover settled data after an accidental wipe — it walks every
+// prediction where kickoff < NOW() AND over_hit IS NULL, fetches the
+// real score from API-Football, and writes hit/miss + accuracy_score.
+//
+// Safe to call repeatedly; the underlying settleBatch only operates on
+// rows that don't have hit columns set, so already-settled rows are
+// untouched.
+async function resettlePastPredictions() {
+  let settleBatch;
+  try {
+    settleBatch = require('./agent-results').settleBatch;
+  } catch (e) {
+    return error(500, `Could not load agent-results: ${e.message}`);
+  }
+  if (typeof settleBatch !== 'function') {
+    return error(500, 'agent-results.settleBatch is not exported');
+  }
+  try {
+    const report = await settleBatch({ dryRun: false });
+    return json(200, { ok: true, report });
+  } catch (e) {
+    console.error('[admin/resettle] failed:', e);
+    return error(500, e.message || 'resettle failed');
+  }
 }
 
 // GET /api/admin/debug-fixture/:fixtureId
@@ -336,11 +412,23 @@ exports.handler = async (event) => {
     const rescanMatch = path.match(/^\/rescan\/(\d+)\/?$/);
     if (rescanMatch && method === 'POST') return await forceRescan(parseInt(rescanMatch[1], 10));
 
-    // --- POST /clear-all --- cookie-authed wipe + rescan. The legacy
-    //     /api/admin/clear-history endpoint (uses ?key=) still works
-    //     for direct hits; this is the in-app version.
+    // --- POST /clear-all --- cookie-authed wipe + rescan. Requires
+    //     { confirmation: "DELETE ALL" } in the body to actually run.
     if (method === 'POST' && (path === '/clear-all' || path === '/clear-all/')) {
-      return await clearAllAndRescan();
+      return await clearAllAndRescan(event);
+    }
+
+    // --- POST /clear-bad --- delete synthetic 50%/50% placeholders.
+    //     Never touches settled rows; no confirmation required.
+    if (method === 'POST' && (path === '/clear-bad' || path === '/clear-bad/')) {
+      return await clearBadPredictions();
+    }
+
+    // --- POST /resettle --- re-run agent-results settle logic for any
+    //     past predictions still missing hit columns. Use to recover
+    //     settled data when something has been wiped.
+    if (method === 'POST' && (path === '/resettle' || path === '/resettle/')) {
+      return await resettlePastPredictions();
     }
 
     // --- GET /debug-fixture/:fixtureId --- cookie-authed inspector.

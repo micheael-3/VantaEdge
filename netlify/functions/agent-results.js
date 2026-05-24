@@ -256,4 +256,9 @@ exports.handler = async (event) => {
   }
 };
 
+// Exported for in-process reuse from admin.js's /resettle endpoint, so
+// the admin can manually trigger a re-fetch + re-settle of any past
+// predictions still missing hit columns. The function itself is safe
+// to call repeatedly — it only operates on rows where over_hit IS NULL.
+exports.settleBatch = settleBatch;
 exports.config = { schedule: SCHEDULE };

@@ -88,9 +88,14 @@ function StatsTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [rescanState, setRescanState] = useState({ busy: false, message: '' });
-  // Two pieces of state for the new admin tools. Kept inline with the
-  // stats tab so they sit next to "Force Rescan" — same mental model.
+  // Three pieces of state for the destructive / recovery admin tools.
+  // Kept inline with the stats tab so they sit next to "Force Rescan" —
+  // same mental model: "do something to the predictions table".
   const [clearState, setClearState] = useState({ busy: false, message: '' });
+  const [clearAllOpen, setClearAllOpen] = useState(false);
+  const [clearAllInput, setClearAllInput] = useState('');
+  const [clearBadState, setClearBadState] = useState({ busy: false, message: '' });
+  const [resettleState, setResettleState] = useState({ busy: false, message: '' });
   const [debugId, setDebugId] = useState('');
   const [debugState, setDebugState] = useState({ busy: false, message: '', result: null });
 
@@ -140,25 +145,75 @@ function StatsTab() {
     }
   };
 
-  // Wipe ALL prediction tables and trigger a fresh scan with the new
-  // pipeline. Confirms first — this is destructive across 10 tables.
-  const onClearAll = async () => {
+  // Open the typed-confirmation modal. We DON'T run the destructive
+  // action until the user types the literal phrase "DELETE ALL" and
+  // hits the second button. Window.confirm was too easy to muscle-
+  // memory through — we wiped settled accuracy data once that way.
+  const onOpenClearAll = () => {
     if (clearState.busy) return;
-    if (!window.confirm(
-      'Wipe ALL predictions, accuracy model, best-bet, agent alerts, odds snapshots and bankroll-entry links, then trigger a fresh scan?\n\nThis cannot be undone.',
-    )) return;
+    setClearAllInput('');
+    setClearAllOpen(true);
+  };
+
+  const onConfirmClearAll = async () => {
+    if (clearState.busy) return;
+    if (clearAllInput.trim() !== 'DELETE ALL') return;
+    setClearAllOpen(false);
     setClearState({ busy: true, message: 'Wiping tables & triggering rescan…' });
     try {
-      const r = await adminApi.clearAll();
+      const r = await adminApi.clearAll('DELETE ALL');
       setClearState({
         busy: false,
         message: `Wiped ${r.totalDeleted ?? 0} rows across ${(r.results || []).length} tables. Scan ${r.scanTriggered ? 'triggered' : 'NOT triggered'} — refresh dashboard in ~1 min.`,
       });
+      setClearAllInput('');
       setTimeout(() => loadStats({ cancelled: false }), 5000);
     } catch (err) {
       setClearState({
         busy: false,
         message: err?.response?.data?.error || err.message || 'Clear failed',
+      });
+    }
+  };
+
+  // Clear ONLY synthetic 50/50 placeholders. Safe — never touches
+  // settled rows. Single button-press, no typed confirmation.
+  const onClearBad = async () => {
+    if (clearBadState.busy) return;
+    if (!window.confirm('Delete synthetic 50%/50% placeholder rows (legacy fallback)? Settled rows are untouched.')) return;
+    setClearBadState({ busy: true, message: 'Cleaning placeholders…' });
+    try {
+      const r = await adminApi.clearBad();
+      setClearBadState({
+        busy: false,
+        message: `Removed ${r.deletedRows ?? 0} placeholder rows. Settled rows preserved.`,
+      });
+      setTimeout(() => loadStats({ cancelled: false }), 1500);
+    } catch (err) {
+      setClearBadState({
+        busy: false,
+        message: err?.response?.data?.error || err.message || 'Clear-bad failed',
+      });
+    }
+  };
+
+  // Re-run agent-results settle logic for any past prediction missing
+  // hit columns. Recovery action — safe to call repeatedly.
+  const onResettle = async () => {
+    if (resettleState.busy) return;
+    setResettleState({ busy: true, message: 'Re-fetching scores from API-Football and settling…' });
+    try {
+      const r = await adminApi.resettle();
+      const rep = r && r.report ? r.report : {};
+      setResettleState({
+        busy: false,
+        message: `Resettle: queried ${rep.fixturesQueried ?? 0} fixtures, settled ${rep.fixturesSettled ?? 0}, updated ${rep.predictionsUpdated ?? 0} predictions${rep.fixturesPendingFt ? `, ${rep.fixturesPendingFt} still pending FT` : ''}.`,
+      });
+      setTimeout(() => loadStats({ cancelled: false }), 1500);
+    } catch (err) {
+      setResettleState({
+        busy: false,
+        message: err?.response?.data?.error || err.message || 'Resettle failed',
       });
     }
   };
@@ -325,13 +380,197 @@ function StatsTab() {
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          onClick={onClearAll}
+          onClick={onOpenClearAll}
           disabled={clearState.busy}
-          style={{ borderColor: 'rgba(239,68,68,0.4)' }}
+          style={{ borderColor: 'rgba(239,68,68,0.4)', color: 'var(--red)' }}
         >
           {clearState.busy ? 'Wiping…' : 'Clear All & Rescan'}
         </button>
       </div>
+
+      {/* Resettle past predictions — recovery action. Walks every past
+          prediction missing hit columns, re-fetches the real score
+          from API-Football, writes hit/miss + accuracy_score. */}
+      <div
+        className="card"
+        style={{
+          marginTop: 16,
+          padding: 16,
+          display: 'flex',
+          gap: 18,
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          borderColor: 'rgba(110,231,183,0.3)',
+        }}
+      >
+        <div>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em' }}>
+            RE-SETTLE PAST PREDICTIONS
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>
+            Re-fetch results from API-Football for every past prediction missing hit/miss. Use to recover settled data after an accidental wipe.
+          </div>
+          {resettleState.message && (
+            <div
+              className="mono"
+              style={{ marginTop: 8, fontSize: 11, color: resettleState.busy ? 'var(--mint)' : 'var(--text-3)' }}
+            >
+              {resettleState.message}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          onClick={onResettle}
+          disabled={resettleState.busy}
+        >
+          {resettleState.busy ? 'Re-settling…' : 'Re-settle Past Predictions'}
+        </button>
+      </div>
+
+      {/* Clear synthetic 50/50 placeholders — safe, settled rows
+          untouched. Cleans up legacy "Analysis unavailable" rows. */}
+      <div
+        className="card"
+        style={{
+          marginTop: 16,
+          padding: 16,
+          display: 'flex',
+          gap: 18,
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em' }}>
+            CLEAR BAD PREDICTIONS
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>
+            Delete synthetic 50/50 placeholder rows (legacy fallback path). Settled rows are never touched.
+          </div>
+          {clearBadState.message && (
+            <div
+              className="mono"
+              style={{ marginTop: 8, fontSize: 11, color: clearBadState.busy ? 'var(--mint)' : 'var(--text-3)' }}
+            >
+              {clearBadState.message}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={onClearBad}
+          disabled={clearBadState.busy}
+        >
+          {clearBadState.busy ? 'Clearing…' : 'Clear Bad Predictions'}
+        </button>
+      </div>
+
+      {/* Typed-confirmation modal for Clear All. Requires the user to
+          type the literal string "DELETE ALL" before the button enables.
+          Backed up by the same check on the backend so a forged client
+          can't bypass it. */}
+      {clearAllOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 200,
+            background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setClearAllOpen(false); }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: 460,
+              width: '100%',
+              padding: 22,
+              borderColor: 'rgba(239,68,68,0.45)',
+              background: 'linear-gradient(180deg, rgba(239,68,68,0.06), transparent), var(--card)',
+            }}
+          >
+            <div
+              className="mono"
+              style={{ fontSize: 10, color: 'var(--red)', letterSpacing: '0.12em', marginBottom: 8 }}
+            >
+              IRREVERSIBLE
+            </div>
+            <h3
+              className="display"
+              style={{ fontSize: 22, fontWeight: 700, margin: '0 0 10px', letterSpacing: '-0.02em' }}
+            >
+              Wipe ALL prediction data?
+            </h3>
+            <p style={{ margin: '0 0 14px', color: 'var(--text-2)', fontSize: 14, lineHeight: 1.5 }}>
+              This deletes <strong>every settled result</strong> across 10 tables —
+              accuracy history, best-bet, agent alerts, odds snapshots, bankroll
+              links. You'll lose everything the AI has learned from settled
+              matches. There is no undo.
+            </p>
+            <p style={{ margin: '0 0 10px', color: 'var(--text-3)', fontSize: 12 }}>
+              For a non-destructive refresh of upcoming-only predictions, use
+              "Force Rescan" instead. To recover lost settled data, use
+              "Re-settle Past Predictions".
+            </p>
+            <label
+              className="mono"
+              style={{
+                display: 'block',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                color: 'var(--text-3)',
+                marginBottom: 6,
+              }}
+            >
+              TYPE <span style={{ color: 'var(--red)' }}>DELETE ALL</span> TO CONFIRM
+            </label>
+            <input
+              className="input"
+              type="text"
+              autoFocus
+              value={clearAllInput}
+              onChange={(e) => setClearAllInput(e.target.value)}
+              placeholder="DELETE ALL"
+              style={{ marginBottom: 14 }}
+            />
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setClearAllOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={onConfirmClearAll}
+                disabled={clearAllInput.trim() !== 'DELETE ALL'}
+                style={{
+                  background: clearAllInput.trim() === 'DELETE ALL' ? 'var(--red)' : 'var(--card-2)',
+                  color: clearAllInput.trim() === 'DELETE ALL' ? '#fff' : 'var(--text-faint)',
+                  borderColor: 'rgba(239,68,68,0.45)',
+                  cursor: clearAllInput.trim() === 'DELETE ALL' ? 'pointer' : 'not-allowed',
+                }}
+              >
+                Wipe Everything
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Per-fixture inspector. Paste a fixtureId, see exactly what the
           scan would fetch + send to Claude. Renders the JSON inline so
