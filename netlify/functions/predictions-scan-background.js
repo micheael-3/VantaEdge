@@ -471,26 +471,56 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
   // Stored against the system "scan" user — when a real user requests
   // /api/predictions/week we read these shared rows by league + kickoff
   // window (no user_id filter).
-  await sql()`
-    INSERT INTO predictions
-      (user_id, league, fixture_id, home_team, away_team, kickoff,
-       over_line, over_confidence, btts, btts_confidence,
-       ev_edge_over, ev_edge_btts, kelly_over, kelly_btts,
-       best_over_odds, best_over_bookmaker, best_btts_odds, best_btts_bookmaker,
-       auto_ev_over, auto_ev_btts, match_data,
-       debate_json, calibrated_over_confidence, calibrated_btts_confidence)
-    VALUES
-      (${adminUserId}, ${league.name}, ${fx.fixture.id}, ${fx.teams.home.name}, ${fx.teams.away.name},
-       ${fx.fixture.date}, ${analysis.over.line}, ${Math.round(analysis.over.confidence)},
-       ${analysis.btts.prediction}, ${Math.round(analysis.btts.confidence)},
-       ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null},
-       ${kellyOverAuto}, ${kellyBttsAuto},
-       ${oddsData ? oddsData.bestOverOdds : null}, ${oddsData ? oddsData.bestOverBookmaker : null},
-       ${oddsData ? oddsData.bestBttsOdds : null}, ${oddsData ? oddsData.bestBttsBookmaker : null},
-       ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null},
-       ${mdPayload ? JSON.stringify(mdPayload) : null}::jsonb,
-       ${debatePayload ? JSON.stringify(debatePayload) : null}::jsonb,
-       ${calibratedOver}, ${calibratedBtts})`;
+  //
+  // Try INSERT with the new self-learning columns. On 42703 (column
+  // doesn't exist — migration not run yet) fall back to the legacy
+  // INSERT so the scan still completes; the new columns just won't
+  // populate until run-migration.sql is applied.
+  try {
+    await sql()`
+      INSERT INTO predictions
+        (user_id, league, fixture_id, home_team, away_team, kickoff,
+         over_line, over_confidence, btts, btts_confidence,
+         ev_edge_over, ev_edge_btts, kelly_over, kelly_btts,
+         best_over_odds, best_over_bookmaker, best_btts_odds, best_btts_bookmaker,
+         auto_ev_over, auto_ev_btts, match_data,
+         debate_json, calibrated_over_confidence, calibrated_btts_confidence)
+      VALUES
+        (${adminUserId}, ${league.name}, ${fx.fixture.id}, ${fx.teams.home.name}, ${fx.teams.away.name},
+         ${fx.fixture.date}, ${analysis.over.line}, ${Math.round(analysis.over.confidence)},
+         ${analysis.btts.prediction}, ${Math.round(analysis.btts.confidence)},
+         ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null},
+         ${kellyOverAuto}, ${kellyBttsAuto},
+         ${oddsData ? oddsData.bestOverOdds : null}, ${oddsData ? oddsData.bestOverBookmaker : null},
+         ${oddsData ? oddsData.bestBttsOdds : null}, ${oddsData ? oddsData.bestBttsBookmaker : null},
+         ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null},
+         ${mdPayload ? JSON.stringify(mdPayload) : null}::jsonb,
+         ${debatePayload ? JSON.stringify(debatePayload) : null}::jsonb,
+         ${calibratedOver}, ${calibratedBtts})`;
+  } catch (err) {
+    if (err && (err.code === '42703' || /column .* does not exist/i.test(err.message || ''))) {
+      console.warn('[scan-bg] self-learning columns missing on predictions table — inserting without them. Run run-migration.sql.');
+      await sql()`
+        INSERT INTO predictions
+          (user_id, league, fixture_id, home_team, away_team, kickoff,
+           over_line, over_confidence, btts, btts_confidence,
+           ev_edge_over, ev_edge_btts, kelly_over, kelly_btts,
+           best_over_odds, best_over_bookmaker, best_btts_odds, best_btts_bookmaker,
+           auto_ev_over, auto_ev_btts, match_data)
+        VALUES
+          (${adminUserId}, ${league.name}, ${fx.fixture.id}, ${fx.teams.home.name}, ${fx.teams.away.name},
+           ${fx.fixture.date}, ${analysis.over.line}, ${Math.round(analysis.over.confidence)},
+           ${analysis.btts.prediction}, ${Math.round(analysis.btts.confidence)},
+           ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null},
+           ${kellyOverAuto}, ${kellyBttsAuto},
+           ${oddsData ? oddsData.bestOverOdds : null}, ${oddsData ? oddsData.bestOverBookmaker : null},
+           ${oddsData ? oddsData.bestBttsOdds : null}, ${oddsData ? oddsData.bestBttsBookmaker : null},
+           ${autoEvOver ? autoEvOver.edge : null}, ${autoEvBtts ? autoEvBtts.edge : null},
+           ${mdPayload ? JSON.stringify(mdPayload) : null}::jsonb)`;
+    } else {
+      throw err;
+    }
+  }
 }
 
 async function pickScanOwnerUserId() {

@@ -133,18 +133,34 @@ async function settleBatch({ dryRun = false } = {}) {
         // accuracy_score is 1.0 if both markets hit, 0.5 if one hits,
         // 0.0 if both miss. Saved alongside the hit flags so /history
         // and the persona-state engine can read it in a single query.
+        // If the column doesn't exist yet (migration not run) we fall
+        // back to the hit-flags-only UPDATE so the settle still happens.
         const accuracyScore =
           (calc.overHit ? 0.5 : 0) + (calc.bttsHit ? 0.5 : 0);
-        await sql()`
-          UPDATE predictions
-          SET over_hit = ${calc.overHit},
-              btts_hit = ${calc.bttsHit},
-              accuracy_score = ${accuracyScore}
-          WHERE id = ${p.id}`;
+        try {
+          await sql()`
+            UPDATE predictions
+            SET over_hit = ${calc.overHit},
+                btts_hit = ${calc.bttsHit},
+                accuracy_score = ${accuracyScore}
+            WHERE id = ${p.id}`;
+        } catch (err) {
+          if (err && (err.code === '42703' || /column .* does not exist/i.test(err.message || ''))) {
+            console.warn('[agent-results] accuracy_score column missing — settling without it. Run run-migration.sql.');
+            await sql()`
+              UPDATE predictions
+              SET over_hit = ${calc.overHit}, btts_hit = ${calc.bttsHit}
+              WHERE id = ${p.id}`;
+          } else {
+            throw err;
+          }
+        }
         // Live calibration update — recomputes mean_confidence /
         // actual_win_rate from the full settled set and writes the new
         // correction_factor. Per-(league, market). Best-effort; a
-        // failure here doesn't block the settle.
+        // failure here (e.g. calibration table missing) doesn't block
+        // the settle — updateCalibration logs and returns null on its
+        // own when it can't write.
         try {
           await Promise.all([
             updateCalibration(p.league, 'over', !!calc.overHit, Number(p.over_confidence)),

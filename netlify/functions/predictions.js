@@ -454,18 +454,41 @@ async function handleWeek(event) {
   // MLS-only build: predictions.league is stored as the league NAME
   // string. We filter to 'MLS' here so legacy multi-league rows
   // (Bundesliga / Eredivisie / etc.) don't leak into the weekly view.
-  const rows = await sql()`
-    SELECT id, fixture_id, league, home_team, away_team, kickoff,
-           over_line, over_confidence, btts, btts_confidence,
-           ev_edge_over, ev_edge_btts, over_hit, btts_hit, created_at,
-           match_data,
-           debate_json, accuracy_score,
-           calibrated_over_confidence, calibrated_btts_confidence
-    FROM predictions
-    WHERE kickoff >= ${weekStart}::date
-      AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')
-      AND league = 'MLS'
-    ORDER BY kickoff ASC`;
+  // Try the new query first (includes self-learning columns). If the
+  // migration hasn't been run yet, Postgres errors with 42703 ("column
+  // does not exist") — we catch that and fall back to the legacy column
+  // set. Same pattern as auth-mw.js's loadUserById uses for is_admin.
+  let rows;
+  try {
+    rows = await sql()`
+      SELECT id, fixture_id, league, home_team, away_team, kickoff,
+             over_line, over_confidence, btts, btts_confidence,
+             ev_edge_over, ev_edge_btts, over_hit, btts_hit, created_at,
+             match_data,
+             debate_json, accuracy_score,
+             calibrated_over_confidence, calibrated_btts_confidence
+      FROM predictions
+      WHERE kickoff >= ${weekStart}::date
+        AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')
+        AND league = 'MLS'
+      ORDER BY kickoff ASC`;
+  } catch (err) {
+    if (err && (err.code === '42703' || /column .* does not exist/i.test(err.message || ''))) {
+      console.warn('[predictions/week] self-learning columns missing — falling back. Run run-migration.sql in Neon.');
+      rows = await sql()`
+        SELECT id, fixture_id, league, home_team, away_team, kickoff,
+               over_line, over_confidence, btts, btts_confidence,
+               ev_edge_over, ev_edge_btts, over_hit, btts_hit, created_at,
+               match_data
+        FROM predictions
+        WHERE kickoff >= ${weekStart}::date
+          AND kickoff <  (${weekEnd}::date + INTERVAL '1 day')
+          AND league = 'MLS'
+        ORDER BY kickoff ASC`;
+    } else {
+      throw err;
+    }
+  }
 
   // Load calibration adjustments once for the whole week response.
   const adjustments = await loadAdjustments();
