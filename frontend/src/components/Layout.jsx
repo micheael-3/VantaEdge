@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar.jsx';
 import BottomNav from './BottomNav.jsx';
 import UpgradeModal from './UpgradeModal.jsx';
+import SignupPrompt from './SignupPrompt.jsx';
 import Logo from './Logo.jsx';
 import Icon from './Icon.jsx';
 import { isSharp, useAuth } from '../context/AuthContext.jsx';
@@ -15,7 +16,7 @@ import { isSharp, useAuth } from '../context/AuthContext.jsx';
 // Admin Panel. The bottom nav still owns the primary 4 tabs; the
 // drawer doesn't replace it, it complements it.
 function AppTop({ onMenu }) {
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
   const pro = isSharp(user);
   let dateStr = '';
   try {
@@ -25,6 +26,40 @@ function AppTop({ onMenu }) {
     dateStr = `${weekday} ${month} ${d.getDate()}`;
   } catch {
     dateStr = 'Today';
+  }
+  // Three badge states: PRO (mint), FREE (soft), GUEST (soft + "Sign up
+  // free →" link wrapping). Guests get a clickable hint that takes them
+  // to /register so the badge does double-duty as a conversion CTA.
+  let badgeNode;
+  if (isGuest && !user) {
+    badgeNode = (
+      <Link
+        to="/register"
+        style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+      >
+        <span
+          className="badge badge-soft"
+          style={{ fontSize: 9, padding: '2px 6px', letterSpacing: '0.06em' }}
+        >
+          GUEST
+        </span>
+        <span
+          className="mono"
+          style={{ fontSize: 9, color: 'var(--mint)', letterSpacing: '0.04em' }}
+        >
+          Sign up →
+        </span>
+      </Link>
+    );
+  } else {
+    badgeNode = (
+      <span
+        className={pro ? 'badge badge-mint' : 'badge badge-soft'}
+        style={{ fontSize: 9, padding: '2px 6px' }}
+      >
+        {pro ? 'PRO' : 'FREE'}
+      </span>
+    );
   }
   return (
     <div className="app-top">
@@ -38,12 +73,7 @@ function AppTop({ onMenu }) {
       </button>
       <Logo size="sm" />
       <span className="date">{dateStr}</span>
-      <span
-        className={pro ? 'badge badge-mint' : 'badge badge-soft'}
-        style={{ fontSize: 9, padding: '2px 6px' }}
-      >
-        {pro ? 'PRO' : 'FREE'}
-      </span>
+      {badgeNode}
     </div>
   );
 }
@@ -96,6 +126,10 @@ export default function Layout({ children }) {
       </main>
       <BottomNav />
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
+      {/* Global sign-up prompt — any component opens it via
+          useAuth().requestSignup({ reason }). Only one instance,
+          rendered here so it sits above page content but below modals. */}
+      <SignupPrompt />
     </div>
   );
 }

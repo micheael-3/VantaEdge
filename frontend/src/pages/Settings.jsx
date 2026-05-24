@@ -21,7 +21,123 @@ import Icon from '../components/Icon.jsx';
 //
 // Admin and footer links (How It Works / Affiliates) preserved below
 // the primary view for admins / power users who need them.
+// Default export — thin tier/guest gate. Splits guest vs authed into
+// separate inner components so each has its own stable hook ordering
+// (rules of hooks). When a guest signs up, the wrapper swaps the inner
+// component cleanly; React unmounts SettingsGuest and mounts
+// SettingsAuthed with its own fresh hook list.
 export default function Settings() {
+  const { user, isGuest } = useAuth();
+  if (isGuest && !user) return <SettingsGuest />;
+  return <SettingsAuthed />;
+}
+
+function SettingsGuest() {
+  return (
+    <Layout>
+      {() => (
+        <div style={{ maxWidth: 480 }}>
+          <h1
+            className="display dash-page-title"
+            style={{
+              fontSize: 36,
+              fontWeight: 700,
+              margin: 0,
+              letterSpacing: '-0.025em',
+            }}
+          >
+            Account
+          </h1>
+          <div
+            className="card"
+            style={{
+              marginTop: 18,
+              padding: 28,
+              borderColor: 'rgba(110,231,183,0.3)',
+              background:
+                'linear-gradient(180deg, rgba(110,231,183,0.05), transparent), var(--card)',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                margin: '0 auto 14px',
+                borderRadius: 14,
+                background: 'rgba(110,231,183,0.10)',
+                border: '1px solid rgba(110,231,183,0.3)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--mint)',
+                fontSize: 26,
+                fontWeight: 700,
+              }}
+            >
+              FS
+            </div>
+            <h2
+              className="display"
+              style={{ fontSize: 22, fontWeight: 700, margin: '0 0 6px', letterSpacing: '-0.02em' }}
+            >
+              Join FastScore
+            </h2>
+            <p style={{ margin: '0 0 18px', color: 'var(--text-2)', fontSize: 13, lineHeight: 1.5 }}>
+              See AI analysis, track your bets, and follow your accuracy.
+            </p>
+            <div style={{ display: 'grid', gap: 8, marginBottom: 18 }}>
+              <Link
+                to="/register"
+                className="btn btn-primary btn-block"
+                style={{ width: '100%', textAlign: 'center', textDecoration: 'none' }}
+              >
+                Create Free Account
+              </Link>
+              <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                Already have an account?{' '}
+                <Link to="/login" style={{ color: 'var(--mint)', textDecoration: 'none', fontWeight: 500 }}>
+                  Log in
+                </Link>
+              </div>
+            </div>
+            <ul
+              style={{
+                listStyle: 'none',
+                padding: 0,
+                margin: 0,
+                display: 'grid',
+                gap: 6,
+                textAlign: 'left',
+                borderTop: '1px solid var(--border-soft)',
+                paddingTop: 16,
+              }}
+            >
+              <li style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-2)' }}>
+                <Icon name="check" size={12} color="var(--mint)" />
+                See full AI analysis on every match
+              </li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-2)' }}>
+                <Icon name="check" size={12} color="var(--mint)" />
+                Track your bets · settled automatically
+              </li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-2)' }}>
+                <Icon name="check" size={12} color="var(--mint)" />
+                Your own accuracy history
+              </li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-2)' }}>
+                <Icon name="check" size={12} color="var(--mint)" />
+                Rate picks · weekly digest by email
+              </li>
+            </ul>
+          </div>
+        </div>
+      )}
+    </Layout>
+  );
+}
+
+function SettingsAuthed() {
   const { user, logout, refreshUser } = useAuth();
   const navigate = useNavigate();
   const sharp = isSharp(user);

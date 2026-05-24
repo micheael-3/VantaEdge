@@ -5,6 +5,7 @@ import MatchCard from '../components/MatchCard.jsx';
 import BestBetBanner from '../components/BestBetBanner.jsx';
 import OnboardingOverlay from '../components/OnboardingOverlay.jsx';
 import SettledMatchMini from '../components/SettledMatchMini.jsx';
+import ConversionToast from '../components/ConversionToast.jsx';
 import { isSharp, useAuth } from '../context/AuthContext.jsx';
 import { predictions, history as historyApi } from '../api/client.js';
 import { agentScore } from '../lib/fixture.js';
@@ -186,7 +187,7 @@ function DailySummaryStrip({ fixtures }) {
 }
 
 export default function Dashboard() {
-  const { user, refreshUser } = useAuth();
+  const { user, isGuest, refreshUser, consumeJustRegistered } = useAuth();
   const sharp = isSharp(user);
 
   const [checkoutToast, setCheckoutToast] = useState(null);
@@ -199,12 +200,17 @@ export default function Dashboard() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [recentSettled, setRecentSettled] = useState([]);
 
-  // Onboarding overlay: backend `onboardingCompleted` is authoritative.
-  // The localStorage flag is just a cheap belt-and-braces guard for the
-  // current session; if a user clears it, the server still says
-  // onboardingCompleted=true and we don't re-show.
+  // Onboarding overlay: fires once after a fresh /register. The
+  // sessionStorage `__fs_just_registered` flag is set by AuthContext
+  // on successful register and consumed here on first dashboard mount.
+  // For pre-existing users (no flag), backend `onboardingCompleted` is
+  // the legacy authoritative source so we don't re-show on every login.
   useEffect(() => {
     if (!user) return;
+    if (consumeJustRegistered()) {
+      setShowOnboarding(true);
+      return;
+    }
     if (user.onboardingCompleted) return;
     if (typeof window !== 'undefined') {
       try {
@@ -212,7 +218,7 @@ export default function Dashboard() {
       } catch { /* ignore */ }
     }
     setShowOnboarding(true);
-  }, [user]);
+  }, [user, consumeJustRegistered]);
 
   // Streak banner fetch (FREE tier accessible).
   useEffect(() => {
@@ -456,6 +462,9 @@ export default function Dashboard() {
           {showOnboarding && (
             <OnboardingOverlay onClose={() => setShowOnboarding(false)} />
           )}
+          {/* Guest-only soft conversion nudge: surfaces 60s after mount.
+              Sits above the bottom nav, dismissible, one-shot per session. */}
+          {isGuest && !user && <ConversionToast />}
           {streak >= 3 && (
             <div
               className="card mono"

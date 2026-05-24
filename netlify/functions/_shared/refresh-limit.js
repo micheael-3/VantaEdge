@@ -12,9 +12,15 @@ function todayStr() {
 
 // TESTING MODE: always allow, but still keep last_refresh_date current so the
 // counter resets cleanly when limits are re-enabled.
+//
+// Guests have no DB row — skip the UPDATE entirely. Returning ok:true
+// means handlers still proceed.
 async function consumeRefresh(user, _isInitial) {
   const today = todayStr();
-  if (user.last_refresh_date !== today) {
+  if (user && user.isGuest) {
+    return { ok: true, dailyRefreshes: 0, lastRefreshDate: today };
+  }
+  if (user && user.id && user.last_refresh_date !== today) {
     try {
       await sql()`UPDATE users SET daily_refreshes = 0, last_refresh_date = ${today} WHERE id = ${user.id}`;
     } catch (e) {

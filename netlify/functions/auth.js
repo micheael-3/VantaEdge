@@ -107,6 +107,14 @@ async function logout(event) {
 async function me(event) {
   const { res, user } = await requireUser(event);
   if (res) return res;
+  // Guests have no DB row — return the synthetic guest shape so the
+  // frontend bootstrap can detect "guest mode" without crashing.
+  if (user.isGuest) {
+    return json(200, {
+      user: null,
+      isGuest: true,
+    });
+  }
   const [extra] = await sql()`
     SELECT email_notifications, onboarding_completed, preferred_leagues,
            min_confidence, default_market
@@ -125,6 +133,21 @@ async function me(event) {
       defaultMarket: extra && extra.default_market ? extra.default_market : 'all',
     },
   });
+}
+
+// POST /api/auth/guest
+//
+// Mints a guest access token (no refresh token, no DB row). Frontend
+// calls this when a visitor clicks "Start Free" on the landing page so
+// the predictions cascade sees a valid JWT and serves data. Idempotent
+// — calling it twice just overwrites the cookie. Cookie has the same
+// 15-min TTL as a real access token; the frontend re-mints on demand
+// using the sessionStorage `__fs_guest` flag.
+async function guestSession() {
+  if (!process.env.JWT_SECRET) return error(500, 'JWT_SECRET not set');
+  const accessToken = signAccess({ id: null, email: null, tier: 'GUEST' });
+  const cookies = [makeSetCookie('accessToken', accessToken, ACCESS_MAX_AGE)];
+  return json(200, { ok: true, isGuest: true }, { multiValueHeaders: { 'Set-Cookie': cookies } });
 }
 
 // Diagnostic: returns the raw user row from the DB for the current JWT,
@@ -264,6 +287,7 @@ exports.handler = async (event) => {
     if (method === 'POST' && path === '/login') return await login(event);
     if (method === 'POST' && path === '/refresh') return await refresh(event);
     if (method === 'POST' && path === '/logout') return await logout(event);
+    if (method === 'POST' && path === '/guest') return await guestSession();
     if (method === 'GET' && path === '/me') return await me(event);
     if (method === 'GET' && path === '/whoami') return await whoami(event);
     if (method === 'GET' && path === '/grant-admin') return await grantAdmin(event);

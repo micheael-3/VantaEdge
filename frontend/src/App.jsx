@@ -15,13 +15,24 @@ import Landing from './pages/Landing.jsx';
 import AdminPanel from './pages/AdminPanel.jsx';
 import Results from './pages/Results.jsx';
 
+// Route gating rules (updated for guest mode):
+//
+//   Public (no wrapper):
+//     /, /login, /register
+//
+//   Guest-accessible (no Protected wrapper — render to anyone):
+//     /dashboard, /results, /guide, /affiliate, /settings
+//
+//   Guest-blocked (Protected wrapper renders sign-up screen for guests,
+//   redirects to /login for anonymous):
+//     /bankroll, /history, /calculator, /admin-panel
+//
+//   The Settings, Sidebar, BottomNav, and individual gated pages handle
+//   their own "if isGuest, show sign-up content" logic for in-page UX —
+//   Protected is just the route-level guard.
 export default function App() {
   return (
     <Routes>
-      {/* Public landing for fastscore.eu. Logged-in users are redirected
-          to /dashboard from inside the Landing component itself, so we
-          don't end up showing them marketing copy every time they hit
-          the bare domain. */}
       <Route path="/" element={<Landing />} />
       <Route
         path="/login"
@@ -39,82 +50,51 @@ export default function App() {
           </PublicOnly>
         }
       />
+
+      {/* Guest-accessible — render to anyone. Guard logic lives in the
+          page components / Sidebar / BottomNav for fine-grained gating. */}
+      <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/results" element={<Results />} />
+      <Route path="/guide" element={<Guide />} />
+      <Route path="/settings" element={<Settings />} />
+      <Route path="/affiliate" element={<Affiliate />} />
+
+      {/* Guest-blocked — Protected renders a sign-up screen for guests,
+          redirects anonymous visitors to /login. */}
       <Route
-        path="/dashboard"
+        path="/bankroll"
         element={
-          <Protected>
-            <Dashboard />
-          </Protected>
-        }
-      />
-      <Route
-        path="/results"
-        element={
-          <Protected>
-            <Results />
+          <Protected featureName="Sign up to track your bets">
+            <Bankroll />
           </Protected>
         }
       />
       <Route
         path="/history"
         element={
-          <Protected>
+          <Protected featureName="Sign up to see your accuracy history">
             <History />
-          </Protected>
-        }
-      />
-      <Route
-        path="/bankroll"
-        element={
-          <Protected>
-            <Bankroll />
           </Protected>
         }
       />
       <Route
         path="/calculator"
         element={
-          <Protected>
+          <Protected featureName="Sign up to use the stake calculator">
             <Calculator />
-          </Protected>
-        }
-      />
-      <Route
-        path="/guide"
-        element={
-          <Protected>
-            <Guide />
-          </Protected>
-        }
-      />
-      <Route
-        path="/settings"
-        element={
-          <Protected>
-            <Settings />
-          </Protected>
-        }
-      />
-      <Route
-        path="/affiliate"
-        element={
-          <Protected>
-            <Affiliate />
           </Protected>
         }
       />
       <Route
         path="/admin-panel"
         element={
-          <Protected>
+          <Protected featureName="Admin access required">
             <AdminOnly>
               <AdminPanel />
             </AdminOnly>
           </Protected>
         }
       />
-      {/* Unknown paths bounce to landing — Landing itself forwards logged-in
-          users into /dashboard, so this is safe for both audiences. */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

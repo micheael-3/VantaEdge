@@ -29,6 +29,26 @@ export default function Landing() {
   );
 }
 
+// "Start Free" → guest mode → /dashboard. Used in nav, hero, and the
+// FREE pricing card. Calls enterGuestMode() (which mints a guest
+// cookie) before navigating so the dashboard's /api/predictions fetch
+// resolves on first render. If the guest mint fails (rare — JWT_SECRET
+// not set, network blip), we fall back to /register so the user still
+// has a path forward.
+function StartFreeButton({ className = 'btn btn-primary', style, label = 'Start Free', withArrow = true }) {
+  const { enterGuestMode } = useAuth();
+  const navigate = useNavigate();
+  const onClick = async () => {
+    const ok = await enterGuestMode();
+    navigate(ok ? '/dashboard' : '/register');
+  };
+  return (
+    <button type="button" className={className} style={style} onClick={onClick}>
+      {label} {withArrow && <Icon name="arrow-right" size={14} />}
+    </button>
+  );
+}
+
 function Nav() {
   return (
     <nav
@@ -49,9 +69,7 @@ function Nav() {
           <a href="#how" className="mono" style={navLink}>HOW IT WORKS</a>
           <a href="#pricing" className="mono" style={navLink}>PRICING</a>
           <Link to="/login" className="mono" style={navLink}>LOG IN</Link>
-          <Link to="/register" className="btn btn-primary">
-            Start Free <Icon name="arrow-right" size={14} />
-          </Link>
+          <StartFreeButton />
         </div>
       </div>
     </nav>
@@ -149,15 +167,23 @@ function Hero() {
           </p>
 
           <div style={{ display: 'flex', gap: 12, marginTop: 36, flexWrap: 'wrap' }}>
-            <Link to="/register" className="btn btn-primary" style={{ padding: '14px 22px', fontSize: 15 }}>
-              Start Free <Icon name="arrow-right" size={15} />
-            </Link>
+            <StartFreeButton style={{ padding: '14px 22px', fontSize: 15 }} />
             <a href="#how" className="btn btn-ghost" style={{ padding: '14px 22px', fontSize: 15 }}>
               See how it works
             </a>
           </div>
 
-          <div className="mono" style={{ marginTop: 36, fontSize: 12, color: 'var(--text-3)', letterSpacing: '0.04em' }}>
+          <div style={{ marginTop: 14, fontSize: 13, color: 'var(--text-2)' }}>
+            Already have an account?{' '}
+            <Link
+              to="/login"
+              style={{ color: 'var(--mint)', textDecoration: 'none', fontWeight: 500 }}
+            >
+              Log in →
+            </Link>
+          </div>
+
+          <div className="mono" style={{ marginTop: 28, fontSize: 12, color: 'var(--text-3)', letterSpacing: '0.04em' }}>
             NO CARD REQUIRED · CANCEL ANYTIME · 18+
           </div>
 
@@ -356,7 +382,7 @@ function Pricing() {
             'Form, rest days, goals data, H2H',
             'Read-only How It Works guide',
           ]}
-          cta={<Link to="/register" className="btn btn-ghost" style={{ width: '100%', padding: '12px 18px' }}>Start free</Link>}
+          cta={<StartFreeButton className="btn btn-ghost" style={{ width: '100%', padding: '12px 18px' }} label="Start free" withArrow={false} />}
         />
         <PlanCard
           name="PRO"

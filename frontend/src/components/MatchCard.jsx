@@ -5,6 +5,7 @@ import Icon from './Icon.jsx';
 import PredictionRow from './PredictionRow.jsx';
 import ShareButtons from './ShareButtons.jsx';
 import { feedback as feedbackApi } from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { fairOddsFromConfidence } from '../lib/stakeCalculator.js';
 import {
   analysisText,
@@ -55,6 +56,7 @@ function markRated(predictionId) {
 }
 
 export default function MatchCard({ fixture, isSharp, onUpgrade }) {
+  const { isGuest, requestSignup } = useAuth();
   const [showAnalysis, setShowAnalysis] = useState(false);
   // Three tabs in the analysis card when debateJson exists. Default to
   // verdict (the conservative summary) — analysis = analyst's free-text
@@ -141,6 +143,12 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
 
   const submitFeedback = async (rating) => {
     if (!predictionId || feedbackBusy || feedbackSubmitted) return;
+    // Guests can't rate — /api/feedback requires auth. Bounce to the
+    // sign-up prompt instead of firing a doomed 401.
+    if (isGuest) {
+      requestSignup({ reason: 'Create a free account to rate picks' });
+      return;
+    }
     setFeedbackBusy(true);
     setFeedbackRating(rating);
     try {
@@ -170,6 +178,13 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
   const strongCard = !isPast && (ouConf >= 75 || btsConf >= 75);
 
   const handleAnalysisToggle = () => {
+    // Guest tapping AI analysis → prompt sign-up first (their gating
+    // step is "create an account", not "upgrade to PRO"). FREE logged-in
+    // users see the Whop upgrade modal as before.
+    if (isGuest) {
+      requestSignup({ reason: 'Create a free account to see the AI analysis' });
+      return;
+    }
     if (!isSharp) {
       if (onUpgrade) onUpgrade();
       return;

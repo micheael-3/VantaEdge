@@ -9,20 +9,21 @@ import { isSharp, useAuth } from '../context/AuthContext.jsx';
 // so they know the feature is gated before tapping. The link still
 // resolves — the destination page renders its own locked upsell.
 const TABS = [
-  { to: '/dashboard', label: 'Home', icon: 'trending', requiresSharp: false },
-  { to: '/results', label: 'Results', icon: 'history', requiresSharp: false },
-  { to: '/bankroll', label: 'Tracker', icon: 'tracker', requiresSharp: true },
-  { to: '/calculator', label: 'Calc', icon: 'calc', requiresSharp: true },
-  { to: '/settings', label: 'Account', icon: 'settings', requiresSharp: false },
+  { to: '/dashboard', label: 'Home', icon: 'trending' },
+  { to: '/results', label: 'Results', icon: 'history' },
+  { to: '/bankroll', label: 'Tracker', icon: 'tracker', requiresSharp: true, guestLocked: true },
+  { to: '/calculator', label: 'Calc', icon: 'calc', requiresSharp: true, guestLocked: true },
+  { to: '/settings', label: 'Account', icon: 'settings' },
 ];
 
 export default function BottomNav() {
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
   const sharp = isSharp(user);
   return (
     <nav className="bottom-nav" role="navigation" aria-label="Primary">
       {TABS.map((t) => {
-        const locked = !sharp && t.requiresSharp;
+        const locked =
+          (isGuest && !!t.guestLocked) || (!sharp && !!t.requiresSharp);
         return (
           <NavLink
             key={t.to}

@@ -1356,6 +1356,44 @@ table.tbl tr:last-child td { border-bottom: none; }
   to   { transform: translateY(0); }
 }
 
+/* Sign-up prompt — centred modal on desktop, bottom sheet on mobile.
+   Triggered globally via AuthContext.requestSignup({ reason }). */
+.signup-prompt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.signup-prompt-content {
+  position: relative;
+  width: 420px;
+  max-width: 100%;
+  padding: 28px 24px 22px;
+  border-color: rgba(110, 231, 183, 0.35);
+  background:
+    linear-gradient(180deg, rgba(110, 231, 183, 0.05), transparent),
+    var(--card);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(110, 231, 183, 0.2);
+  text-align: center;
+}
+@media (max-width: 767px) {
+  .signup-prompt-backdrop { align-items: flex-end; padding: 0; }
+  .signup-prompt-content {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 16px 16px 0 0;
+    padding-bottom: calc(22px + env(safe-area-inset-bottom));
+    animation: slide-up 0.25s ease-out;
+  }
+}
+
 /* Add-bet modal — same pattern: centered on desktop, bottom sheet on mobile. */
 .addbet-backdrop {
   position: fixed;

@@ -46,6 +46,9 @@ export const auth = {
     api.post('/api/auth/login', { email, password }).then((r) => r.data),
   logout: () => api.post('/api/auth/logout').then((r) => r.data),
   me: () => api.get('/api/auth/me').then((r) => r.data),
+  // Mint a guest access cookie. No DB row, 15-min TTL — the frontend
+  // re-mints on demand via the sessionStorage __fs_guest flag.
+  guest: () => api.post('/api/auth/guest').then((r) => r.data),
 };
 
 export const predictions = {
