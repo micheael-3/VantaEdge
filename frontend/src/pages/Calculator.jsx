@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
+import Icon from '../components/Icon.jsx';
+import { isSharp, useAuth } from '../context/AuthContext.jsx';
+import { openWhopCheckout } from '../lib/checkout.js';
 import {
   computeSingle,
   computeParlay,
@@ -82,7 +85,132 @@ function ResultRow({ label, value, valueColor }) {
   );
 }
 
+// Locked state shown to FREE users. Lives at module scope so the
+// authed Calculator component doesn't keep its useState hooks loaded
+// when the user can't see the page. Wraps in <Layout> so it inherits
+// the same top bar / sidebar / bottom nav as every other page.
+function CalculatorLocked() {
+  return (
+    <Layout>
+      {() => (
+        <div style={{ maxWidth: 560 }}>
+          <div
+            className="card"
+            style={{
+              padding: 28,
+              borderColor: 'rgba(110,231,183,0.3)',
+              background:
+                'linear-gradient(180deg, rgba(110,231,183,0.05), transparent), var(--card)',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                margin: '0 auto 16px',
+                borderRadius: 16,
+                background: 'rgba(110,231,183,0.10)',
+                border: '1px solid rgba(110,231,183,0.3)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--mint)',
+              }}
+            >
+              <Icon name="lock" size={28} color="var(--mint)" />
+            </div>
+            <h1
+              className="display"
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                margin: '0 0 8px',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              Stake Calculator
+            </h1>
+            <p
+              style={{
+                margin: '0 0 22px',
+                color: 'var(--text-2)',
+                fontSize: 14,
+                lineHeight: 1.55,
+              }}
+            >
+              Know exactly how much to bet on every pick.
+            </p>
+            <ul
+              style={{
+                listStyle: 'none',
+                padding: 0,
+                margin: '0 0 22px',
+                display: 'grid',
+                gap: 8,
+                textAlign: 'left',
+              }}
+            >
+              {[
+                'Kelly Criterion staking',
+                'Single bet calculator',
+                'Parlay calculator',
+                'Risk assessment',
+                'Instant results',
+              ].map((f) => (
+                <li
+                  key={f}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    fontSize: 14,
+                    color: 'var(--text-2)',
+                  }}
+                >
+                  <Icon name="check" size={14} color="var(--mint)" />
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              onClick={openWhopCheckout}
+              style={{ width: '100%' }}
+            >
+              Upgrade to PRO — €4.99/mo
+            </button>
+            <p
+              className="mono"
+              style={{
+                margin: '12px 0 0',
+                fontSize: 11,
+                color: 'var(--text-3)',
+                letterSpacing: '0.04em',
+              }}
+            >
+              CANCEL ANYTIME · 7-DAY TRIAL
+            </p>
+          </div>
+        </div>
+      )}
+    </Layout>
+  );
+}
+
+// Default export — auth + tier gate only. Forwards PRO users to the
+// authed Calculator component below; FREE users see the locked screen.
+// Split this way so the authed component's hooks don't get conditionally
+// mounted (rules of hooks). When the user upgrades, the parent re-renders
+// and the authed component mounts cleanly.
 export default function Calculator() {
+  const { user } = useAuth();
+  if (!isSharp(user)) return <CalculatorLocked />;
+  return <CalculatorAuthed />;
+}
+
+function CalculatorAuthed() {
   const [searchParams] = useSearchParams();
   const preFillOdds = (() => {
     const raw = searchParams.get('odds');

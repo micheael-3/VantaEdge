@@ -12,8 +12,11 @@ const ITEMS = [
   { to: '/results', label: 'Results', icon: 'history', requiresSharp: false },
   { to: '/bankroll', label: 'Bet Tracker', icon: 'tracker', requiresSharp: true },
   // Calculator sits directly below Bet Tracker — same money/staking
-  // family. FREE-tier accessible: it's just math, no model data.
-  { to: '/calculator', label: 'Calculator', icon: 'calc', requiresSharp: false },
+  // family. PRO-only feature — FREE users still see the link (and a
+  // lock icon next to it) and land on the locked upsell screen when
+  // they tap. Hiding the link entirely is worse for conversion than
+  // letting them see what they're missing.
+  { to: '/calculator', label: 'Calculator', icon: 'calc', requiresSharp: true },
   { to: '/history', label: 'Accuracy', icon: 'history', requiresSharp: false },
   { to: '/guide', label: 'How It Works', icon: 'brain', requiresSharp: false },
   { to: '/affiliate', label: 'Affiliates', icon: 'affiliate', requiresSharp: false },
