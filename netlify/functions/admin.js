@@ -256,6 +256,296 @@ async function clearBadPredictions() {
   return json(200, { ok: true, deletedRows: rows.length });
 }
 
+// POST /api/admin/refresh-forms
+//
+// Non-destructive refresh of the form arrays inside match_data on every
+// UPCOMING prediction row. Use when the form dots on today's cards
+// look thin/empty because the rows were inserted before the
+// extractFormForTeam + topUpForm padding fixes shipped.
+//
+// What it does:
+//   1. SELECT every prediction with kickoff > NOW() and league = 'MLS'
+//   2. For each, re-fetch the home + away team's recent fixtures from
+//      API-Football (cached in the football helper, so cheap on warm
+//      calls).
+//   3. Recompute homeForm / awayForm using the current 5-entry padded
+//      extractFormForTeam logic, with the same any-venue top-up the
+//      weekly scan uses.
+//   4. UPDATE just the match_data JSONB column with the fresh form
+//      arrays. Every other column is untouched.
+//
+// Never touches over_hit / btts_hit / accuracy_score / debate_json /
+// calibrated_*. Never DELETEs anything. Safe to call repeatedly.
+async function refreshUpcomingForms() {
+  const football = require('./_shared/football');
+  const rows = await sql()`
+    SELECT id, fixture_id, kickoff, match_data
+    FROM predictions
+    WHERE kickoff > NOW()
+      AND league = 'MLS'
+    ORDER BY kickoff ASC`;
+
+  const report = {
+    rowsScanned: rows.length,
+    rowsUpdated: 0,
+    rowsSkipped: 0,
+    errors: [],
+    durationMs: 0,
+  };
+  const t0 = Date.now();
+
+  // Same helper structure as predictions-scan-background.js — we use
+  // the actual exported extractFormForTeam (which now pads to 5 with
+  // null) and re-implement the "top-up from any-venue" check locally
+  // to avoid coupling admin.js to scan-bg.
+  function realCount(arr) {
+    return Array.isArray(arr) ? arr.filter((v) => v != null).length : 0;
+  }
+
+  for (const r of rows) {
+    let md = {};
+    try {
+      md = typeof r.match_data === 'string' ? JSON.parse(r.match_data) : (r.match_data || {});
+    } catch {
+      report.errors.push({ fixtureId: r.fixture_id, error: 'match_data unparseable' });
+      report.rowsSkipped += 1;
+      continue;
+    }
+    const homeId = (md.home && md.home.id);
+    const awayId = (md.away && md.away.id);
+    if (!homeId || !awayId) {
+      report.rowsSkipped += 1;
+      continue;
+    }
+
+    try {
+      // Pull venue-only AND any-venue arrays in parallel. Football's
+      // cache will keep this cheap when the scan ran recently.
+      const [homeLast, awayLast, homeAnyVenue, awayAnyVenue] = await Promise.all([
+        football.getTeamLastHomeGames(homeId, 253),
+        football.getTeamLastAwayGames(awayId, 253),
+        football.getTeamLastGamesAnyVenue(homeId, 253),
+        football.getTeamLastGamesAnyVenue(awayId, 253),
+      ]);
+
+      // Venue-specific first. Top up from any-venue when thin.
+      const homeVenue = football.extractFormForTeam(homeLast, homeId);
+      const awayVenue = football.extractFormForTeam(awayLast, awayId);
+      const homeAny = football.extractFormForTeam(homeAnyVenue, homeId);
+      const awayAny = football.extractFormForTeam(awayAnyVenue, awayId);
+
+      const homeForm = realCount(homeAny) > realCount(homeVenue) ? homeAny : homeVenue;
+      const awayForm = realCount(awayAny) > realCount(awayVenue) ? awayAny : awayVenue;
+
+      const newMd = {
+        ...md,
+        home: { ...(md.home || {}), form: homeForm },
+        away: { ...(md.away || {}), form: awayForm },
+      };
+
+      await sql()`
+        UPDATE predictions
+        SET match_data = ${JSON.stringify(newMd)}::jsonb
+        WHERE id = ${r.id}`;
+      report.rowsUpdated += 1;
+      console.log(`[admin/refresh-forms] fixture=${r.fixture_id} home=[${homeForm.map((v) => v || '·').join(',')}] away=[${awayForm.map((v) => v || '·').join(',')}]`);
+    } catch (e) {
+      report.errors.push({ fixtureId: r.fixture_id, error: e.message });
+    }
+  }
+
+  report.durationMs = Date.now() - t0;
+  return json(200, { ok: true, report });
+}
+
+// POST /api/admin/recover-history?days=30
+//
+// Recovery for the May 2026 wipe. Pulls last N days of MLS fixtures
+// from API-Football and inserts a row in the predictions table for
+// every FINISHED match that doesn't already have one.
+//
+// Honest scope:
+//   - The match score is restored (home_goals + away_goals + over_hit
+//     + btts_hit) because API-Football still has it.
+//   - The AI prediction (line, confidence, debate, reasoning) is NOT
+//     restored. It's GONE. Rows inserted by this function have
+//     over_confidence = 0 and btts_confidence = 0 as sentinels meaning
+//     "no real AI prediction here". match_data.recovered = true so
+//     the UI can render them distinctly.
+//   - These rows do NOT count toward Accuracy hit rate stats — the
+//     History endpoint filters out over_confidence = 0. Including them
+//     would either invent AI predictions (lie) or deflate the real
+//     model's track record (also wrong).
+//
+// What the user sees afterwards:
+//   - Results page lists every match in the window with FT score
+//     and a "RECOVERED · NO AI PREDICTION" badge.
+//   - Accuracy hit rate is unchanged — still reflects only rows where
+//     the AI actually produced a prediction.
+//   - Going forward the new weekly scan + safe Force Rescan rebuilds
+//     real settled-with-AI-prediction history week by week.
+async function recoverHistory(event) {
+  const football = require('./_shared/football');
+  const qs = (event && event.queryStringParameters) || {};
+  const days = (() => {
+    const n = parseInt(qs.days, 10);
+    if (!Number.isFinite(n) || n < 1) return 30;
+    return Math.min(n, 90);
+  })();
+
+  const today = new Date();
+  const from = new Date(today.getTime() - days * 86400000);
+  const toDateStr = today.toISOString().slice(0, 10);
+  const fromDateStr = from.toISOString().slice(0, 10);
+
+  const report = {
+    days,
+    fromDate: fromDateStr,
+    toDate: toDateStr,
+    seasonsTried: [],
+    fixturesFetched: 0,
+    fixturesFinished: 0,
+    fixturesAlreadyInDb: 0,
+    rowsInserted: 0,
+    errors: [],
+    durationMs: 0,
+  };
+  const t0 = Date.now();
+
+  // Try each candidate season; first one with data wins.
+  const seasons = football.candidateSeasonsForDate(fromDateStr);
+  let fixtures = [];
+  for (const season of seasons) {
+    report.seasonsTried.push(season);
+    try {
+      const list = await football.apiGet('/fixtures', {
+        league: 253,
+        season,
+        from: fromDateStr,
+        to: toDateStr,
+      }, { tag: `recover-history s${season}` });
+      if (Array.isArray(list) && list.length) {
+        fixtures = list;
+        break;
+      }
+    } catch (e) {
+      report.errors.push({ stage: `fetch-season-${season}`, error: e.message });
+    }
+  }
+  report.fixturesFetched = fixtures.length;
+
+  // Filter to finished matches only.
+  const FINISHED = new Set(['FT', 'AET', 'PEN']);
+  const finished = fixtures.filter((fx) => {
+    const s = fx && fx.fixture && fx.fixture.status && fx.fixture.status.short;
+    return FINISHED.has(s);
+  });
+  report.fixturesFinished = finished.length;
+
+  if (finished.length === 0) {
+    report.durationMs = Date.now() - t0;
+    return json(200, { ok: true, report, message: 'No finished fixtures in window. Try a larger ?days= value.' });
+  }
+
+  // Find which fixture_ids already exist so we don't double-insert.
+  const ids = finished.map((fx) => fx.fixture.id).filter(Boolean);
+  let existing = new Set();
+  try {
+    const rows = await sql()`
+      SELECT DISTINCT fixture_id FROM predictions WHERE fixture_id = ANY(${ids})`;
+    existing = new Set(rows.map((r) => Number(r.fixture_id)));
+  } catch (e) {
+    report.errors.push({ stage: 'existing-lookup', error: e.message });
+  }
+  report.fixturesAlreadyInDb = existing.size;
+
+  // We need a user_id to insert against (predictions.user_id is NOT NULL).
+  // Use the first admin if available, else the oldest user.
+  let ownerId = null;
+  try {
+    const admins = await sql()`SELECT id FROM users WHERE is_admin = TRUE ORDER BY created_at ASC LIMIT 1`;
+    if (admins.length) ownerId = admins[0].id;
+    else {
+      const fb = await sql()`SELECT id FROM users ORDER BY created_at ASC LIMIT 1`;
+      if (fb.length) ownerId = fb[0].id;
+    }
+  } catch (e) {
+    return error(500, `Cannot find an owner user_id for inserts: ${e.message}`);
+  }
+  if (!ownerId) return error(500, 'No users exist — cannot insert recovered rows.');
+
+  for (const fx of finished) {
+    if (existing.has(Number(fx.fixture.id))) continue;
+    const home = fx.teams && fx.teams.home && fx.teams.home.name;
+    const away = fx.teams && fx.teams.away && fx.teams.away.name;
+    const h = fx.goals && fx.goals.home;
+    const a = fx.goals && fx.goals.away;
+    if (!home || !away || h == null || a == null) continue;
+    const total = Number(h) + Number(a);
+    // Default neutral line of 2.5 — the over_hit boolean is the only
+    // thing the Results page reads, and we compute it honestly off the
+    // real score. The 0% confidence sentinel means "no AI prediction".
+    const overLine = 2.5;
+    const overHit = total > overLine;
+    const bothScored = Number(h) > 0 && Number(a) > 0;
+    // BTTS direction is ambiguous without an AI call. Store 'YES' as
+    // the canonical default and the boolean as whether both teams
+    // scored — Results page just shows "Score: H-A" for recovered rows.
+    const bttsCall = 'YES';
+    const bttsHit = bothScored;
+    const mdPayload = {
+      recovered: true,
+      recoveredAt: new Date().toISOString(),
+      league: 'MLS',
+      kickoff: fx.fixture.date,
+      home: { name: home },
+      away: { name: away },
+      aiStatus: 'recovered',
+      aiReason: 'Score-only recovery from API-Football. Original AI prediction lost in May 2026 wipe.',
+    };
+    try {
+      await sql()`
+        INSERT INTO predictions
+          (user_id, league, fixture_id, home_team, away_team, kickoff,
+           over_line, over_confidence, btts, btts_confidence,
+           over_hit, btts_hit, home_goals, away_goals,
+           match_data)
+        VALUES
+          (${ownerId}, 'MLS', ${fx.fixture.id}, ${home}, ${away}, ${fx.fixture.date},
+           ${overLine}, 0, ${bttsCall}, 0,
+           ${overHit}, ${bttsHit}, ${Number(h)}, ${Number(a)},
+           ${JSON.stringify(mdPayload)}::jsonb)`;
+      report.rowsInserted += 1;
+    } catch (e) {
+      // Most likely a column-doesn't-exist (42703) for home_goals/away_goals
+      // if the migration hasn't been applied. Try a minimal INSERT
+      // without those columns as a fallback.
+      if (e && (e.code === '42703' || /column .* does not exist/i.test(e.message || ''))) {
+        try {
+          await sql()`
+            INSERT INTO predictions
+              (user_id, league, fixture_id, home_team, away_team, kickoff,
+               over_line, over_confidence, btts, btts_confidence,
+               over_hit, btts_hit, match_data)
+            VALUES
+              (${ownerId}, 'MLS', ${fx.fixture.id}, ${home}, ${away}, ${fx.fixture.date},
+               ${overLine}, 0, ${bttsCall}, 0,
+               ${overHit}, ${bttsHit},
+               ${JSON.stringify(mdPayload)}::jsonb)`;
+          report.rowsInserted += 1;
+        } catch (e2) {
+          report.errors.push({ fixtureId: fx.fixture.id, stage: 'insert-fallback', error: e2.message });
+        }
+      } else {
+        report.errors.push({ fixtureId: fx.fixture.id, stage: 'insert', error: e.message });
+      }
+    }
+  }
+
+  report.durationMs = Date.now() - t0;
+  return json(200, { ok: true, report });
+}
+
 // POST /api/admin/resettle
 //
 // Re-runs the agent-results settle pipeline immediately. Use this to
@@ -429,6 +719,21 @@ exports.handler = async (event) => {
     //     settled data when something has been wiped.
     if (method === 'POST' && (path === '/resettle' || path === '/resettle/')) {
       return await resettlePastPredictions();
+    }
+
+    // --- POST /refresh-forms --- non-destructive update of form arrays
+    //     inside match_data for every upcoming row. Use when form dots
+    //     look thin/empty after a stale scan.
+    if (method === 'POST' && (path === '/refresh-forms' || path === '/refresh-forms/')) {
+      return await refreshUpcomingForms();
+    }
+
+    // --- POST /recover-history?days=30 --- score-only recovery from
+    //     API-Football. Inserts placeholder rows for every finished
+    //     fixture in the window that doesn't already exist. Honest
+    //     about what's been lost — no fabricated AI predictions.
+    if (method === 'POST' && (path === '/recover-history' || path === '/recover-history/')) {
+      return await recoverHistory(event);
     }
 
     // --- GET /debug-fixture/:fixtureId --- cookie-authed inspector.

@@ -96,6 +96,9 @@ function StatsTab() {
   const [clearAllInput, setClearAllInput] = useState('');
   const [clearBadState, setClearBadState] = useState({ busy: false, message: '' });
   const [resettleState, setResettleState] = useState({ busy: false, message: '' });
+  const [refreshFormsState, setRefreshFormsState] = useState({ busy: false, message: '' });
+  const [recoverState, setRecoverState] = useState({ busy: false, message: '' });
+  const [recoverDays, setRecoverDays] = useState('30');
   const [debugId, setDebugId] = useState('');
   const [debugState, setDebugState] = useState({ busy: false, message: '', result: null });
 
@@ -193,6 +196,53 @@ function StatsTab() {
       setClearBadState({
         busy: false,
         message: err?.response?.data?.error || err.message || 'Clear-bad failed',
+      });
+    }
+  };
+
+  // Refresh the form arrays inside match_data on every UPCOMING row.
+  // Non-destructive — UPDATEs match_data only. Fixes the case where
+  // the form dots on today's cards show 2-3 letters + grey squares
+  // because the row was inserted before the topUpForm fix shipped.
+  const onRefreshForms = async () => {
+    if (refreshFormsState.busy) return;
+    setRefreshFormsState({ busy: true, message: 'Re-fetching team form from API-Football…' });
+    try {
+      const r = await adminApi.refreshForms();
+      const rep = (r && r.report) || {};
+      setRefreshFormsState({
+        busy: false,
+        message: `Refreshed ${rep.rowsUpdated ?? 0} of ${rep.rowsScanned ?? 0} upcoming rows in ${rep.durationMs ?? 0}ms. Dashboard cards will refresh on next load.`,
+      });
+    } catch (err) {
+      setRefreshFormsState({
+        busy: false,
+        message: err?.response?.data?.error || err.message || 'Refresh forms failed',
+      });
+    }
+  };
+
+  // Score-only history recovery from API-Football. Inserts placeholder
+  // rows for finished fixtures missing from the DB. No fabricated AI
+  // predictions — recovered rows are clearly flagged. Use when you've
+  // lost match history and just want the scores back on Results.
+  const onRecover = async () => {
+    if (recoverState.busy) return;
+    const n = parseInt(recoverDays, 10);
+    const days = Number.isFinite(n) && n > 0 ? Math.min(n, 90) : 30;
+    setRecoverState({ busy: true, message: `Pulling last ${days} days of MLS fixtures from API-Football…` });
+    try {
+      const r = await adminApi.recoverHistory(days);
+      const rep = (r && r.report) || {};
+      setRecoverState({
+        busy: false,
+        message: `Recovered ${rep.rowsInserted ?? 0} matches (of ${rep.fixturesFinished ?? 0} finished; ${rep.fixturesAlreadyInDb ?? 0} already existed). Refresh Results page to see them.`,
+      });
+      setTimeout(() => loadStats({ cancelled: false }), 1500);
+    } catch (err) {
+      setRecoverState({
+        busy: false,
+        message: err?.response?.data?.error || err.message || 'Recovery failed',
       });
     }
   };
@@ -427,6 +477,102 @@ function StatsTab() {
           disabled={resettleState.busy}
         >
           {resettleState.busy ? 'Re-settling…' : 'Re-settle Past Predictions'}
+        </button>
+      </div>
+
+      {/* Recover match history from API-Football. Score-only — no
+          fabricated AI predictions. Brings the Results page back to
+          life when settled rows have been DELETEd, not just nulled. */}
+      <div
+        className="card"
+        style={{
+          marginTop: 16,
+          padding: 16,
+          display: 'flex',
+          gap: 12,
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          borderColor: 'rgba(110,231,183,0.3)',
+        }}
+      >
+        <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em' }}>
+            RECOVER MATCH HISTORY
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>
+            Pull the last N days of MLS fixtures from API-Football and insert any that aren't already in the DB. Score-only — does NOT fabricate AI predictions. Recovered rows are flagged and won't pollute Accuracy stats.
+          </div>
+          {recoverState.message && (
+            <div
+              className="mono"
+              style={{ marginTop: 8, fontSize: 11, color: recoverState.busy ? 'var(--mint)' : 'var(--text-3)' }}
+            >
+              {recoverState.message}
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            className="input"
+            type="number"
+            value={recoverDays}
+            onChange={(e) => setRecoverDays(e.target.value)}
+            min="1"
+            max="90"
+            step="1"
+            style={{ width: 70, minHeight: 36 }}
+            aria-label="Days to recover"
+          />
+          <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>DAYS</span>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={onRecover}
+            disabled={recoverState.busy}
+          >
+            {recoverState.busy ? 'Recovering…' : 'Recover History'}
+          </button>
+        </div>
+      </div>
+
+      {/* Refresh form arrays in match_data on upcoming rows. UPDATEs
+          only — never DELETEs. Use when form dots look thin/empty. */}
+      <div
+        className="card"
+        style={{
+          marginTop: 16,
+          padding: 16,
+          display: 'flex',
+          gap: 18,
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em' }}>
+            REFRESH FORM DATA
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>
+            Re-fetch team form from API-Football for every upcoming row and update match_data in place. Non-destructive — no DELETE, no settle changes.
+          </div>
+          {refreshFormsState.message && (
+            <div
+              className="mono"
+              style={{ marginTop: 8, fontSize: 11, color: refreshFormsState.busy ? 'var(--mint)' : 'var(--text-3)' }}
+            >
+              {refreshFormsState.message}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={onRefreshForms}
+          disabled={refreshFormsState.busy}
+        >
+          {refreshFormsState.busy ? 'Refreshing…' : 'Refresh Form Data'}
         </button>
       </div>
 

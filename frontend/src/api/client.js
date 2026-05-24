@@ -117,6 +117,18 @@ export const admin = {
   // API-Football, writes hit/miss + accuracy_score. Used to recover
   // settled data after an accidental wipe.
   resettle: () => api.post('/api/admin/resettle').then((r) => r.data),
+  // Non-destructive refresh of form arrays inside match_data on every
+  // upcoming row. UPDATEs match_data in place — never DELETEs anything,
+  // never touches over_hit / btts_hit. Use when form dots on today's
+  // cards look thin/empty because of stale stored data.
+  refreshForms: () => api.post('/api/admin/refresh-forms').then((r) => r.data),
+  // Score-only recovery from API-Football. Inserts placeholder rows
+  // for every finished MLS fixture in the last N days that doesn't
+  // already exist. Use to repopulate Results after a data loss.
+  // NO fabricated AI predictions — recovered rows are flagged so the
+  // UI renders them distinctly and they're excluded from accuracy stats.
+  recoverHistory: (days = 30) =>
+    api.post(`/api/admin/recover-history?days=${days}`).then((r) => r.data),
   // Per-fixture inspector. Returns raw API-Football responses, the
   // extracted form/stats/standings, and the matchData that would be
   // sent to Claude. Used by the "Debug Fixture" UI in the admin panel.
