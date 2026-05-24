@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import FormDots from './FormDots.jsx';
 import Icon from './Icon.jsx';
 import PredictionRow from './PredictionRow.jsx';
 import ShareButtons from './ShareButtons.jsx';
 import { feedback as feedbackApi } from '../api/client.js';
+import { fairOddsFromConfidence } from '../lib/stakeCalculator.js';
 import {
   analysisText,
   avgConceded,
@@ -474,16 +476,49 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
           </div>
         )}
 
-      {/* Share row — both before kickoff (promo) and after (celebrate/honest). */}
+      {/* Share row + Calculate Stake link.
+          The "Calculate Stake →" link deep-links to /calculator with the
+          AI confidence converted to fair odds (1 / probability). We
+          don't surface bookmaker odds on cards yet, so fair odds are the
+          best honest seed — the user adjusts to their real bookmaker
+          number once they land on the calculator. Only shown on upcoming
+          matches; on settled cards the bet is in the past so there's
+          nothing left to size. */}
       <div
         style={{
           marginTop: 14,
           paddingTop: 12,
           borderTop: '1px solid var(--border-soft)',
           display: 'flex',
-          justifyContent: 'flex-end',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          flexWrap: 'wrap',
         }}
       >
+        {!isPast ? (
+          <Link
+            to={(() => {
+              const seed = fairOddsFromConfidence(ouConf);
+              return seed ? `/calculator?odds=${seed}` : '/calculator';
+            })()}
+            className="mono"
+            style={{
+              fontSize: 12,
+              color: 'var(--mint)',
+              letterSpacing: '0.04em',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+            aria-label="Open the stake calculator with these odds pre-filled"
+          >
+            Calculate Stake →
+          </Link>
+        ) : (
+          <span />
+        )}
         <ShareButtons fixture={fixture} />
       </div>
     </div>

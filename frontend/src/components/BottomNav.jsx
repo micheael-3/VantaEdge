@@ -7,7 +7,12 @@ import Icon from './Icon.jsx';
 const TABS = [
   { to: '/dashboard', label: 'Home', icon: 'trending' },
   { to: '/results', label: 'Results', icon: 'history' },
+  // Calculator sits between Tracker and Account — same money family,
+  // and putting it in the middle keeps the primary nav (Home / Results)
+  // and the user nav (Account) anchored at the edges where they're
+  // easiest to thumb.
   { to: '/bankroll', label: 'Tracker', icon: 'tracker' },
+  { to: '/calculator', label: 'Calc', icon: 'calc' },
   { to: '/settings', label: 'Account', icon: 'settings' },
 ];
 

@@ -9,6 +9,7 @@ import History from './pages/History.jsx';
 import Settings from './pages/Settings.jsx';
 import Affiliate from './pages/Affiliate.jsx';
 import Bankroll from './pages/Bankroll.jsx';
+import Calculator from './pages/Calculator.jsx';
 import Guide from './pages/Guide.jsx';
 import Landing from './pages/Landing.jsx';
 import AdminPanel from './pages/AdminPanel.jsx';
@@ -67,6 +68,14 @@ export default function App() {
         element={
           <Protected>
             <Bankroll />
+          </Protected>
+        }
+      />
+      <Route
+        path="/calculator"
+        element={
+          <Protected>
+            <Calculator />
           </Protected>
         }
       />
