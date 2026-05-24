@@ -359,10 +359,38 @@ async function fetchFixtureDetail(fx, leagueId, season, standings) {
   const homeStanding = football.pickStandingForTeam(standings, homeId);
   const awayStanding = football.pickStandingForTeam(standings, awayId);
 
+  // Form arrays — home-only / away-only first (because the venue split
+  // is the more predictive signal), but TOP UP with any-venue games
+  // when either side returns fewer than 5 entries. Early-season fixtures
+  // are the classic offender: a team might have played 7 games total
+  // but only 3 of them away, so the away-only array gives us a 3-dot
+  // form. We dedupe by fixture id before slicing back to 5.
+  const homeAwayForm = football.extractFormForTeam(homeLast, homeId);
+  const awayAwayForm = football.extractFormForTeam(awayLast, awayId);
+  function topUpForm(primary, anyVenueArr, teamId, label) {
+    if (primary.length >= 5) return primary;
+    const anyForm = football.extractFormForTeam(anyVenueArr, teamId);
+    // anyForm contains every recent game including the ones we already
+    // got from the venue-specific call. We want the 5 most recent of
+    // anyForm (which extractFormForTeam returns chronologically already).
+    const merged = anyForm.slice(0, 5);
+    console.log(
+      `[scan-bg form] ${label} venue-only had ${primary.length}, any-venue has ${anyForm.length}; using ${merged.length} merged.`,
+    );
+    return merged;
+  }
+  const homeForm = topUpForm(homeAwayForm, homeAnyVenue, homeId, `home(${fx.teams.home.name})`);
+  const awayForm = topUpForm(awayAwayForm, awayAnyVenue, awayId, `away(${fx.teams.away.name})`);
+  console.log(
+    `[scan-bg form] fixture=${fx.fixture && fx.fixture.id} ` +
+      `home(${fx.teams.home.name})=[${homeForm.join(',')}] ` +
+      `away(${fx.teams.away.name})=[${awayForm.join(',')}]`,
+  );
+
   return {
     homeId, awayId,
-    homeForm: football.extractFormForTeam(homeLast, homeId),
-    awayForm: football.extractFormForTeam(awayLast, awayId),
+    homeForm,
+    awayForm,
     // Rest days from ANY-VENUE games — the real fix to the "7 days rest
     // when they played 2 days ago at the other ground" bug.
     homeRest: restDaysFromAnyVenue(homeAnyVenue),

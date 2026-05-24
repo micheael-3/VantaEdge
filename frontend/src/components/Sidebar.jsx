@@ -36,19 +36,39 @@ export default function Sidebar({ onUpgrade, mobileOpen = false, setMobileOpen =
 
   return (
     <>
-      {/* Hamburger lives in AppTop now (Layout.jsx) so it sits inside
-          the sticky bar and can't overlap the brand. The Sidebar only
-          renders the drawer body + backdrop here. */}
+      {/* Sidebar is a sticky left rail on desktop and a slide-in drawer
+          on mobile. The hamburger lives in AppTop (Layout.jsx). When
+          open on mobile, we also render an X close button inside the
+          drawer header so users can dismiss from inside the drawer
+          (per the spec) — not just by tapping the backdrop. */}
 
       <aside className={`sb ${mobileOpen ? 'sb-open' : ''}`}>
         <div
-          className="sb-logo"
-          onClick={() => {
-            navigate('/dashboard');
-            setMobileOpen(false);
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingRight: 8,
           }}
         >
-          <Logo />
+          <div
+            className="sb-logo"
+            onClick={() => {
+              navigate('/dashboard');
+              setMobileOpen(false);
+            }}
+          >
+            <Logo />
+          </div>
+          {/* X close — hidden on desktop via CSS (.sb-close). */}
+          <button
+            type="button"
+            className="sb-close"
+            aria-label="Close menu"
+            onClick={() => setMobileOpen(false)}
+          >
+            <Icon name="x" size={18} />
+          </button>
         </div>
 
         <nav className="sb-nav">

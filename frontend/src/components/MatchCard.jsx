@@ -101,6 +101,22 @@ export default function MatchCard({ fixture, isSharp, onUpgrade }) {
 
   const home = fixture.home || {};
   const away = fixture.away || {};
+
+  // Debug log: surfaces the actual form arrays we received from the
+  // backend, only when one of them is shorter than 5 — keeps the
+  // console quiet in normal operation. The user reported the away
+  // team showing 3 dots; this lets us inspect whether the issue is
+  // upstream (backend) or downstream (FormDots rendering).
+  if (
+    typeof console !== 'undefined' &&
+    ((Array.isArray(home.form) && home.form.length < 5) ||
+      (Array.isArray(away.form) && away.form.length < 5))
+  ) {
+    console.log(
+      `[MatchCard form] ${home.name} home.form=${JSON.stringify(home.form)} ` +
+        `${away.name} away.form=${JSON.stringify(away.form)}`,
+    );
+  }
   const aiPending = fixture.aiStatus === 'pending';
   const aiErrored = fixture.aiStatus === 'error';
   // Show the calibrated number transparently — bettor sees one badge,
