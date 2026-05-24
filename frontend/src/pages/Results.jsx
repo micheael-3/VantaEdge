@@ -29,6 +29,37 @@ function formatRowDate(raw) {
   return `${weekday} ${month} ${d.getDate()}`.toUpperCase();
 }
 
+// One pill = one market call + its HIT/MISS badge. Used twice per
+// settled row (Over/Under + BTTS) so the user sees both predictions
+// inline instead of only the higher-confidence side.
+function MarketPill({ label, hit, tone }) {
+  const isMint = tone !== 'red';
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '4px 10px',
+        borderRadius: 6,
+        background: isMint ? 'rgba(110,231,183,0.10)' : 'rgba(239,68,68,0.10)',
+        border: `1px solid ${isMint ? 'rgba(110,231,183,0.30)' : 'rgba(239,68,68,0.30)'}`,
+        fontFamily: 'var(--font-mono)',
+        fontSize: 11,
+        color: isMint ? 'var(--mint)' : 'var(--red)',
+        letterSpacing: '0.02em',
+      }}
+    >
+      {label}
+      {hit === true && <Icon name="check" size={12} color="var(--mint)" />}
+      {hit === false && <Icon name="x" size={11} color="var(--red)" />}
+      {hit == null && (
+        <span style={{ fontSize: 10, color: 'var(--text-3)' }}>·</span>
+      )}
+    </span>
+  );
+}
+
 function ResultCard({ row }) {
   // Recovered rows have no real AI prediction — they're score-only
   // placeholders from /api/admin/recover-history. Render them with a
@@ -36,21 +67,14 @@ function ResultCard({ row }) {
   // that confidence wasn't a real AI call.
   const isRecovered = !!row.recovered;
 
-  // Pick the call we have a settlement for. Prefer the one with the
-  // higher confidence so we surface the AI's strongest take.
+  // Both markets are shown — Over/Under and BTTS each get their own
+  // pill + HIT/MISS badge. Previously we picked the higher-confidence
+  // side and dropped the other, which meant users couldn't see how
+  // the BTTS call actually went.
   const overConf = row.overConfidence;
   const bttsConf = row.bttsConfidence;
-  let pickLabel = '—';
-  let pickHit = null;
-  if (!isRecovered) {
-    if (overConf != null && (bttsConf == null || overConf >= bttsConf)) {
-      pickLabel = `OVER ${row.overLine ?? 2.5} · ${overConf}%`;
-      pickHit = row.overHit;
-    } else if (bttsConf != null) {
-      pickLabel = `BTTS ${row.btts || 'YES'} · ${bttsConf}%`;
-      pickHit = row.bttsHit;
-    }
-  }
+  const hasOver = !isRecovered && overConf != null && Number(overConf) > 0;
+  const hasBtts = !isRecovered && bttsConf != null && Number(bttsConf) > 0;
 
   const ft =
     row.finalScore ||
@@ -114,7 +138,7 @@ function ResultCard({ row }) {
           alignItems: 'center',
         }}
       >
-        {isRecovered ? (
+        {isRecovered && (
           <span
             className="mono"
             style={{
@@ -128,10 +152,21 @@ function ResultCard({ row }) {
           >
             no AI prediction
           </span>
-        ) : (
-          <span className="badge badge-mint" style={{ fontSize: 11 }}>
-            {pickLabel}
-          </span>
+        )}
+        {hasOver && (
+          <MarketPill
+            label={`OVER ${row.overLine ?? 2.5} · ${overConf}%`}
+            hit={row.overHit}
+            tone="mint"
+          />
+        )}
+        {hasBtts && (
+          <MarketPill
+            label={`BTTS ${row.btts || 'YES'} · ${bttsConf}%`}
+            hit={row.bttsHit}
+            // BTTS NO is a valid call — render it in red.
+            tone={String(row.btts || 'YES').toUpperCase() === 'NO' ? 'red' : 'mint'}
+          />
         )}
         {ft && (
           <span
@@ -145,34 +180,6 @@ function ResultCard({ row }) {
             }}
           >
             {ft}
-          </span>
-        )}
-        {!isRecovered && pickHit === true && (
-          <span
-            className="mono"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              color: 'var(--mint)',
-              fontSize: 12,
-            }}
-          >
-            <Icon name="check" size={13} color="var(--mint)" /> HIT
-          </span>
-        )}
-        {!isRecovered && pickHit === false && (
-          <span
-            className="mono"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              color: 'var(--red)',
-              fontSize: 12,
-            }}
-          >
-            <Icon name="x" size={13} color="var(--red)" /> MISS
           </span>
         )}
       </div>

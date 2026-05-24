@@ -365,12 +365,12 @@ export default function History() {
                 <div
                   style={{ filter: sharp ? 'none' : 'blur(6px)', overflowX: 'auto' }}
                 >
-                  <table className="tbl" style={{ minWidth: 420 }}>
+                  <table className="tbl" style={{ minWidth: 460 }}>
                     <thead>
                       <tr>
                         <th>Match</th>
-                        <th>Prediction</th>
-                        <th>Result</th>
+                        <th>Over / Under</th>
+                        <th>BTTS</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -382,30 +382,46 @@ export default function History() {
                         </tr>
                       ) : (
                         recent.map((r) => {
-                          // Pick the higher-confidence call to show in the
-                          // Prediction column.
+                          // Two-column layout: Over/Under prediction + result
+                          // on the left, BTTS prediction + result on the
+                          // right. Each cell shows both the pick (line +
+                          // confidence) and a hit/miss glyph so the user
+                          // sees every prediction we made, not just the
+                          // higher-confidence side.
                           const oc = r.overConfidence;
                           const bc = r.bttsConfidence;
-                          let pick = '—';
-                          let hit = null;
-                          if (oc != null && (bc == null || oc >= bc)) {
-                            pick = `OVER ${r.overLine ?? 2.5} · ${oc}%`;
-                            hit = r.overHit;
-                          } else if (bc != null) {
-                            pick = `BTTS ${r.btts || 'YES'} · ${bc}%`;
-                            hit = r.bttsHit;
-                          }
+                          const renderCell = (pickText, hit, hasPick) => {
+                            if (!hasPick) return <span className="muted">—</span>;
+                            return (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <span>{pickText}</span>
+                                {hit === true && (
+                                  <Icon name="check" size={13} color="var(--mint)" />
+                                )}
+                                {hit === false && (
+                                  <Icon name="x" size={12} color="var(--red)" />
+                                )}
+                                {hit == null && (
+                                  <span className="muted" style={{ fontSize: 11 }}>pending</span>
+                                )}
+                              </span>
+                            );
+                          };
                           return (
                             <tr key={r.id}>
                               <td>{r.match}</td>
-                              <td>{pick}</td>
                               <td>
-                                {hit === true ? (
-                                  <Icon name="check" size={13} color="var(--mint)" />
-                                ) : hit === false ? (
-                                  <Icon name="x" size={12} color="var(--red)" />
-                                ) : (
-                                  '—'
+                                {renderCell(
+                                  `OVER ${r.overLine ?? 2.5} · ${oc ?? '—'}%`,
+                                  r.overHit,
+                                  oc != null && Number(oc) > 0,
+                                )}
+                              </td>
+                              <td>
+                                {renderCell(
+                                  `BTTS ${r.btts || 'YES'} · ${bc ?? '—'}%`,
+                                  r.bttsHit,
+                                  bc != null && Number(bc) > 0,
                                 )}
                               </td>
                             </tr>
