@@ -105,9 +105,15 @@ function StatsTab() {
   const [debugId, setDebugId] = useState('');
   const [debugState, setDebugState] = useState({ busy: false, message: '', result: null });
   // Schema migration runner — POSTs /api/admin/migrate. Surfaces the
-  // per-statement results summary so the admin knows whether the new
-  // tables (banner_events, bet_tracker_blobs, etc.) actually landed.
-  const [migrateState, setMigrateState] = useState({ busy: false, message: '', summary: null });
+  // per-statement results summary AND the list of failed statements
+  // (with the Postgres error message for each) so the admin can spot
+  // schema drift immediately without digging through DevTools.
+  const [migrateState, setMigrateState] = useState({
+    busy: false,
+    message: '',
+    summary: null,
+    failures: [],
+  });
 
   const loadStats = (cancelledRef) => {
     setLoading(true);
@@ -328,23 +334,28 @@ function StatsTab() {
   };
 
   // Run schema.sql against Neon. Safe — every statement is idempotent
-  // (IF NOT EXISTS / DO blocks). Surfaces failure counts inline so you
-  // know if something needs a manual fix.
+  // (IF NOT EXISTS / DO blocks). Surfaces failure counts AND the
+  // failing statement previews inline so you can fix the underlying
+  // cause without leaving the admin panel.
   const onMigrate = async () => {
     if (migrateState.busy) return;
-    setMigrateState({ busy: true, message: 'Applying schema.sql to Neon…', summary: null });
+    setMigrateState({ busy: true, message: 'Applying schema.sql to Neon…', summary: null, failures: [] });
     try {
       const r = await adminApi.migrate();
       const s = r && r.summary ? r.summary : { total: 0, ok: 0, failed: 0 };
+      const failures = Array.isArray(r && r.results)
+        ? r.results.filter((row) => row && row.ok === false)
+        : [];
       const detail = s.failed > 0
-        ? `Applied ${s.ok}/${s.total} statements · ${s.failed} failed — see Network tab for details.`
+        ? `Applied ${s.ok}/${s.total} statements · ${s.failed} failed — see details below.`
         : `Applied ${s.ok}/${s.total} statements cleanly. New tables ready.`;
-      setMigrateState({ busy: false, message: detail, summary: s });
+      setMigrateState({ busy: false, message: detail, summary: s, failures });
     } catch (err) {
       setMigrateState({
         busy: false,
         message: err?.response?.data?.error || err.message || 'Migration failed',
         summary: null,
+        failures: [],
       });
     }
   };
@@ -487,6 +498,41 @@ function StatsTab() {
               }}
             >
               {migrateState.message}
+            </div>
+          )}
+          {/* Show each failed statement with its Postgres error so the
+              admin can act without DevTools. Renders a tight code block
+              per failure; preview is truncated server-side to 120 chars. */}
+          {migrateState.failures && migrateState.failures.length > 0 && (
+            <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+              {migrateState.failures.map((f, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: '8px 10px',
+                    border: '1px solid rgba(251,191,36,0.35)',
+                    background: 'rgba(251,191,36,0.06)',
+                    borderRadius: 6,
+                    fontSize: 11,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <div
+                    className="mono"
+                    style={{
+                      color: 'var(--amber)',
+                      letterSpacing: '0.04em',
+                      marginBottom: 4,
+                      wordBreak: 'break-word',
+                    }}
+                  >
+                    {f.stmt}
+                  </div>
+                  <div style={{ color: 'var(--text-2)', wordBreak: 'break-word' }}>
+                    {f.error}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
