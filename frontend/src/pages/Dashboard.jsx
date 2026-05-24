@@ -689,7 +689,13 @@ export default function Dashboard() {
                 className="mc-grid"
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
+                  // min(100%, 420px) collapses to 100% on screens narrower
+                  // than 420px so cards never exceed the viewport. Above
+                  // 420px the grid behaves as before — auto-fill into
+                  // 420px-wide columns. Without this, iPhones (~390px
+                  // viewport) had cards 30px wider than the screen and
+                  // everything from the team name to "Share" got clipped.
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))',
                   gap: 12,
                 }}
               >
