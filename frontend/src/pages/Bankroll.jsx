@@ -1,12 +1,41 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout.jsx';
 import Icon from '../components/Icon.jsx';
 import LockedOverlay from '../components/LockedOverlay.jsx';
 import { isSharp, useAuth } from '../context/AuthContext.jsx';
 
-// Bet Tracker — port of the design's bet-tracker.jsx.
-// Uses local state for tracked bets (the backend bankroll endpoint exists
-// and can be wired in a follow-up; the visual structure is the priority).
+// Bet Tracker — bets persist via localStorage so a refresh doesn't wipe
+// them. Full backend persistence (the /api/bankroll endpoint exists but
+// isn't wired) is a separate task; this is the minimum-risk middle
+// ground: bets stay across reloads, no schema/API surface changes.
+//
+// Storage key is versioned so a future shape change can ignore old
+// blobs cleanly. Capped read at 500 rows so a corrupt LS entry can't
+// blow the page.
+const BETS_LS_KEY = 'fastscore_bets_v1';
+
+function loadBetsFromStorage() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(BETS_LS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.slice(0, 500);
+  } catch {
+    return [];
+  }
+}
+
+function saveBetsToStorage(bets) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(BETS_LS_KEY, JSON.stringify(bets || []));
+  } catch {
+    /* quota exceeded or storage disabled — silently fall back to in-memory */
+  }
+}
+
 const INITIAL_BETS = [];
 
 function calcPnL(bet) {
@@ -571,11 +600,27 @@ function AddBetModal({ onClose, onAdd }) {
 export default function Bankroll() {
   const { user } = useAuth();
   const sharp = isSharp(user);
-  const [bets, setBets] = useState(INITIAL_BETS);
+  // Initialise from localStorage on mount so a refresh doesn't wipe the
+  // tracked bets. The lazy initialiser only runs once (React useState
+  // pattern), so we don't pay the parse cost on every render. Falls
+  // back to INITIAL_BETS = [] if storage is empty / corrupt / disabled.
+  const [bets, setBets] = useState(() => {
+    const stored = loadBetsFromStorage();
+    return stored.length ? stored : INITIAL_BETS;
+  });
   const [modal, setModal] = useState(false);
   // Which parlay row, if any, has its leg detail expanded. Single bets
   // don't expand — they have no legs to show.
   const [expandedId, setExpandedId] = useState(null);
+
+  // Persist on every change. Cheap (one JSON.stringify call) and runs
+  // after render, so it never blocks user input. If saveBetsToStorage
+  // fails (quota / private-browsing), state stays in memory — we just
+  // lose persistence for this user, never the bets they're currently
+  // looking at.
+  useEffect(() => {
+    saveBetsToStorage(bets);
+  }, [bets]);
 
   const stats = useMemo(() => {
     const settled = bets.filter((b) => b.result !== 'PENDING');

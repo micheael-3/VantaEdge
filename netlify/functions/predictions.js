@@ -9,7 +9,7 @@ const { calculateEV, calculateKelly } = require('./_shared/ev');
 const oddsService = require('./_shared/odds');
 const weatherService = require('./_shared/weather');
 const { loadAdjustments, calibrate } = require('./_shared/calibration');
-const { cyprusDateStr, cyprusMonday } = require('./_shared/dates');
+const { cyprusDateStr, cyprusMonday, cyprusDayOfWeek, addDaysStr: cyprusAddDaysStr } = require('./_shared/dates');
 
 // Hardcoded for this MLS-only build. Every code path that used to take a
 // league id now ignores anything other than 253.
@@ -77,22 +77,28 @@ function restDaysFromForm(formFixtures) {
 }
 
 // ---------- Date helpers ----------
+//
+// Cyprus-local. /week was already Cyprus-aware (cyprusDateStr +
+// cyprusMonday); /quick, /253 and /upcoming were still on UTC, which
+// caused off-by-one bucketing for early-AM Cyprus times (00:00–02:59
+// local = 22:00–00:59 UTC, so UTC "today" was yesterday's Cyprus
+// date). All three helpers now route through the Asia/Nicosia
+// versions in _shared/dates.
 function todayDateStr() {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  return cyprusDateStr(new Date());
 }
 
-function addDaysStr(baseDateStr, days) {
-  const d = new Date(`${baseDateStr}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-}
+// Re-export the Cyprus-aware addDaysStr under the old local name so
+// every existing call site (handleQuick / pickFixtures / handleWeek /
+// handleUpcoming / handleAITest …) picks up the safer math without
+// each site needing a rename. The function is signature-identical and
+// safer (anchors at UTC noon so DST transitions can't shift the day).
+const addDaysStr = cyprusAddDaysStr;
 
 function isoToDateStr(iso) {
   if (!iso) return null;
   try {
-    const d = new Date(iso);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    return cyprusDateStr(iso);
   } catch {
     return null;
   }
@@ -555,7 +561,12 @@ async function handleWeek(event) {
   // /week response doesn't wait for it.
   try {
     const nextWeekStart = addDaysStr(weekStart, 7);
-    const todayDay = new Date().getUTCDay(); // 0=Sun, 4=Thu, 5=Fri, 6=Sat
+    // Day-of-week in Asia/Nicosia, not UTC. Cyprus Monday 01:00 (= UTC
+    // Sunday 22:00) needs to read as Monday (1) for the next-week-scan
+    // gate to behave consistently with the rest of the Cyprus-anchored
+    // pipeline. Falls back to UTC if the helper returns null (won't
+    // happen in practice).
+    const todayDay = cyprusDayOfWeek(new Date()) ?? new Date().getUTCDay();
     const shouldQueueNextWeek = todayDay === 0 || todayDay >= 4;
     if (shouldQueueNextWeek) {
       let nextStatus = 'idle';
