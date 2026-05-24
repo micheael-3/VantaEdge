@@ -85,17 +85,22 @@ export function confidenceLabel(conf) {
   return 'Decent Pick';
 }
 
-// Translate "Over X.5" → "More than X goals" plain English. Used in the
-// prediction badge so casual bettors never see the betting-market jargon.
+// Surface the betting market label directly: "Over 2.5 goals".
+//
+// The previous "More than X goals" plain-English translation looked
+// friendly but was actively misleading. A casual reader naturally
+// parses "more than 2 goals" as "2 or more goals" — which makes a
+// 2-0 final (total = 2) feel like a HIT. The bookmaker line "Over 2.5"
+// is strict mathematical >, hits only on 3+. We had Minnesota vs Salt
+// Lake settled correctly as MISS at 2-0, but the user read the label
+// as a HIT and the contradiction looked like a bug in our settle code.
+//
+// Going forward: render the exact line the bookmaker uses. Zero
+// ambiguity. "Over 2.5" means total goals > 2.5, full stop.
 export function overPlainEnglish(line) {
   const n = typeof line === 'number' ? line : parseFloat(line);
-  if (!Number.isFinite(n)) return 'More than 2 goals';
-  // Over 0.5 → "At least 1 goal", Over 1.5 → "More than 1 goal",
-  // Over 2.5 → "More than 2 goals", etc.
-  const whole = Math.floor(n);
-  if (whole === 0) return 'At least 1 goal';
-  if (whole === 1) return 'More than 1 goal';
-  return `More than ${whole} goals`;
+  if (!Number.isFinite(n)) return 'Over 2.5 goals';
+  return `Over ${n} goals`;
 }
 
 // BTTS plain English. 'YES' → both score, 'NO' → at least one blanks.
