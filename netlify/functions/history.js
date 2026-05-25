@@ -64,7 +64,7 @@ async function getHistory(event) {
              over_line, over_confidence, over_hit, btts, btts_confidence, btts_hit,
              match_data, home_goals, away_goals
       FROM predictions
-      WHERE league = 'MLS' AND kickoff >= ${since.toISOString()}
+      WHERE kickoff >= ${since.toISOString()}
       ORDER BY kickoff DESC`;
   } catch (err) {
     if (err && (err.code === '42703' || /column .* does not exist/i.test(err.message || ''))) {
@@ -73,7 +73,7 @@ async function getHistory(event) {
                over_line, over_confidence, over_hit, btts, btts_confidence, btts_hit,
                match_data
         FROM predictions
-        WHERE league = 'MLS' AND kickoff >= ${since.toISOString()}
+        WHERE kickoff >= ${since.toISOString()}
         ORDER BY kickoff DESC`;
     } else {
       throw err;
@@ -258,8 +258,7 @@ async function getCalibration(event) {
   const rows = await sql()`
     SELECT over_confidence, over_hit, btts_confidence, btts_hit
     FROM predictions
-    WHERE league = 'MLS'
-      AND (over_hit IS NOT NULL OR btts_hit IS NOT NULL)
+    WHERE (over_hit IS NOT NULL OR btts_hit IS NOT NULL)
       AND (over_confidence > 0 OR btts_confidence > 0)`;
 
   // Build empty bucket scaffolds so the chart always renders five bars

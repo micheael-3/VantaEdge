@@ -54,12 +54,31 @@ function reflectionBlock(lines) {
     return 'YOUR RECENT RESULTS: no settled predictions yet for this league. No prior mistakes to learn from.';
   }
   const numbered = lines.map((l, i) => `${i + 1}. ${l}`).join('\n');
+  // Count Over-line misses in the reflection set so the prompt can be
+  // explicit about correcting bias. If 2+ of the last 5 Over picks
+  // missed, the model gets a stronger "stop defaulting to Over 2.5"
+  // instruction — concrete, actionable, anchored in real misses.
+  let overMisses = 0;
+  for (const line of lines) {
+    const m = String(line).match(/Over\s+\d+\.\d+\s+@\s+\d+%\s+→\s+(HIT|MISS)/i);
+    if (m && m[1].toUpperCase() === 'MISS') overMisses += 1;
+  }
+  const correction = overMisses >= 2
+    ? '\n\nBIAS CORRECTION (URGENT): you missed ' + overMisses +
+      ' of your last ' + lines.length + ' Over picks. Stop defaulting ' +
+      'to Over 2.5. Reassess: were you overconfident because the ' +
+      'headline number "felt" right? If the combined goals/game data ' +
+      'argued for fewer goals, you should have picked Over 1.5 or ' +
+      'Over 0.5. Apply that correction to this match — be willing to ' +
+      'pick a lower line with conviction instead of a higher line with hope.'
+    : '';
   return (
     'YOUR RECENT RESULTS (most recent first):\n' +
     numbered +
     '\nLearn from your mistakes. If you were overconfident on a MISS, ' +
     'discount similar profiles here. If you nailed a HIT with a clear ' +
-    'signal, keep doing that.'
+    'signal, keep doing that.' +
+    correction
   );
 }
 
@@ -84,6 +103,26 @@ function analystSystemPrompt(reflection, learnedRulesBlock) {
     `    In those cases you MUST predict BTTS NO. Do not default to YES.\n` +
     `  • Confidence cap is 85%. Average confidence target is ~70%.\n` +
     `  • If you can't justify a pick with the numbers, drop confidence — don't fabricate.\n\n` +
+    `LINE-SELECTION DIRECTIVE — read every word, this is where most ` +
+    `models fail:\n` +
+    `  • Do NOT default to Over 2.5 unless your confidence on Over 2.5 ` +
+    `is ≥ 65%. Over 2.5 is the most-bet market — and the most-missed.\n` +
+    `  • Compute confidence for EACH candidate line (0.5, 1.5, 2.5, 3.5, ` +
+    `4.5) using combined-goals-per-game, recent form, and the H2H ` +
+    `goal median. PICK THE LINE WITH THE HIGHEST CONFIDENCE.\n` +
+    `  • In MLS the combined-goals average is typically 2.4–2.8. That ` +
+    `means Over 2.5 is roughly a coin flip on average — only call it ` +
+    `with conviction when BOTH teams average ≥1.5 goals scored OR the ` +
+    `H2H median is ≥3.\n` +
+    `  • If your Over 2.5 confidence falls between 50% and 64%, you ` +
+    `MUST escalate to Over 1.5: that same match is typically 70–80% ` +
+    `likely for Over 1.5. Picking Over 2.5 at 55% when Over 1.5 would ` +
+    `be 78% is a STRICTLY DOMINATED choice. Don't make it.\n` +
+    `  • If combined goals/game is < 2.4, you cannot pick Over 2.5. ` +
+    `Drop to Over 1.5 (or Over 0.5 if both teams average < 1.0).\n` +
+    `  • A confident "Over 1.5 at 75%" beats an uncertain "Over 2.5 at ` +
+    `55%" every single time. The goal is real edges, not headline ` +
+    `lines. Casual bettors prefer big numbers; you don't.\n\n` +
     reflectionBlock(reflection) +
     (learnedRulesBlock || '')
   );

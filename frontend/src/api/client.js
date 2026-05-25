@@ -8,7 +8,18 @@ const api = axios.create({
 });
 
 let refreshing = null;
+let guestRefreshing = null;
 
+// Two recovery paths on a 401:
+//   1. Logged-in user with TOKEN_EXPIRED → hit /api/auth/refresh
+//      (uses the httpOnly refresh-token cookie).
+//   2. Guest mode (sessionStorage __fs_guest === '1') → hit
+//      /api/auth/guest which mints a fresh guest JWT with tier=GUEST.
+//      Guests don't have a refresh token, so they can't use path 1.
+//
+// Previously path 2 didn't exist — guests whose 15-min guest cookie
+// expired hit a hard 401 wall ("Couldn't load predictions /
+// UNAUTHORIZED") on the dashboard. Now we transparently re-mint.
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
@@ -16,19 +27,51 @@ api.interceptors.response.use(
     const status = err.response && err.response.status;
     const code = err.response && err.response.data && err.response.data.error;
 
-    if (status === 401 && code === 'TOKEN_EXPIRED' && !original._retried) {
-      original._retried = true;
-      try {
-        if (!refreshing) {
-          refreshing = api.post('/api/auth/refresh').finally(() => {
-            refreshing = null;
-          });
+    if (status === 401 && !original._retried) {
+      const isGuest =
+        typeof window !== 'undefined' &&
+        (() => {
+          try { return window.sessionStorage.getItem('__fs_guest') === '1'; }
+          catch { return false; }
+        })();
+
+      // Guest mode: re-mint the guest cookie. Works for any 401 reason
+      // (TOKEN_EXPIRED, plain UNAUTHORIZED, missing cookie). Once the
+      // new guest JWT lands the original request gets retried.
+      if (isGuest) {
+        original._retried = true;
+        try {
+          if (!guestRefreshing) {
+            guestRefreshing = api.post('/api/auth/guest').finally(() => {
+              guestRefreshing = null;
+            });
+          }
+          await guestRefreshing;
+          return api(original);
+        } catch (e) {
+          // Re-mint failed (network down, JWT_SECRET unset, etc). Drop
+          // the guest flag so we don't infinite-loop, then surface.
+          try { window.sessionStorage.removeItem('__fs_guest'); } catch { /* ignore */ }
+          window.dispatchEvent(new CustomEvent('auth-logout'));
+          return Promise.reject(e);
         }
-        await refreshing;
-        return api(original);
-      } catch (e) {
-        window.dispatchEvent(new CustomEvent('auth-logout'));
-        return Promise.reject(e);
+      }
+
+      // Logged-in user: refresh-token flow. Same as before.
+      if (code === 'TOKEN_EXPIRED') {
+        original._retried = true;
+        try {
+          if (!refreshing) {
+            refreshing = api.post('/api/auth/refresh').finally(() => {
+              refreshing = null;
+            });
+          }
+          await refreshing;
+          return api(original);
+        } catch (e) {
+          window.dispatchEvent(new CustomEvent('auth-logout'));
+          return Promise.reject(e);
+        }
       }
     }
     return Promise.reject(err);

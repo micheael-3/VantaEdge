@@ -198,7 +198,7 @@ a { color: inherit; text-decoration: none; }
    token (#2a2a38) so the dot is clearly readable as "no data yet"
    on the card's #111118 background. The previous --bg-2 fill (#0d0d14)
    was a single px-step away from card bg and looked invisible. */
-.form-dot.empty { background: #2a2a38; color: transparent; border: 1px solid #2a2a38; }
+.form-dot.empty { background: transparent; color: var(--text-faint); border: 1px dashed var(--border); }
 
 /* ---------- Buttons ---------- */
 .btn {
@@ -1419,6 +1419,27 @@ table.tbl tr:last-child td { border-bottom: none; }
     border-radius: 16px 16px 0 0;
     padding-bottom: calc(28px + env(safe-area-inset-bottom));
     animation: slide-up 0.25s ease-out;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   Ebook page hero — desktop is 180px cover + body on one row, mobile
+   collapses to single column with the cover centred above the body.
+   Inline gridTemplateColumns: '180px 1fr' would otherwise stick on
+   iOS Safari at any viewport width.
+   --------------------------------------------------------------------- */
+@media (max-width: 767px) {
+  .ebook-hero {
+    grid-template-columns: 1fr !important;
+    gap: 18px !important;
+    padding: 20px !important;
+    text-align: left;
+  }
+  .ebook-hero .ebook-cover {
+    width: 140px !important;
+    height: 188px !important;
+    margin: 0 auto;
+    padding: 14px !important;
   }
 }
 

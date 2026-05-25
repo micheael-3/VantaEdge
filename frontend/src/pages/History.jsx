@@ -128,7 +128,11 @@ function RollingChart({ rolling }) {
 export default function History() {
   const { user } = useAuth();
   const sharp = isSharp(user);
-  const [windowKey, setWindowKey] = useState('month');
+  // Default to 'week' so the headline numbers match what Results shows
+  // (Results explicitly uses week). Avoids the dissonance of "Results
+  // says 30 settled, Accuracy says 2" when both read the same endpoint
+  // with different time windows.
+  const [windowKey, setWindowKey] = useState('week');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

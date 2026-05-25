@@ -50,7 +50,10 @@ export default function FormDots({ form, delay = 0 }) {
                 'opacity 0.25s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)',
             }}
           >
-            {known ? c : ''}
+            {/* Empty slots render a small dash so the chip looks
+                intentional rather than a broken render. Screen readers
+                still get aria-label="no data" above. */}
+            {known ? c : '–'}
           </span>
         );
       })}
