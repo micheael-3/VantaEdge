@@ -283,10 +283,45 @@ function classifyHttpError(err) {
   return new ClaudeAnalysisError(`OpenRouter error (status ${status || 'n/a'}): ${(detail || '').slice(0, 200)}`);
 }
 
+// Helper — pull combined goals/game from matchData so post-enforcement
+// can override the model when its line choice contradicts the data.
+// Returns null when either side's avgFor isn't a finite number (i.e.
+// data wasn't rich enough to enforce — fall back to whatever the
+// model said in that case).
+function combinedGoalsAvg(matchData) {
+  const h = matchData && matchData.home && matchData.home.goalsPerGame && matchData.home.goalsPerGame.avgFor;
+  const a = matchData && matchData.away && matchData.away.goalsPerGame && matchData.away.goalsPerGame.avgFor;
+  const hn = Number(h);
+  const an = Number(a);
+  if (!Number.isFinite(hn) || !Number.isFinite(an)) return null;
+  return hn + an;
+}
+
+// Helper — count W/D/L letters that the form array actually has (not
+// padded nulls). Used by the BTTS-YES gate: if either team hasn't
+// scored in ≥3 of last 5, we force BTTS NO regardless of model output.
+// The form array doesn't tell us scoring directly — we approximate
+// via "did they score in this match" using the lastFiveScores attached
+// to matchData by predictions-scan-background. When that's absent we
+// fall through and trust the model.
+function teamScoredCount(side) {
+  if (!side) return null;
+  const arr = side.lastFiveScores;
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  let n = 0;
+  for (const row of arr) {
+    if (row && typeof row.scored === 'number' && row.scored > 0) n += 1;
+  }
+  return n;
+}
+
 // Run the three agents serially and return the merged result.
 // Returns: parsed JSON from the Adjudicator with an extra `debate`
 // field carrying the analyst + critique transcripts for storage.
-async function runEnsemble(matchData, { includeFirstHalf, includeAsianHandicap, leagueForReflection }) {
+// `maxConfidence` (optional, defaults to 78) is the per-match ceiling
+// derived by the caller from data-quality score — see
+// predictions-scan-background.js dataQuality computation.
+async function runEnsemble(matchData, { includeFirstHalf, includeAsianHandicap, leagueForReflection, maxConfidence = 78 }) {
   const leagueLabel = leagueForReflection || (matchData && matchData.league) || 'MLS';
   const sportEntry = findByLeagueLabel(leagueLabel);
   const sportKey = sportEntry ? sportEntry.id : leagueLabel.toLowerCase();
@@ -401,6 +436,102 @@ async function runEnsemble(matchData, { includeFirstHalf, includeAsianHandicap, 
   parsed.riskScore = typeof finalRisk === 'number' ? finalRisk : null;
   parsed.riskFlag = !!(parsed.riskScore != null && parsed.riskScore >= 9);
 
+  // -----------------------------------------------------------------
+  // CODE-LEVEL POST-ENFORCEMENT — fires regardless of what the model
+  // returned. The prompt asks the analyst to honour these rules, but
+  // model drift is a fact of life; the only way to GUARANTEE the rules
+  // are applied is to clamp here in code. Each adjustment is logged so
+  // we can see the delta in Netlify logs and surface it via the future
+  // /api/admin/quality-log endpoint.
+  // -----------------------------------------------------------------
+  const enforcements = [];
+  const combined = combinedGoalsAvg(matchData);
+  const beforeOverLine = parsed.over.line;
+  const beforeOverConf = parsed.over.confidence;
+  const beforeBttsPred = parsed.btts.prediction;
+  const beforeBttsConf = parsed.btts.confidence;
+
+  // Rule 1: Over 2.5+ requires combined goals/game >= 2.6. Otherwise
+  //         drop the line to 1.5 and cap confidence at 65 — the data
+  //         simply doesn't support the higher number, no matter how
+  //         confident the model sounded.
+  if (combined != null && Number(parsed.over.line) >= 2.5 && combined < 2.6) {
+    parsed.over.line = 1.5;
+    parsed.over.confidence = Math.min(parsed.over.confidence, 65);
+    parsed.over.reasoning =
+      (parsed.over.reasoning || '') +
+      ' [Line adjusted: combined goals avg below 2.6 — Over 2.5 not supported by data.]';
+    enforcements.push({
+      rule: 'over_line_combined_below_2_6',
+      before: { line: beforeOverLine, conf: beforeOverConf },
+      after: { line: parsed.over.line, conf: parsed.over.confidence },
+      combinedGoals: combined,
+    });
+  }
+
+  // Rule 2: BTTS YES requires both teams to have scored in ≥3 of last 5.
+  //         If we can determine the count and either side is below 3,
+  //         flip to NO and cap at 62.
+  if (parsed.btts.prediction === 'YES') {
+    const homeScored = teamScoredCount(matchData && matchData.home);
+    const awayScored = teamScoredCount(matchData && matchData.away);
+    if (homeScored != null && awayScored != null && (homeScored < 3 || awayScored < 3)) {
+      parsed.btts.prediction = 'NO';
+      parsed.btts.confidence = Math.min(parsed.btts.confidence, 62);
+      parsed.btts.reasoning =
+        (parsed.btts.reasoning || '') +
+        ` [Changed to NO: home scored in ${homeScored}/5, away ${awayScored}/5 — insufficient.]`;
+      enforcements.push({
+        rule: 'btts_yes_insufficient_scoring',
+        before: { pred: beforeBttsPred, conf: beforeBttsConf },
+        after: { pred: parsed.btts.prediction, conf: parsed.btts.confidence },
+        homeScoredInLast5: homeScored,
+        awayScoredInLast5: awayScored,
+      });
+    }
+  }
+
+  // Rule 3: clamp confidence to [51, maxConfidence]. The 51 floor stops
+  //         a "50/50 no signal" row sneaking through (predictions-scan
+  //         already has a hard skip for both-50, but a single 50 should
+  //         shift to 51 so the displayed pick is unambiguous).
+  const overCap = Math.min(parsed.over.confidence, maxConfidence);
+  const overFloor = Math.max(overCap, 51);
+  if (overFloor !== parsed.over.confidence) {
+    enforcements.push({
+      rule: 'over_conf_clamp',
+      before: beforeOverConf,
+      after: overFloor,
+      maxConfidence,
+    });
+    parsed.over.confidence = overFloor;
+  }
+  const bttsCap = Math.min(parsed.btts.confidence, maxConfidence);
+  const bttsFloor = Math.max(bttsCap, 51);
+  if (bttsFloor !== parsed.btts.confidence) {
+    enforcements.push({
+      rule: 'btts_conf_clamp',
+      before: beforeBttsConf,
+      after: bttsFloor,
+      maxConfidence,
+    });
+    parsed.btts.confidence = bttsFloor;
+  }
+
+  // Stash enforcement record on the parsed object so callers can read
+  // it (predictions-scan-background.js attaches it to match_data for
+  // the admin quality-log query).
+  parsed.enforcements = enforcements;
+  if (enforcements.length > 0) {
+    const homeName = matchData && matchData.home && matchData.home.name;
+    const awayName = matchData && matchData.away && matchData.away.name;
+    console.log(
+      `[claude post-enforcement] ${homeName || '?'} vs ${awayName || '?'} ` +
+        `— ${enforcements.length} adjustment(s): ` +
+        enforcements.map((e) => e.rule).join(', '),
+    );
+  }
+
   if (!includeFirstHalf) parsed.firstHalf = null;
   if (!includeAsianHandicap) parsed.asianHandicap = null;
 
@@ -426,17 +557,36 @@ async function runEnsemble(matchData, { includeFirstHalf, includeAsianHandicap, 
   return parsed;
 }
 
-// Public API — same signature as the pre-ensemble version, so every
-// caller (predictions-scan-background.js, predictions.js) keeps working.
-async function analyseMatch(matchData, includeFirstHalf = false, includeAsianHandicap = false) {
+// Public API — accepts an optional `opts` 3rd arg so callers can pass
+// per-match maxConfidence derived from data-quality scoring. Backward-
+// compatible: the legacy 2-positional-bool signature still works.
+//
+//   analyseMatch(matchData)
+//   analyseMatch(matchData, true, true)
+//   analyseMatch(matchData, { maxConfidence: 72 })
+//   analyseMatch(matchData, true, false, { maxConfidence: 65 })
+async function analyseMatch(matchData, includeFirstHalf = false, includeAsianHandicap = false, opts = {}) {
   if (!process.env.OPENROUTER_API_KEY) {
     throw new ClaudeAnalysisError('OPENROUTER_API_KEY env var not set');
   }
+  // Normalise — allow opts to be passed in either the 2nd or 4th arg.
+  let inc1 = includeFirstHalf;
+  let inc2 = includeAsianHandicap;
+  let options = opts;
+  if (typeof inc1 === 'object' && inc1 !== null) {
+    options = inc1;
+    inc1 = false;
+    inc2 = false;
+  }
+  const maxConfidence = Number.isFinite(Number(options.maxConfidence))
+    ? Number(options.maxConfidence)
+    : 78;
   try {
     return await runEnsemble(matchData, {
-      includeFirstHalf,
-      includeAsianHandicap,
+      includeFirstHalf: inc1,
+      includeAsianHandicap: inc2,
       leagueForReflection: (matchData && matchData.league) || 'MLS',
+      maxConfidence,
     });
   } catch (err) {
     throw classifyHttpError(err);

@@ -541,6 +541,17 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
         },
         aiStatus: analysis.aiStatus || 'ok',
         aiReason: analysis.aiReason || null,
+        // Persist the code-level enforcement record + data quality
+        // breakdown so /api/admin/quality-log can render
+        // "why was this confidence capped?" without a re-run.
+        enforcements: (analysis && Array.isArray(analysis.enforcements) && analysis.enforcements.length)
+          ? analysis.enforcements
+          : null,
+        qualityScore: matchData.qualityScore != null ? matchData.qualityScore : null,
+        qualityMissing: Array.isArray(matchData.qualityMissing) && matchData.qualityMissing.length
+          ? matchData.qualityMissing
+          : null,
+        maxConfidence: matchData.maxConfidence != null ? matchData.maxConfidence : null,
       }
     : null;
 
@@ -900,16 +911,66 @@ async function runScan(leagueId, weekStart) {
       matchData.dataConfidence = validation.confidence;
       matchData.dataIssues = validation.issues;
 
+      // ----------------------------------------------------------
+      // DATA QUALITY SCORE — 0..6. Each signal we have a real value
+      // for counts 1. The score drives:
+      //   - HARD SKIP when < 3 (don't waste a Claude call)
+      //   - per-match maxConfidence cap passed to Claude
+      //     (5 → 65 default, 5 → 72, 6 → 78)
+      // The score is also persisted on match_data so the admin
+      // quality log can surface "why was this confidence low?"
+      // ----------------------------------------------------------
+      const realFormCount = (arr) =>
+        Array.isArray(arr) ? arr.filter((v) => v != null).length : 0;
+      const homeAvgFor = matchData.home && matchData.home.goalsPerGame && Number(matchData.home.goalsPerGame.avgFor);
+      const awayAvgFor = matchData.away && matchData.away.goalsPerGame && Number(matchData.away.goalsPerGame.avgFor);
+      const h2hAvgGoals = matchData.h2h && Number(matchData.h2h.avgTotalGoals);
+      const refName = matchData.referee && matchData.referee.name;
+      const dataQuality = {
+        hasHomeForm: realFormCount(matchData.home && matchData.home.form) >= 3,
+        hasAwayForm: realFormCount(matchData.away && matchData.away.form) >= 3,
+        hasHomeGoals: Number.isFinite(homeAvgFor) && homeAvgFor > 0,
+        hasAwayGoals: Number.isFinite(awayAvgFor) && awayAvgFor > 0,
+        hasH2H: Number.isFinite(h2hAvgGoals) && h2hAvgGoals > 0,
+        hasReferee: !!refName && refName !== 'Not announced',
+      };
+      const qualityScore = Object.values(dataQuality).filter(Boolean).length;
+      console.log(
+        `[scan-bg quality] fixture=${fx.fixture && fx.fixture.id} ` +
+          `${fx.teams.home.name} vs ${fx.teams.away.name} ` +
+          `score=${qualityScore}/6 ` +
+          `missing=[${Object.entries(dataQuality).filter(([, v]) => !v).map(([k]) => k).join(',') || 'none'}]`,
+      );
+      if (qualityScore < 3) {
+        console.warn(
+          `[scan-bg quality-skip] fixture=${fx.fixture && fx.fixture.id} ` +
+            `— quality ${qualityScore}/6 below threshold. NOT calling Claude.`,
+        );
+        continue;
+      }
+      let maxConfidence = 65;
+      if (qualityScore === 5) maxConfidence = 72;
+      if (qualityScore === 6) maxConfidence = 78;
+
+      // Persist on match_data so /api/admin/quality-log can read it
+      // and the admin can see why a confidence was capped.
+      matchData.qualityScore = qualityScore;
+      matchData.qualityMissing = Object.entries(dataQuality)
+        .filter(([, v]) => !v)
+        .map(([k]) => k);
+      matchData.maxConfidence = maxConfidence;
+
       // Claude call. A ClaudeAnalysisError (auth/rate-limit/non-JSON/
       // missing-required-fields) is now a HARD SKIP — we no longer
       // silently save a synthetic 50% row. The user sees fewer rows
       // when OpenRouter is unhealthy; they don't see fake picks
       // disguised as real ones. We hand Claude the CLEAN payload
       // (no internal IDs, no raw API objects); matchData is what we
-      // persist for the dashboard.
+      // persist for the dashboard. maxConfidence flows through to
+      // the post-enforcement clamp inside claude.js.
       let analysis;
       try {
-        analysis = await analyseMatch(claudePayload, false, false);
+        analysis = await analyseMatch(claudePayload, false, false, { maxConfidence });
         // Verbose log of every Claude verdict so we can audit whether the
         // model is ever calling BTTS NO. Earlier reports showed every
         // pick coming back as YES — the prompt now has an explicit
