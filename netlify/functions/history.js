@@ -181,6 +181,17 @@ async function getHistory(event) {
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((d) => ({ date: d.date, accuracy: pct(d.hits, d.settled), settled: d.settled }));
 
+  // Debug counts — surfaced in the response so the History page can
+  // render them inline. Lets us spot whether the DB actually has
+  // settled rows vs "endpoint is filtering them out" in one screenshot.
+  const distinctLeagues = Array.from(new Set(predictions.map((p) => p.league))).filter(Boolean);
+  const distinctDays = Array.from(new Set(predictions.map((p) => {
+    try { return new Date(p.kickoff).toISOString().slice(0, 10); } catch { return null; }
+  }))).filter(Boolean).sort();
+  const settledInWindow = uniquePredictions.filter(
+    (p) => p.over_hit !== null || p.btts_hit !== null,
+  ).length;
+
   return json(200, {
     summary: {
       window: windowLabel,
@@ -195,6 +206,17 @@ async function getHistory(event) {
       bttsSettled: bttsSettled.length,
       bttsHits,
       bestLeague: bestLeague ? bestLeague.league : null,
+    },
+    _debug: {
+      window: windowLabel,
+      since: since.toISOString(),
+      rawRowsInWindow: predictions.length,
+      uniqueByFixture: uniquePredictions.length,
+      settledInWindow,
+      pendingInWindow: uniquePredictions.length - settledInWindow,
+      distinctLeagues,
+      distinctDays,
+      fetchedAt: new Date().toISOString(),
     },
     leagues: leagueRows,
     rolling,
@@ -371,16 +393,30 @@ async function getAccuracy(event) {
   return json(200, { rows });
 }
 
+// no-store on every response so iOS Safari and intermediate proxies
+// can never serve a stale Accuracy/Results view. The Dashboard
+// screenshots showing one row while Results showed thirty were almost
+// certainly cache-induced — same endpoint, different cached payloads.
+function withNoStore(res) {
+  if (!res) return res;
+  const headers = Object.assign({}, res.headers || {}, {
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  });
+  return Object.assign({}, res, { headers });
+}
+
 exports.handler = async (event) => {
   try {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, body: '' };
     if (event.httpMethod !== 'GET') return error(405, 'Method not allowed');
 
     const path = subPath(event, 'history');
-    if (path === '/' || path === '') return await getHistory(event);
-    if (path === '/streak' || path === '/streak/') return await getStreak(event);
-    if (path === '/accuracy') return await getAccuracy(event);
-    if (path === '/calibration' || path === '/calibration/') return await getCalibration(event);
+    if (path === '/' || path === '') return withNoStore(await getHistory(event));
+    if (path === '/streak' || path === '/streak/') return withNoStore(await getStreak(event));
+    if (path === '/accuracy') return withNoStore(await getAccuracy(event));
+    if (path === '/calibration' || path === '/calibration/') return withNoStore(await getCalibration(event));
     return notFound();
   } catch (err) {
     console.error('history handler error:', err);

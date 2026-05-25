@@ -130,9 +130,17 @@ export const predictions = {
 };
 
 export const history = {
+  // Cache-buster `_t` forces iOS Safari + Netlify edge to skip any
+  // stale cached copy — combined with the no-store response headers
+  // this guarantees fresh data on every call.
   get: (window) =>
     api
-      .get('/api/history', { params: window && window !== 'default' ? { window } : {} })
+      .get('/api/history', {
+        params: {
+          ...(window && window !== 'default' ? { window } : {}),
+          _t: Date.now(),
+        },
+      })
       .then((r) => r.data),
   // Per-bucket settled-prediction hit rate vs claimed model confidence. Kept
   // running on the backend so confidence numbers shown on the dashboard are

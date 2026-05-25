@@ -264,6 +264,43 @@ export default function History() {
             </div>
           ) : (
             <>
+              {/* Inline diagnostics — proves the data the backend
+                  returned for this window. If "settled in window" here
+                  doesn't match what Results shows, the bug is server-
+                  side. If it DOES match but the page still looks
+                  wrong, the bug is render-side. Either way: visible. */}
+              {data && data._debug && (
+                <div
+                  className="mono"
+                  style={{
+                    marginBottom: 14,
+                    padding: '8px 12px',
+                    background: 'var(--card-2)',
+                    border: '1px solid var(--border-soft)',
+                    borderRadius: 8,
+                    fontSize: 11,
+                    color: 'var(--text-3)',
+                    letterSpacing: '0.04em',
+                    overflowX: 'auto',
+                  }}
+                >
+                  <div>
+                    window: <strong style={{ color: 'var(--text)' }}>{data._debug.window}</strong>
+                    {' · '}rows: <strong style={{ color: 'var(--text)' }}>{data._debug.rawRowsInWindow}</strong>
+                    {' · '}unique fixtures: <strong style={{ color: 'var(--text)' }}>{data._debug.uniqueByFixture}</strong>
+                    {' · '}settled: <strong style={{ color: 'var(--mint)' }}>{data._debug.settledInWindow}</strong>
+                    {' · '}pending: <strong style={{ color: 'var(--amber)' }}>{data._debug.pendingInWindow}</strong>
+                  </div>
+                  <div style={{ marginTop: 4, opacity: 0.75 }}>
+                    days: {(data._debug.distinctDays || []).join(', ') || '—'}
+                  </div>
+                  <div style={{ marginTop: 2, opacity: 0.75 }}>
+                    leagues: {(data._debug.distinctLeagues || []).join(', ') || '—'}
+                    {' · '}fetched: {new Date(data._debug.fetchedAt).toLocaleTimeString()}
+                  </div>
+                </div>
+              )}
+
               <div style={{ position: 'relative', marginBottom: 24 }}>
                 <div
                   style={{
