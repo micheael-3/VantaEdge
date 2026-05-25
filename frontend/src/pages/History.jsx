@@ -4,8 +4,8 @@ import Icon from '../components/Icon.jsx';
 import LockedOverlay from '../components/LockedOverlay.jsx';
 import Loading from '../components/Loading.jsx';
 import AdUnit from '../components/AdUnit.jsx';
-import { isAdmin, isSharp, useAuth } from '../context/AuthContext.jsx';
-import { history as historyApi, admin as adminApi } from '../api/client.js';
+import { isSharp, useAuth } from '../context/AuthContext.jsx';
+import { history as historyApi } from '../api/client.js';
 
 // Accuracy History — kept intentionally simple for the casual rebuild.
 // Four KPI tiles, the rolling-accuracy line, and a recent settled
@@ -131,43 +131,12 @@ function RollingChart({ rolling }) {
 export default function History() {
   const { user } = useAuth();
   const sharp = isSharp(user);
-  const admin = isAdmin(user);
-  const [settleBusy, setSettleBusy] = useState(false);
-  const [settleMsg, setSettleMsg] = useState('');
   // Default to 'week' so the headline numbers match what Results shows
   // (Results explicitly uses week). Avoids the dissonance of "Results
   // says 30 settled, Accuracy says 2" when both read the same endpoint
-  // with different time windows.
+  // with different time windows. Admin-only settle still lives in the
+  // Admin Panel; the inline button on this page was removed.
   const [windowKey, setWindowKey] = useState('week');
-
-  // One-click settle for admins — pushes today's finished matches into
-  // hit columns immediately so the page rerenders with fresh data.
-  // Same engine as the 2-hour cron + the admin panel button.
-  const onSettleNow = async () => {
-    if (settleBusy) return;
-    setSettleBusy(true);
-    setSettleMsg('Settling…');
-    try {
-      const r = await adminApi.settleNow();
-      const rep = (r && r.report) || {};
-      setSettleMsg(
-        `Settled ${rep.predictionsUpdated ?? 0} predictions across ${rep.fixturesSettled ?? 0} fixtures. Reloading…`,
-      );
-      // Trigger a refetch via windowKey re-set (React noticed the
-      // shallow same value is OK; force a Date.now() tick instead).
-      historyApi
-        .get(windowKey)
-        .then((res) => {
-          setData(res);
-          setSettleBusy(false);
-          setTimeout(() => setSettleMsg(''), 4000);
-        })
-        .catch(() => setSettleBusy(false));
-    } catch (err) {
-      setSettleBusy(false);
-      setSettleMsg(err?.response?.data?.error || err.message || 'Settle failed');
-    }
-  };
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -299,68 +268,10 @@ export default function History() {
             </div>
           ) : (
             <>
-              {/* Inline diagnostics — proves the data the backend
-                  returned for this window. If "settled in window" here
-                  doesn't match what Results shows, the bug is server-
-                  side. If it DOES match but the page still looks
-                  wrong, the bug is render-side. Either way: visible. */}
-              {data && data._debug && (
-                <div
-                  className="mono"
-                  style={{
-                    marginBottom: 14,
-                    padding: '10px 12px',
-                    background: 'var(--card-2)',
-                    border: '1px solid var(--border-soft)',
-                    borderRadius: 8,
-                    fontSize: 11,
-                    color: 'var(--text-3)',
-                    letterSpacing: '0.04em',
-                    overflowX: 'auto',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: 12,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <div style={{ minWidth: 0, flex: '1 1 auto' }}>
-                    <div>
-                      window: <strong style={{ color: 'var(--text)' }}>{data._debug.window}</strong>
-                      {' · '}rows: <strong style={{ color: 'var(--text)' }}>{data._debug.rawRowsInWindow}</strong>
-                      {' · '}unique fixtures: <strong style={{ color: 'var(--text)' }}>{data._debug.uniqueByFixture}</strong>
-                      {' · '}settled: <strong style={{ color: 'var(--mint)' }}>{data._debug.settledInWindow}</strong>
-                      {' · '}pending: <strong style={{ color: 'var(--amber)' }}>{data._debug.pendingInWindow}</strong>
-                    </div>
-                    <div style={{ marginTop: 4, opacity: 0.75 }}>
-                      days: {(data._debug.distinctDays || []).join(', ') || '—'}
-                    </div>
-                    <div style={{ marginTop: 2, opacity: 0.75 }}>
-                      leagues: {(data._debug.distinctLeagues || []).join(', ') || '—'}
-                      {' · '}fetched: {new Date(data._debug.fetchedAt).toLocaleTimeString()}
-                    </div>
-                  </div>
-                  {/* Admin-only Settle Now — fires the same engine as
-                      the 2-hour cron + the admin panel button. Lets us
-                      verify accuracy data without leaving the page. */}
-                  {admin && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={onSettleNow}
-                        disabled={settleBusy}
-                        style={{ fontSize: 11, padding: '6px 12px', minHeight: 32 }}
-                      >
-                        {settleBusy ? 'Settling…' : 'Settle Now'}
-                      </button>
-                      {settleMsg && (
-                        <span style={{ fontSize: 10, color: 'var(--mint)' }}>{settleMsg}</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Debug strip removed — never rendered to any user,
+                  admin or otherwise. The _debug payload is still in
+                  the API response for direct inspection if needed,
+                  just not in the DOM. */}
 
               <div style={{ position: 'relative', marginBottom: 24 }}>
                 <div
