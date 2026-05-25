@@ -936,6 +936,18 @@ exports.handler = async (event) => {
       return await runSchemaMigration();
     }
 
+    // --- POST /settle-now --- one-click "settle today's matches"
+    //     button. Same engine as the 2-hour cron — calls
+    //     agent-results.settleBatch() directly. Use this whenever a
+    //     match just finished and you want the dashboard / accuracy
+    //     page to reflect it immediately instead of waiting for the
+    //     next cron tick.
+    if (method === 'POST' && (path === '/settle-now' || path === '/settle-now/')) {
+      const { settleBatch } = require('./agent-results');
+      const report = await settleBatch();
+      return json(200, { ok: true, report });
+    }
+
     return notFound();
   } catch (err) {
     console.error('admin handler error:', err);

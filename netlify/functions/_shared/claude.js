@@ -123,6 +123,16 @@ function analystSystemPrompt(reflection, learnedRulesBlock) {
     `  • A confident "Over 1.5 at 75%" beats an uncertain "Over 2.5 at ` +
     `55%" every single time. The goal is real edges, not headline ` +
     `lines. Casual bettors prefer big numbers; you don't.\n\n` +
+    `CONFIDENCE CAPS BY DATA QUALITY — apply BEFORE settling on a number:\n` +
+    `  • If home.avgGoalsFor < 1.2 AND away.avgGoalsFor < 1.2 → confidence MAX 62%.\n` +
+    `  • If H2H avg total goals < 2.0 → drop the Over line by one level ` +
+    `(e.g. you were going Over 2.5, now go Over 1.5) AND cap confidence at 70%.\n` +
+    `  • If the referee's goals-per-game stat is below 2.2 → reduce confidence by 8 pts.\n` +
+    `  • If either team has rest days = 0 (just played) → reduce confidence by 5 pts.\n` +
+    `  • HARD ceiling is 78% UNLESS every signal (form, H2H, goals/game, refs, ` +
+    `rest, BTTS rates) ALL point the same way. Treat 78% as your normal cap; 80–85% reserved.\n` +
+    `  • Target average confidence across the week's slate: 63–68%. If you find ` +
+    `yourself at 70%+ on most matches you are overconfident — recalibrate down.\n\n` +
     reflectionBlock(reflection) +
     (learnedRulesBlock || '')
   );

@@ -59,6 +59,42 @@
    braces against any future "10px too wide" bug. */
 html, body, #root { overflow-x: hidden; max-width: 100vw; }
 
+/* Mobile reset hardening — no media object ever escapes its container. */
+img, video, iframe, svg { max-width: 100%; height: auto; }
+
+/* Mobile-only rules — kept narrow so existing desktop layouts don't
+   shift. Targets the bottom-nav clearance + minimum tap-target sizes
+   that iOS Safari is fussy about. */
+@media (max-width: 767px) {
+  /* Bottom-nav (.bottom-nav is fixed 56px tall + safe area). Give every
+     scrollable page enough bottom clearance so the last card isn't
+     hidden under the nav. Applied to the main content wrapper used by
+     Layout.jsx. */
+  .main-content,
+  main.main-content,
+  .app-shell main,
+  .app-main {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important;
+  }
+  /* Buttons & primary tappable controls get a 44px tap target — the
+     iOS Human Interface Guideline minimum. Inline text links are NOT
+     forced (would break paragraph flow); only .btn / button[type] etc. */
+  .btn, button.btn, button[type="button"], button[type="submit"] {
+    min-height: 44px;
+  }
+  .btn-sm, button.btn-sm {
+    min-height: 36px; /* explicit small variant stays compact */
+  }
+  /* Calendar strip — must scroll horizontally, never wrap to a 2nd row. */
+  .cal-strip, .calendar-strip {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .cal-strip::-webkit-scrollbar, .calendar-strip::-webkit-scrollbar { display: none; }
+}
+
 html,
 body {
   margin: 0;

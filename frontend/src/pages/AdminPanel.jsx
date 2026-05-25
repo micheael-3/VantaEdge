@@ -90,6 +90,10 @@ function StatsTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [rescanState, setRescanState] = useState({ busy: false, message: '' });
+  // "Settle today's matches now" — POST /api/admin/settle-now. Same
+  // engine as the 2-hour cron; surfaces a fresh dashboard immediately
+  // after the final whistle without waiting for the next tick.
+  const [settleNowState, setSettleNowState] = useState({ busy: false, message: '' });
   // Three pieces of state for the destructive / recovery admin tools.
   // Kept inline with the stats tab so they sit next to "Force Rescan" —
   // same mental model: "do something to the predictions table".
@@ -333,6 +337,28 @@ function StatsTab() {
     }
   };
 
+  // Immediately settle every finished prediction. Uses the same
+  // settle engine as the cron — safe to call repeatedly. Surfaces
+  // a per-fixture count so the admin knows what just happened.
+  const onSettleNow = async () => {
+    if (settleNowState.busy) return;
+    setSettleNowState({ busy: true, message: 'Fetching results + settling matches…' });
+    try {
+      const r = await adminApi.settleNow();
+      const rep = (r && r.report) || {};
+      setSettleNowState({
+        busy: false,
+        message: `Settled ${rep.predictionsUpdated ?? 0} predictions across ${rep.fixturesSettled ?? 0} fixtures (${rep.fixturesPendingFt ?? 0} still pending FT). Refresh Accuracy/Results to see them.`,
+      });
+      setTimeout(() => loadStats({ cancelled: false }), 1500);
+    } catch (err) {
+      setSettleNowState({
+        busy: false,
+        message: err?.response?.data?.error || err.message || 'Settle failed',
+      });
+    }
+  };
+
   // Run schema.sql against Neon. Safe — every statement is idempotent
   // (IF NOT EXISTS / DO blocks). Surfaces failure counts AND the
   // failing statement previews inline so you can fix the underlying
@@ -457,6 +483,49 @@ function StatsTab() {
           disabled={rescanState.busy}
         >
           {rescanState.busy ? 'Rescanning…' : 'Force Rescan'}
+        </button>
+      </div>
+
+      {/* Settle today's matches NOW. Same engine as the 2-hour cron —
+          calls agent-results.settleBatch() in-process. Use this right
+          after the final whistle so Accuracy + Results reflect today's
+          results immediately rather than waiting for the next tick. */}
+      <div
+        className="card"
+        style={{
+          marginTop: 16,
+          padding: 16,
+          display: 'flex',
+          gap: 18,
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          borderColor: 'rgba(110,231,183,0.3)',
+        }}
+      >
+        <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em' }}>
+            SETTLE TODAY'S MATCHES NOW
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>
+            Fetch final scores from API-Football for every finished prediction whose hit columns are still empty. Same engine as the 2-hour cron. Refresh Accuracy/Results after.
+          </div>
+          {settleNowState.message && (
+            <div
+              className="mono"
+              style={{ marginTop: 8, fontSize: 11, color: settleNowState.busy ? 'var(--mint)' : 'var(--text-3)' }}
+            >
+              {settleNowState.message}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          onClick={onSettleNow}
+          disabled={settleNowState.busy}
+        >
+          {settleNowState.busy ? 'Settling…' : 'Settle Now'}
         </button>
       </div>
 

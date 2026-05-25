@@ -73,6 +73,16 @@ api.interceptors.response.use(
           return Promise.reject(e);
         }
       }
+
+      // Unrecoverable 401 — neither a guest nor a refreshable session.
+      // Rewrite the error payload so downstream `error.data.error`
+      // displays don't show raw "UNAUTHORIZED" / "FORBIDDEN" strings.
+      // Pages that surface this can still detect a 401 via status,
+      // but the user-visible text is friendlier.
+      if (err.response && err.response.data) {
+        err.response.data.error = 'Please sign in to view this';
+        err.response.data.friendly = true;
+      }
     }
     return Promise.reject(err);
   },
@@ -189,6 +199,10 @@ export const admin = {
   // safe to hit any time a new schema lands. Powered by the existing
   // splitter in admin.js — see runSchemaMigration there.
   migrate: () => api.post('/api/admin/migrate').then((r) => r.data),
+  // Immediately settle every finished prediction whose hit columns
+  // are still null. Same engine as the 2-hour cron — use when a match
+  // just finished and the dashboard/accuracy page should reflect it now.
+  settleNow: () => api.post('/api/admin/settle-now').then((r) => r.data),
 };
 
 // Self-learning upgrade: AI persona + per-user feedback.

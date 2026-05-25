@@ -432,13 +432,25 @@ function extractFormForTeam(fixtures, teamId) {
   // API-Football "finished" status codes. PST (postponed), CANC, ABD,
   // NS (not started), TBD, LIVE-in-progress etc are all excluded.
   const FINISHED = new Set(['FT', 'AET', 'PEN']);
+  // Normalise the target id to a Number once. API-Football returns
+  // numeric IDs but some call paths string-ify them (e.g. when team
+  // info comes from match_data JSONB). Strict `===` between 123 and
+  // '123' would always return false and silently yield empty form
+  // arrays. This was the "blank dots" root cause.
+  const targetId = Number(teamId);
+  if (!Number.isFinite(targetId)) {
+    console.warn(`[football extractForm] non-numeric teamId received: ${teamId}`);
+    return [null, null, null, null, null];
+  }
   const out = fixtures
     .slice()
     .filter((f) => f && f.fixture && f.teams && FINISHED.has(f.fixture.status && f.fixture.status.short))
     .sort((a, b) => new Date(a.fixture.date) - new Date(b.fixture.date))
     .map((f) => {
-      const isHome = f.teams.home && f.teams.home.id === teamId;
-      const isAway = f.teams.away && f.teams.away.id === teamId;
+      const homeId = f.teams.home && Number(f.teams.home.id);
+      const awayId = f.teams.away && Number(f.teams.away.id);
+      const isHome = homeId === targetId;
+      const isAway = awayId === targetId;
       if (!isHome && !isAway) return null; // shouldn't happen, defensive
       const winner = isHome ? f.teams.home.winner : f.teams.away.winner;
       // winner: true=W, false=L, null=actual draw (since we filtered to
