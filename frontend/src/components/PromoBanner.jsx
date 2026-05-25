@@ -42,7 +42,7 @@ const BANNERS = [
     headline: "You're missing the AI analysis",
     body:
       'PRO users see exactly why the AI picked this. Full reasoning, confidence breakdown, and bet tracker.',
-    cta: 'Upgrade to PRO — €4.99/mo',
+    cta: 'Upgrade to PRO — $4.99/mo',
     small: 'Cancel anytime · No card required for first 7 days',
     accent: '#34d399', // mint
     bgTint: 'rgba(110,231,183,0.04)',
@@ -54,7 +54,7 @@ const BANNERS = [
     icon: '📖',
     headline: 'New: The FastScore Betting Bible',
     body:
-      '100+ page complete guide to profitable sports betting. EV, Kelly, value betting, bankroll management. €9.99 one-time.',
+      '100+ page complete guide to profitable sports betting. EV, Kelly, value betting, bankroll management. $9.99 one-time.',
     cta: 'Get the Guide →',
     small: 'PDF + EPUB · 12 chapters · One-time purchase',
     accent: '#818cf8', // indigo
@@ -65,11 +65,11 @@ const BANNERS = [
   {
     id: 'affiliate',
     icon: '💰',
-    headline: 'Earn €2.00 every month per referral',
+    headline: 'Earn $2.00 every month per referral',
     body:
       'Share your link. When someone subscribes to PRO, you earn 40% recurring. Forever. No cap.',
     cta: 'Join Affiliate Program →',
-    small: '10 referrals = €240/year passive income',
+    small: '10 referrals = $240/year passive income',
     accent: '#fbbf24', // amber
     bgTint: 'rgba(251,191,36,0.05)',
     action: 'route',

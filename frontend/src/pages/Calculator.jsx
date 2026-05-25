@@ -179,7 +179,7 @@ function CalculatorLocked() {
               onClick={openWhopCheckout}
               style={{ width: '100%' }}
             >
-              Upgrade to PRO — €4.99/mo
+              Upgrade to PRO — $4.99/mo
             </button>
             <p
               className="mono"
@@ -376,7 +376,7 @@ function CalculatorAuthed() {
                 marginBottom: 6,
               }}
             >
-              YOUR BANKROLL (€)
+              YOUR BANKROLL ($)
             </label>
             <input
               className="input"
@@ -718,7 +718,7 @@ function ResultCard({ result }) {
             letterSpacing: '-0.01em',
           }}
         >
-          €{result.recommendedStake.toFixed(2)}
+          ${result.recommendedStake.toFixed(2)}
         </div>
       ) : (
         <div
@@ -736,10 +736,10 @@ function ResultCard({ result }) {
 
       {showStake && (
         <div style={{ display: 'grid', gap: 0 }}>
-          <ResultRow label="Potential return" value={`€${result.potentialReturn.toFixed(2)}`} />
+          <ResultRow label="Potential return" value={`$${result.potentialReturn.toFixed(2)}`} />
           <ResultRow
             label="Potential profit"
-            value={`€${result.potentialProfit.toFixed(2)}`}
+            value={`$${result.potentialProfit.toFixed(2)}`}
             valueColor="var(--mint)"
           />
           <ResultRow label="% of bankroll" value={`${result.stakePercent.toFixed(1)}%`} />

@@ -284,7 +284,7 @@ function SettingsAuthed() {
               style={{ width: '100%', marginBottom: 14 }}
               onClick={openWhopCheckout}
             >
-              Upgrade to PRO — €4.99/mo
+              Upgrade to PRO — $4.99/mo
             </button>
           )}
 

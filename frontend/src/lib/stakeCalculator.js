@@ -54,7 +54,7 @@ function validateBasic({ bankroll, odds }) {
   const b = Number(bankroll);
   const o = Number(odds);
   if (!Number.isFinite(b) || b < 10) {
-    return 'Minimum bankroll €10 for meaningful stakes';
+    return 'Minimum bankroll $10 for meaningful stakes';
   }
   if (!Number.isFinite(o) || o < 1.01) return 'Invalid odds';
   if (o > 50) return 'Very long shot — extremely high risk';
@@ -161,7 +161,7 @@ export function computeSingle({ bankroll, odds, confidenceOverride }) {
 function _parlay({ bankroll, legOddsArr, legLabels }) {
   // Bankroll validation up front so parlay-with-bad-bankroll also fails fast.
   if (!Number.isFinite(Number(bankroll)) || Number(bankroll) < 10) {
-    return { kind: 'parlay', ok: false, warning: 'Minimum bankroll €10 for meaningful stakes', recommendedStake: 0 };
+    return { kind: 'parlay', ok: false, warning: 'Minimum bankroll $10 for meaningful stakes', recommendedStake: 0 };
   }
   if (!Array.isArray(legOddsArr) || legOddsArr.length < 2) {
     return { kind: 'parlay', ok: false, warning: 'Parlays need at least 2 legs', recommendedStake: 0 };

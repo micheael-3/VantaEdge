@@ -399,7 +399,7 @@ function Pricing() {
           // Price-anchor lines — concrete framing of the value vs the
           // subscription cost. Mono 12px, muted.
           anchorLines={[
-            'The average winning bet at €10 stake returns €8–€15 profit',
+            'The average winning bet at $10 stake returns $8–$15 profit',
             'One correct pick covers your monthly subscription',
             'Most PRO users are profitable within 2 weeks',
           ]}

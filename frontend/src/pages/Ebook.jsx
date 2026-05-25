@@ -137,7 +137,7 @@ export default function Ebook() {
                 marginBottom: 8,
               }}
             >
-              NEW · €9.99 ONE-TIME
+              NEW · $9.99 ONE-TIME
             </div>
             <h2
               className="display"
@@ -170,7 +170,7 @@ export default function Ebook() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Buy Now — €9.99 →
+                Buy Now — $9.99 →
               </a>
               {pro ? (
                 <span
@@ -283,7 +283,7 @@ export default function Ebook() {
                 letterSpacing: '0.12em',
               }}
             >
-              ONE-TIME PURCHASE · €9.99
+              ONE-TIME PURCHASE · $9.99
             </div>
             <div
               className="display"

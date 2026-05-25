@@ -141,7 +141,7 @@ export default function OnboardingOverlay({ onClose }) {
               }}
             >
               PRO unlocks the bet tracker, AI reasoning, and accuracy history —
-              for €4.99/month. Cancel anytime.
+              for $4.99/month. Cancel anytime.
             </p>
             <div style={{ display: 'grid', gap: 10 }}>
               <button
