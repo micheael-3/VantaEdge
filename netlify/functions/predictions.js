@@ -458,8 +458,15 @@ async function triggerBackgroundScan(leagueId, weekStart) {
 }
 
 async function handleWeek(event) {
-  const { res, user } = await requireUser(event);
-  if (res) return res;
+  // PUBLIC endpoint — no auth required. The week's predictions are
+  // shared MLS rows (not per-user), so guests, anonymous landing-page
+  // visitors, and logged-in users all read the same payload. Forcing
+  // auth here was the root cause of the dashboard "Couldn't load
+  // predictions / Please sign in to view this" wall: guests whose
+  // 15-min guest cookie expired hit a hard 401 even though the data
+  // is fully public. We still optimistically read the cookie below
+  // for telemetry/logging, but never reject the request on auth.
+  void event;
 
   const leagueId = MLS_LEAGUE_ID;
   const weekStart = mondayOf(new Date());
@@ -475,7 +482,6 @@ async function handleWeek(event) {
   // 1. All predictions in the kickoff window (shared rows; not per-user).
   //    We don't filter by user_id because the weekly scan stores rows
   //    against the scan-owner; everyone reads the same week.
-  void user;
   // MLS-only build: predictions.league is stored as the league NAME
   // string. We filter to 'MLS' here so legacy multi-league rows
   // (Bundesliga / Eredivisie / etc.) don't leak into the weekly view.
