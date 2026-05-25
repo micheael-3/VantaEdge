@@ -544,6 +544,27 @@ async function insertPredictionForUserId(adminUserId, fx, league, analysis, odds
       }
     : null;
 
+  // 50/50 SKIP GUARD —
+  // If both Over and BTTS confidence round to exactly 50, the model
+  // gave us no real signal (this is the classic fallback shape from a
+  // failed JSON parse or a hedged adjudicator output). Persisting such
+  // a row pollutes the dashboard with "OVER 2.5 · 50%" cards that
+  // never resolve into a useful pick. Skip the INSERT entirely and
+  // log so we can spot a recurring failure mode in Netlify logs.
+  // ON CONFLICT semantics are preserved: an existing row for this
+  // fixture stays as-is rather than being overwritten with garbage.
+  const overConfRounded = Math.round(Number(analysis.over.confidence) || 0);
+  const bttsConfRounded = Math.round(Number(analysis.btts.confidence) || 0);
+  if (overConfRounded === 50 && bttsConfRounded === 50) {
+    console.warn(
+      `[scan-bg skip-5050] fixture=${fx.fixture && fx.fixture.id} ` +
+        `${fx.teams.home.name} vs ${fx.teams.away.name} — ` +
+        `model returned 50/50 (no signal). Row NOT inserted; previous ` +
+        `row (if any) preserved.`,
+    );
+    return;
+  }
+
   // Stored against the system "scan" user — when a real user requests
   // /api/predictions/week we read these shared rows by league + kickoff
   // window (no user_id filter).
