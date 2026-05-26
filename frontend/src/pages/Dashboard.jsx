@@ -567,7 +567,12 @@ export default function Dashboard() {
                 Try again
               </button>
             </div>
-          ) : futureDates.length === 0 ? (
+          ) : fixturesForDay.length === 0 && futureDates.length === 0 ? (
+            // No future matches AND nothing for the selected day. This
+            // is the genuinely-empty week case. Past days that DO have
+            // settled matches fall through to the render branch below
+            // — they're not "no matches this week" just because today
+            // is past-the-last-fixture; yesterday's results still exist.
             <div className="empty-state">
               <h3>No matches this week</h3>
               <p>Next scan: {nextMondayLabel}</p>
